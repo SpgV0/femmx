@@ -6,6 +6,9 @@
 #endif // _MSC_VER > 1000
 // FemmeView.h : header file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added a dark theme toggle (m_bDarkTheme, ApplyTheme, OnViewDarkTheme,
+// OnUpdateViewDarkTheme).
 
 /////////////////////////////////////////////////////////////////////////////
 // CFemmeView view
@@ -54,6 +57,13 @@ class CFemmeView : public CView {
   COLORREF BackColor;
   COLORREF NodeColor;
   COLORREF NameColor;
+
+  // Dark theme (View > Dark Theme). ID_VIEW_DARKTHEME toggles
+  // m_bDarkTheme, swaps the colors above between the light defaults and
+  // a dark palette, and asks the main frame to switch its title bar
+  // between the two as well.
+  BOOL m_bDarkTheme;
+  void ApplyTheme(BOOL bDark);
 
   // default view properties
   int d_action; //=0;
@@ -158,6 +168,8 @@ class CFemmeView : public CView {
   afx_msg void OnCreateRadius();
   afx_msg void OnUpdateEditExterior(CCmdUI* pCmdUI);
   afx_msg void OnMakeABC();
+  afx_msg void OnViewDarkTheme();
+  afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

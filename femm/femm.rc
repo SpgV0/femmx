@@ -1,5 +1,8 @@
 // Microsoft Visual C++ generated resource script.
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added a "Dark Theme" item to the magnetics editor's View menu
+// (IDR_FEMMETYPE), ID_VIEW_DARKTHEME.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -413,6 +416,8 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM SEPARATOR
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"

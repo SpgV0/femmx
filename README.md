@@ -30,6 +30,17 @@
   Combined with the mi_setredraw fix above, measured 8.57x speedup over
   30 repeated copy actions against a 1,600-block-label model; see
   test_models/results/copy_benchmark.txt.
+* Experimental, isolated in its own commit for easy revert: added a
+  "Dark Theme" toggle to the magnetics editor's View menu
+  (ID_VIEW_DARKTHEME; femm/femm.rc, femm/resource.h, femm/FemmeView.h,
+  femm/FemmeView.cpp). Swaps the canvas colors (background, grid, node,
+  line, block, mesh, selection, name) between the light defaults and a
+  dark palette, and best-effort switches the main window's title bar via
+  DwmSetWindowAttribute/DWMWA_USE_IMMERSIVE_DARK_MODE (Windows 10
+  1809+/11; a no-op elsewhere). Scope: only the magnetics editor's
+  canvas and title bar are re-themed -- menus, toolbars, and dialogs
+  still use the OS's native (light) common-control rendering, since
+  re-theming those would require owner-drawing every control.
 
 22Oct2023
 

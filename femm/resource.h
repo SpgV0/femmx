@@ -2,6 +2,8 @@
 // Microsoft Visual C++ generated include file.
 // Used by femm.rc
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added ID_VIEW_DARKTHEME for the magnetics editor's dark theme toggle.
 #define IDR_MAINFRAME 100
 #define IDR_FEMMETYPE 101
 #define IDR_BELADRAWTYPE 102
@@ -843,6 +845,7 @@
 #define ID_BUTTON32953 32846
 #define ID_EDIT_CREATEOPENBOUNDARY 32847
 #define ID_BUTTON32854 32854
+#define ID_VIEW_DARKTHEME 32855
 
 // Next default values for new objects
 //
@@ -850,7 +853,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_3D_CONTROLS 1
 #define _APS_NEXT_RESOURCE_VALUE 236
-#define _APS_NEXT_COMMAND_VALUE 32855
+#define _APS_NEXT_COMMAND_VALUE 32856
 #define _APS_NEXT_CONTROL_VALUE 1493
 #define _APS_NEXT_SYMED_VALUE 1663
 #endif
