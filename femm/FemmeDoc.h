@@ -147,6 +147,7 @@ class CFemmeDoc : public CDocument {
   void Undo();
   void EnforcePSLG(); // makes sure that everything is kosher...
   void EnforcePSLG(double tol);
+  void EnforcePSLG(double tol, int nodeStart, int lineStart, int arcStart, int blockStart);
   void FancyEnforcePSLG(double tol);
   BOOL SelectOrphans();
   BOOL dxf_line_hook();

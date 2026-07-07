@@ -6,24 +6,30 @@
   https://github.com/spgryparis/femm_mods, cloned from
   https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
   license-required modification record.
-* Added demo_models/, with Python scripts that build and solve FEMM
+* Added test_models/, with Python scripts that build and solve FEMM
   models via the pyfemm COM interface: straight_wire_field.py (a
   current-carrying-wire magnetostatics problem validated against the
-  closed-form Ampere's-law solution) and copy_redraw_benchmark.py (see
-  next item).
+  closed-form Ampere's-law solution), copy_redraw_benchmark.py, and
+  enforce_pslg_correctness_test.py (see next items).
 * Added mi_setredraw(flag) Lua/scripting command
   (femm/femmeLua.cpp, femm/FemmeDoc.h) to suspend the magnetics editor's
   canvas redraw during batch edits, e.g. repeated mi_copytranslate/
   mi_copyrotate calls. Fixed DrawPSLG() (femm/FemmeView.cpp), which
   didn't honor the existing NoDraw suppression flag unlike OnDraw(), and
   wired the Edit > Copy/Move dialogs to use the same suspend/resume
-  pattern. Measured 2.61x speedup over 30 repeated copy actions against
-  a 1,600-block-label model; see demo_models/results/copy_benchmark.txt.
-* Known issue, not fixed: CFemmeDoc::EnforcePSLG() (femm/MOVECOPY.CPP),
-  called once per Copy/Move, rebuilds the entire node/segment/arc/block
-  list via intersection-checking Add* calls and is O(n^2) in total
-  feature count -- likely the dominant Copy/Move cost on very large
-  drawings.
+  pattern.
+* Fixed CFemmeDoc::EnforcePSLG() (femm/MOVECOPY.CPP): called once per
+  Copy operation, it used to rebuild the entire node/segment/arc/block
+  list from scratch via intersection-checking Add* calls, making it
+  O(n^2) in total feature count -- the dominant Copy cost on large
+  drawings. RotateCopy/TranslateCopy only ever append new geometry to
+  the end of each list, so a new EnforcePSLG(tol, nodeStart, lineStart,
+  arcStart, blockStart) overload now only re-validates the newly added
+  tail (still checked against the full existing drawing, so correctness
+  is unchanged -- see test_models/enforce_pslg_correctness_test.py).
+  Combined with the mi_setredraw fix above, measured 8.57x speedup over
+  30 repeated copy actions against a 1,600-block-label model; see
+  test_models/results/copy_benchmark.txt.
 
 22Oct2023
 

@@ -1,7 +1,7 @@
-# Demo Models
+# Test Models
 
-Example scripts that build and solve a FEMM model entirely from Python,
-using the `pyfemm` COM interface to a locally built `femm.exe`.
+Example and test scripts that build and solve a FEMM model entirely from
+Python, using the `pyfemm` COM interface to a locally built `femm.exe`.
 
 ## straight_wire_field.py
 
@@ -39,6 +39,12 @@ This repository adds a custom Lua/scripting command, `mi_setredraw(flag)`
 (see `femm/femmeLua.cpp`), that lets a script suspend that redraw around a
 batch of edits and force a single refresh at the end instead. The GUI's
 Copy/Move dialogs (`FemmeView.cpp`) use the same mechanism internally.
+Separately, `CFemmeDoc::EnforcePSLG()` (`femm/MOVECOPY.CPP`), called once
+per Copy, used to rebuild the *entire* node/segment/arc/block list from
+scratch on every call; it now only re-validates the newly added geometry
+(see the incremental `EnforcePSLG(tol, nodeStart, lineStart, arcStart,
+blockStart)` overload), since Copy only ever appends to the end of each
+list.
 
 `copy_redraw_benchmark.py` builds an identical cluttered base model (a grid
 of small block labels) twice, then times a series of separate
@@ -51,4 +57,20 @@ batch. Results (including the measured speedup) are written to
 
 ```
 python copy_redraw_benchmark.py
+```
+
+## enforce_pslg_correctness_test.py
+
+Correctness check for the incremental `EnforcePSLG` overload above: copies
+a line segment so that it crosses a pre-existing one, then verifies (by
+parsing the saved `.fem` file's `[NumPoints]`/`[NumSegments]` counts) that
+the intersection is still correctly detected and both lines still get
+split, and that a newly copied node that coincides with a pre-existing one
+is still correctly merged rather than duplicated. Writes a PASS/FAIL report
+to `results/enforce_pslg_correctness.txt`.
+
+### Run
+
+```
+python enforce_pslg_correctness_test.py
 ```
