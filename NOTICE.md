@@ -14,8 +14,9 @@ change) at the point of modification.
 
 ## Change Log
 
-See [CHANGELOG.md](CHANGELOG.md) for full technical detail on each change.
-This section is the condensed, license-required record of modifications.
+See [README.md](README.md) for full technical detail on each change (dated
+entries, most recent first). This section is the condensed, license-required
+record of modifications.
 
 - 2026-07-06: Repository cloned from https://github.com/cenit/FEMM
   (commit 7d9e8ed) and re-hosted at https://github.com/spgryparis/femm_mods.

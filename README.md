@@ -1,5 +1,30 @@
 ﻿FEMM 4.2 22Oct2023
 
+07Jul2026 (femm_mods fork)
+
+* Rehosted this repository as a fork (femm_mods) at
+  https://github.com/spgryparis/femm_mods, cloned from
+  https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
+  license-required modification record.
+* Added demo_models/, with Python scripts that build and solve FEMM
+  models via the pyfemm COM interface: straight_wire_field.py (a
+  current-carrying-wire magnetostatics problem validated against the
+  closed-form Ampere's-law solution) and copy_redraw_benchmark.py (see
+  next item).
+* Added mi_setredraw(flag) Lua/scripting command
+  (femm/femmeLua.cpp, femm/FemmeDoc.h) to suspend the magnetics editor's
+  canvas redraw during batch edits, e.g. repeated mi_copytranslate/
+  mi_copyrotate calls. Fixed DrawPSLG() (femm/FemmeView.cpp), which
+  didn't honor the existing NoDraw suppression flag unlike OnDraw(), and
+  wired the Edit > Copy/Move dialogs to use the same suspend/resume
+  pattern. Measured 2.61x speedup over 30 repeated copy actions against
+  a 1,600-block-label model; see demo_models/results/copy_benchmark.txt.
+* Known issue, not fixed: CFemmeDoc::EnforcePSLG() (femm/MOVECOPY.CPP),
+  called once per Copy/Move, rebuilds the entire node/segment/arc/block
+  list via intersection-checking Add* calls and is O(n^2) in total
+  feature count -- likely the dominant Copy/Move cost on very large
+  drawings.
+
 22Oct2023
 
 * Updated radiation boundary condition in thermal problems so that convective
