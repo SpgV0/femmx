@@ -14,6 +14,13 @@ change) at the point of modification.
 
 ## Change Log
 
+See [CHANGELOG.md](CHANGELOG.md) for full technical detail on each change.
+This section is the condensed, license-required record of modifications.
+
 - 2026-07-06: Repository cloned from https://github.com/cenit/FEMM
   (commit 7d9e8ed) and re-hosted at https://github.com/spgryparis/femm_mods.
   No source files were altered as part of this change.
+- 2026-07-07: Added `femm/femmeLua.cpp` and `femm/FemmeDoc.h` changes
+  (new `mi_setredraw` Lua command) and `femm/FemmeView.cpp` changes
+  (`DrawPSLG()` and Copy/Move handlers now honor redraw suppression).
+  See per-file modification notices for author/contact/date/purpose.
