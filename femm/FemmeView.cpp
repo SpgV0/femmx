@@ -1,5 +1,10 @@
 // FemmeView.cpp : implementation file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// DrawPSLG() now honors CFemmeDoc::NoDraw (it previously ignored the
+// flag, unlike OnDraw()); OnCopyObjects()/OnMoveObjects() now suspend
+// redraw for the duration of the batch edit and refresh once at the end,
+// to avoid redundant full-canvas redraws on densely-drawn models.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -266,6 +271,10 @@ void CFemmeView::ScreenToDwg(int xs, int ys, double* xd, double* yd, RECT* r)
 
 void CFemmeView::DrawPSLG()
 {
+  CFemmeDoc* pDocCheck = GetDocument();
+  if (pDocCheck->NoDraw == TRUE)
+    return;
+
   RECT r;
   GetClientRect(&r);
   int i, j, k; // usual iterators...
@@ -2690,6 +2699,10 @@ void CFemmeView::OnMoveObjects()
   dlg.m_ncopies = 0;
 
   if (dlg.DoModal() == IDOK) {
+    // Suspend redraw for the duration of the batch edit below; a single
+    // refresh happens once, right before returning, instead of any
+    // incidental full-canvas redraws while the edit is in progress.
+    pDoc->NoDraw = TRUE;
     if (dlg.BtnState == 0) // Rotate
     {
       pDoc->UpdateUndo();
@@ -2700,6 +2713,7 @@ void CFemmeView::OnMoveObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
     if (dlg.BtnState == 1) // Translate
@@ -2710,8 +2724,10 @@ void CFemmeView::OnMoveObjects()
       pDoc->meshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
+    pDoc->NoDraw = FALSE;
   }
 }
 
@@ -2729,6 +2745,10 @@ void CFemmeView::OnCopyObjects()
   dlg.m_ncopies = 1;
 
   if (dlg.DoModal() == IDOK) {
+    // Suspend redraw for the duration of the batch edit below; a single
+    // refresh happens once, right before returning, instead of any
+    // incidental full-canvas redraws while the edit is in progress.
+    pDoc->NoDraw = TRUE;
     if (dlg.BtnState == 0) // Rotate
     {
       pDoc->UpdateUndo();
@@ -2739,6 +2759,7 @@ void CFemmeView::OnCopyObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
     if (dlg.BtnState == 1) // Translate
@@ -2750,8 +2771,10 @@ void CFemmeView::OnCopyObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
+    pDoc->NoDraw = FALSE;
   }
 }
 

@@ -1,5 +1,9 @@
 // femmeDoc.cpp : implementation of the CFemmeDoc class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added mi_setredraw Lua command (lua_setredraw) so scripts can suspend
+// canvas redraw during batch edits (e.g. many mi_copytranslate/
+// mi_copyrotate calls) and force a single refresh when re-enabled.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -89,6 +93,7 @@ void CFemmeDoc::initalise_lua()
   lua_register(lua, "mi_addbhpoint", lua_addbhpoint);
   lua_register(lua, "mi_clearbhpoints", lua_clearbhpoints);
   lua_register(lua, "mi_refreshview", lua_updatewindow);
+  lua_register(lua, "mi_setredraw", lua_setredraw);
   lua_register(lua, "mi_shownames", lua_shownames);
   lua_register(lua, "mi_showgrid", lua_showgrid);
   lua_register(lua, "mi_hidegrid", lua_hidegrid);
@@ -2159,6 +2164,32 @@ int CFemmeDoc::lua_updatewindow(lua_State* L)
 
   // force redraw
   theView->OnDraw(pDC);
+
+  return 0;
+}
+
+// mi_setredraw(flag): flag=0 suspends canvas redraw for subsequent edit
+// operations (e.g. a batch of mi_copytranslate/mi_copyrotate calls on a
+// densely-drawn model); flag=1 (default state) resumes it and forces a
+// single refresh to show everything that changed while it was off.
+int CFemmeDoc::lua_setredraw(lua_State* L)
+{
+  CatchNullDocument();
+  CFemmeDoc* thisDoc;
+  CFemmeView* theView;
+  thisDoc = (CFemmeDoc*)pFemmeDoc;
+  POSITION pos;
+  pos = thisDoc->GetFirstViewPosition();
+  theView = (CFemmeView*)thisDoc->GetNextView(pos);
+
+  int n = lua_gettop(L);
+  BOOL enable = TRUE;
+  if (n > 0)
+    enable = (lua_todouble(L, 1) != 0);
+
+  thisDoc->NoDraw = !enable;
+  if (enable)
+    theView->InvalidateRect(NULL);
 
   return 0;
 }

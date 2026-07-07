@@ -6,6 +6,9 @@
 #endif // _MSC_VER > 1000
 // FemmeDoc.h : header file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added lua_setredraw() to let scripts suspend/resume canvas redraw
+// around batch edit operations (e.g. mi_copytranslate/mi_copyrotate).
 #include "nosebl.h"
 
 #include "lua.h"
@@ -227,6 +230,7 @@ class CFemmeDoc : public CDocument {
   void CreateBMPFile(HWND hwnd, LPTSTR pszFile, PBITMAPINFO pbi, HBITMAP hBMP, HDC hDC);
   static int lua_saveWMF(lua_State* L);
   static int lua_updatewindow(lua_State* L);
+  static int lua_setredraw(lua_State* L);
   static int lua_shownames(lua_State* L);
   static int lua_showgrid(lua_State* L);
   static int lua_hidegrid(lua_State* L);
