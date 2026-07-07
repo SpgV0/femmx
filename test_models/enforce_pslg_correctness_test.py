@@ -36,10 +36,10 @@ import re
 
 import femm
 
-OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_DIR = os.path.join(OUTPUT_DIR, "results")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(SCRIPT_DIR, "results", "enforce_pslg_correctness_test")
 RESULTS_PATH = os.path.join(RESULTS_DIR, "enforce_pslg_correctness.txt")
-MODEL_PATH = os.path.join(OUTPUT_DIR, "enforce_pslg_correctness_test.fem")
+MODEL_PATH = os.path.join(RESULTS_DIR, "enforce_pslg_correctness_test.fem")
 
 EXPECTED_POINTS = 6
 EXPECTED_SEGMENTS = 5
@@ -81,6 +81,7 @@ def read_counts(fem_path):
 
 
 def main():
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     femm.openfemm()
     try:
         build_and_copy()

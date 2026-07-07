@@ -29,11 +29,13 @@ ABC_LAYERS = 7
 CURRENT_A = 10.0
 PROBE_RADIUS_MM = 5.0
 
-OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "straight_wire_field")
 MODEL_PATH = os.path.join(OUTPUT_DIR, "straight_wire_field.fem")
 
 
 def build_and_solve():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     femm.openfemm()
     femm.newdocument(0)  # 0 = magnetics problem
 

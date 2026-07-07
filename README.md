@@ -9,8 +9,10 @@
 * Added test_models/, with Python scripts that build and solve FEMM
   models via the pyfemm COM interface: straight_wire_field.py (a
   current-carrying-wire magnetostatics problem validated against the
-  closed-form Ampere's-law solution), copy_redraw_benchmark.py, and
-  enforce_pslg_correctness_test.py (see next items).
+  closed-form Ampere's-law solution), copy_redraw_benchmark.py,
+  enforce_pslg_correctness_test.py, and lua_command_regression_test.py
+  (see next items). Each script writes its generated files under its own
+  test_models/results/<script_name>/ subfolder.
 * Added mi_setredraw(flag) Lua/scripting command
   (femm/femmeLua.cpp, femm/FemmeDoc.h) to suspend the magnetics editor's
   canvas redraw during batch edits, e.g. repeated mi_copytranslate/
@@ -27,9 +29,21 @@
   arcStart, blockStart) overload now only re-validates the newly added
   tail (still checked against the full existing drawing, so correctness
   is unchanged -- see test_models/enforce_pslg_correctness_test.py).
-  Combined with the mi_setredraw fix above, measured 8.57x speedup over
+  Combined with the mi_setredraw fix above, measured 9.4x speedup over
   30 repeated copy actions against a 1,600-block-label model; see
-  test_models/results/copy_benchmark.txt.
+  test_models/results/copy_redraw_benchmark/copy_benchmark.txt.
+* Added test_models/lua_command_regression_test.py, a regression sweep
+  over FEMM's ~450-function Lua command surface (magnetics, electro-
+  statics, heat flow, and current flow, both pre- and post-processor
+  prefixes), tracking every command call as PASS/FAIL/SKIP so a change
+  to the shared editing code used by every problem type's editor shows
+  up here. Surfaced a few pre-existing, unrelated issues along the way
+  (a savebitmap bug in all four pre-processor editors, a pyfemm-exposed
+  ci_refreshview that isn't actually a registered Lua command, a bug in
+  pyfemm's own AWG/IEC helpers) -- see test_models/README.md and
+  test_models/results/lua_command_regression/lua_command_regression.txt
+  for details. Magnetics (the editor this fork modifies) passes cleanly
+  apart from the savebitmap issue above.
 * Experimental, isolated in its own commit for easy revert: added a
   "Dark Theme" toggle to the magnetics editor's View menu
   (ID_VIEW_DARKTHEME; femm/femm.rc, femm/resource.h, femm/FemmeView.h,

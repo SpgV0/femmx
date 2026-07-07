@@ -32,8 +32,8 @@ CLUTTER_SPACING_MM = 2.0
 N_COPIES = 30  # number of separate mi_copytranslate calls per run
 COPY_STEP_MM = 0.05  # translation per copy, kept tiny so copies stay on-screen
 
-OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_DIR = os.path.join(OUTPUT_DIR, "results")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(SCRIPT_DIR, "results", "copy_redraw_benchmark")
 RESULTS_PATH = os.path.join(RESULTS_DIR, "copy_benchmark.txt")
 
 
