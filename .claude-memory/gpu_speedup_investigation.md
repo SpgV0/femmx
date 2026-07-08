@@ -1,6 +1,6 @@
 ---
 name: gpu-speedup-investigation
-description: "GPU-accelerated linear solve for FEMM's magnetostatic solver — implemented, validated, and shipped on new_features"
+description: "GPU-accelerated linear solve for FEMM's magnetostatic solver, plus a CPU/GPU load monitor window — implemented, validated, and shipped on new_features in SpgV0/femm_plus"
 metadata: 
   node_type: memory
   type: project
@@ -8,7 +8,9 @@ metadata:
 ---
 
 Investigated (2026-07-07), then implemented and shipped (2026-07-08).
-Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`).
+Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`,
+migrated to `SpgV0/femm_plus`; see [[push_branch_policy]]). Load monitor
+window shipped 2026-07-09 in commit `4a3568d`, same branch.
 
 ## What shipped
 
@@ -38,18 +40,32 @@ Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`).
   self-suppresses with 3+ argv (the `bLinehook` hidden-Lua path), and
   the normal 2-arg invocation does show it, so this needed checking
   (see toolchain section for how this surfaced a real bug).
-- Tests: `test/gpu_solver_test.py` solves a ~70K-node problem with
-  GPU off/on. The correctness check (results agree within 0.1%) always
-  runs regardless of CUDA availability (regression guard on the
-  GPUAccel plumbing itself); the speedup check only runs if CUDA DLLs
-  are detected next to `fkn.exe`.
+- Tests: `test/gpu_solver_test.py` (folder renamed from `unittests/` on
+  2026-07-08, cleanup of a leftover half-done rename finished 2026-07-09)
+  solves a ~70K-node problem with GPU off/on. The correctness check
+  (results agree within 0.1%) always runs regardless of CUDA
+  availability (regression guard on the GPUAccel plumbing itself); the
+  speedup check only runs if CUDA DLLs are detected next to `fkn.exe`.
+- `fkn/LoadMonitorDlg.h`/`.cpp` (new, 2026-07-09): a modeless dialog
+  (`Create(IDD_LOADMONITOR, NULL)`, shown before the solve thread starts
+  in `fkn.cpp`'s `InitInstance()`) that plots a rolling 60s strip chart
+  of CPU utilization (`GetSystemTimes` delta) and, when available, GPU
+  utilization (NVML, `LoadLibraryA`-loaded at run time — no link-time
+  CUDA dependency, so this dialog builds and works even in non-CUDA
+  builds). Has a "Save as PNG..." button (GDI+). Confirmed via window
+  enumeration to render alongside the existing `fkern` solver progress
+  dialog during a real solve.
 
 ## Validated results (this machine: CUDA 12.6, RTX 4060 Laptop)
 
 - Default (no-CUDA) build: byte-for-byte unaffected, all existing tests
   still pass.
-- CUDA-enabled build: **0.0000% difference** in computed field vs CPU,
-  **1.32x speedup** on a 70K-node problem.
+- CUDA-enabled build, ~70K-node problem: **0.0000% difference** in
+  computed field vs CPU, **1.32-1.35x speedup**.
+- CUDA-enabled build, ~700K-node problem (10x mesh density, ad hoc
+  script, not a committed test): **0.0000% difference**, **3.49x
+  speedup** (78.9s CPU vs 22.6s GPU) — speedup grows with problem size
+  as expected (see crossover note below).
 - Earlier standalone cupy/cuSPARSE feasibility benchmark (before writing
   any C++) found the CPU-SSOR vs GPU-Jacobi crossover around 15-20K
   unknowns, growing to 24.6x by 300K — confirms GPU accel is a real win
