@@ -6,6 +6,10 @@
 // dynamically (LoadLibrary/GetProcAddress) so this has no hard link-time
 // CUDA dependency and degrades gracefully (GPU trace just stays empty)
 // on non-NVIDIA machines or CUDA-less builds.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added OnSolveFinished(); see fkn.cpp's atexit gate, which keeps this
+// window (and the process) alive after the solve completes until the
+// user closes it, instead of exit() tearing it down instantly.
 #pragma once
 
 #include <vector>
@@ -17,10 +21,15 @@ class CLoadMonitorDlg : public CDialog {
 
   enum { IDD = IDD_LOADMONITOR };
 
+  // Called once the solve has actually finished (see fkn.cpp's atexit
+  // gate) so the window's title makes it clear why fkn.exe is still
+  // running: it's waiting for the user to close this window.
+  void OnSolveFinished();
+
   protected:
   virtual void DoDataExchange(CDataExchange* pDX);
   virtual BOOL OnInitDialog();
-  virtual void OnCancel(); // hide, don't destroy, on close (X button)
+  virtual void OnCancel(); // destroys the window (X button / Esc)
   afx_msg void OnTimer(UINT_PTR nIDEvent);
   afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
   afx_msg void OnSavePng();

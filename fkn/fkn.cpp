@@ -2,14 +2,57 @@
 //
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 // shows the CPU/GPU load monitor window (LoadMonitorDlg) alongside the
-// existing progress dialog, before the solve thread starts.
+// existing progress dialog, before the solve thread starts. Also adds
+// an atexit() gate (WaitForLoadMonitorClose) so the load monitor -- and
+// the process itself -- stays open after the solve finishes until the
+// user closes it: old_main() (main.cpp, running on the solve's worker
+// thread) calls exit() directly on every code path, which normally
+// tears down every window in the process instantly via ExitProcess()
+// with no chance to see the final chart.
 
 #include "stdafx.h"
 #include "fkn.h"
 #include "fknDlg.h"
 #include "LoadMonitorDlg.h"
 #include <process.h>
+#include <stdlib.h>
 #include "lua.h"
+
+namespace {
+
+CLoadMonitorDlg* g_pLoadMonitor = NULL;
+
+// Registered via atexit() below. Runs on whichever thread calls exit()
+// (old_main's solve worker thread, in practice). Blocks process
+// termination until the user closes the load monitor window. This
+// doesn't need to pump loadMonitor's own message queue itself -- it was
+// created on the main thread, and the main thread's still-running
+// modal loop (CFknDlg::DoModal(), which services every window owned by
+// this thread, not just the modal dialog) keeps it responsive for the
+// whole time this polls.
+//
+// Skipped entirely for scripted invocations (mi_analyze(1) and friends,
+// __argc >= 3 -- see fkn/StdAfx.cpp's MsgBox, which uses this exact same
+// check to self-suppress). femm.exe's OnMenuAnalyze() polls
+// GetExitCodeProcess() and blocks the calling Lua/pyfemm script until
+// fkn.exe exits, for *every* scripted mi_analyze() call (hidden or not);
+// every script in this repo's test suite uses mi_analyze(1), so gating
+// only on the existing __argc>=3 signal keeps all of that unattended
+// automation exiting exactly as promptly as before this feature existed.
+void WaitForLoadMonitorClose() {
+  if (__argc >= 3)
+    return;
+  if (g_pLoadMonitor == NULL)
+    return;
+  HWND hWnd = g_pLoadMonitor->GetSafeHwnd();
+  if (hWnd == NULL || !::IsWindow(hWnd))
+    return;
+  g_pLoadMonitor->OnSolveFinished();
+  while (::IsWindow(hWnd))
+    Sleep(100);
+}
+
+}  // namespace
 
 extern void lua_baselibopen(lua_State* L);
 extern void lua_iolibopen(lua_State* L);
@@ -81,6 +124,18 @@ BOOL CFknApp::InitInstance()
   CLoadMonitorDlg loadMonitor;
   loadMonitor.Create(IDD_LOADMONITOR, NULL);
   loadMonitor.ShowWindow(SW_SHOW);
+  // For hidden/scripted runs, femm.exe's CreateProcess() sets
+  // STARTF_USESHOWWINDOW/SW_SHOWMINNOACTIVE (see FemmeView.cpp's
+  // OnMenuAnalyze) so the fkern progress dialog doesn't interrupt the
+  // user. Windows applies that as a one-shot hint to the *first*
+  // top-level window this process shows, regardless of the ShowWindow()
+  // call the app actually makes -- since loadMonitor is created before
+  // dlg, it silently absorbs the hint and starts minimized/parked
+  // off-screen instead of dlg. Force it back to a normal, visible state.
+  if (loadMonitor.IsIconic())
+    loadMonitor.ShowWindow(SW_RESTORE);
+  g_pLoadMonitor = &loadMonitor;
+  atexit(WaitForLoadMonitorClose);
 
   dlg.ComLine = m_lpCmdLine;
   _beginthread(old_main, 0, (void*)&dlg);

@@ -110,10 +110,17 @@ BOOL CLoadMonitorDlg::OnInitDialog() {
 }
 
 void CLoadMonitorDlg::OnCancel() {
-  // The [X] button / Esc should just hide the monitor, not tear it down
-  // mid-solve -- the owning process exits shortly after solving finishes
-  // anyway, which is what actually closes this window in the normal case.
-  ShowWindow(SW_HIDE);
+  // Modeless dialog -- DestroyWindow(), not EndDialog(). Fine to close
+  // this at any time, mid-solve or after: it's purely observational and
+  // doesn't drive the solve itself. fkn.cpp's atexit gate polls
+  // IsWindow() on this handle to decide when the process may actually
+  // exit, so destroying it here is what lets that gate release.
+  DestroyWindow();
+}
+
+void CLoadMonitorDlg::OnSolveFinished() {
+  if (::IsWindow(m_hWnd))
+    SetWindowText("CPU / GPU Load (solve finished -- close to continue)");
 }
 
 void CLoadMonitorDlg::OnDestroy() {

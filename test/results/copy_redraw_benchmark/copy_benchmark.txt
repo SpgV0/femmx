@@ -3,7 +3,7 @@ FEMM copy-function redraw benchmark
 Base model size:           1601 block labels
 Copy actions per run:      30 (separate mi_copytranslate calls)
 
-A) Baseline (redraw after every copy):      0.956 s  (31.9 ms/copy)
-B) mi_setredraw(0)/(1) around the batch:    0.054 s  (1.8 ms/copy)
+A) Baseline (redraw after every copy):      0.951 s  (31.7 ms/copy)
+B) mi_setredraw(0)/(1) around the batch:    0.062 s  (2.1 ms/copy)
 
-Speedup: 17.74x
+Speedup: 15.45x
