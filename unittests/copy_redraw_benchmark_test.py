@@ -1,6 +1,7 @@
 """
-Benchmark: repeated "copy" actions on a densely-drawn model, with vs.
-without canvas redraw suppressed via the custom mi_setredraw Lua command.
+Benchmark + regression check: repeated "copy" actions on a densely-drawn
+model, with vs. without canvas redraw suppressed via the custom
+mi_setredraw Lua command.
 
 Background: FEMM's magnetics editor redraws the *entire* drawing (every
 node/segment/arc/block label) on every single edit action, including each
@@ -10,20 +11,28 @@ for N full-canvas redraws. mi_setredraw(0)/mi_setredraw(1) (added in
 femm/femmeLua.cpp) let a script suspend that redraw around a batch of edits
 and force a single refresh at the end instead.
 
-This script builds an identical "cluttered" base model twice (many small
+This module builds an identical "cluttered" base model twice (many small
 block labels already on the canvas), then times a series of separate
 mi_copytranslate calls against it:
   A) baseline:   redraw happens after every copy (default behavior)
   B) suppressed: mi_setredraw(0) .. copies .. mi_setredraw(1)
 
+The absolute timings are informational (written to a report, not asserted
+on -- CI runners are too noisy for a tight performance SLA), but a loose
+regression guard is asserted: the suppressed run should not be dramatically
+slower than the baseline, which would indicate mi_setredraw itself broke.
+
 Requirements: pip install pyfemm pywin32; a built + COM-registered femm.exe.
 
 Usage:
-    python copy_redraw_benchmark.py
+    pytest copy_redraw_benchmark_test.py -v
+    python copy_redraw_benchmark_test.py
 """
 
 import os
 import time
+
+import pytest
 
 import femm
 
@@ -31,6 +40,10 @@ CLUTTER_GRID = 40  # CLUTTER_GRID x CLUTTER_GRID small block labels
 CLUTTER_SPACING_MM = 2.0
 N_COPIES = 30  # number of separate mi_copytranslate calls per run
 COPY_STEP_MM = 0.05  # translation per copy, kept tiny so copies stay on-screen
+
+# CI runners are noisy; only flag the suppressed run as broken if it's
+# dramatically slower than doing nothing at all, not just mildly slower.
+MAX_ACCEPTABLE_SLOWDOWN = 1.5
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, "results", "copy_redraw_benchmark")
@@ -72,7 +85,9 @@ def time_copy_run(suppress_redraw):
     return elapsed
 
 
-def main():
+@pytest.fixture(scope="module")
+def benchmark_result():
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     femm.openfemm()
     try:
         n_features = CLUTTER_GRID * CLUTTER_GRID + 1
@@ -98,13 +113,26 @@ def main():
     ]
     report = "\n".join(lines)
 
-    os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         f.write(report + "\n")
 
-    print(report)
-    print(f"\nWritten to {RESULTS_PATH}")
+    return {"baseline": t_baseline, "suppressed": t_suppressed, "speedup": speedup}
+
+
+def test_benchmark_report_was_written(benchmark_result):
+    assert os.path.exists(RESULTS_PATH)
+    assert os.path.getsize(RESULTS_PATH) > 0
+
+
+def test_suppressed_redraw_not_slower_than_baseline(benchmark_result):
+    baseline = benchmark_result["baseline"]
+    suppressed = benchmark_result["suppressed"]
+    assert suppressed <= baseline * MAX_ACCEPTABLE_SLOWDOWN, (
+        f"mi_setredraw-suppressed copy loop ({suppressed:.3f}s) is more than "
+        f"{MAX_ACCEPTABLE_SLOWDOWN}x slower than the unsuppressed baseline "
+        f"({baseline:.3f}s) -- mi_setredraw may be broken. See {RESULTS_PATH}"
+    )
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(pytest.main([__file__, "-v"]))

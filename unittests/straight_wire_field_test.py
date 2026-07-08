@@ -1,5 +1,6 @@
 """
-Demo: scripted FEMM magnetostatics model of a long straight current-carrying wire.
+Regression test: scripted FEMM magnetostatics model of a long straight
+current-carrying wire.
 
 Builds a 2D planar magnetics problem in FEMM entirely from Python (via the
 pyfemm COM interface to femm.exe), solves it, and checks the computed flux
@@ -13,11 +14,14 @@ Requirements:
     - pip install pyfemm pywin32
 
 Usage:
-    python straight_wire_field.py
+    pytest straight_wire_field_test.py -v
+    python straight_wire_field_test.py
 """
 
 import math
 import os
+
+import pytest
 
 import femm
 
@@ -28,6 +32,7 @@ DOMAIN_RADIUS_MM = 20.0
 ABC_LAYERS = 7
 CURRENT_A = 10.0
 PROBE_RADIUS_MM = 5.0
+MAX_RELATIVE_ERROR_PCT = 2.0
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "straight_wire_field")
@@ -77,7 +82,17 @@ def build_and_solve():
     femm.mi_loadsolution()
 
 
-def check_result():
+@pytest.fixture(scope="module")
+def solved_wire_field():
+    build_and_solve()
+    try:
+        yield
+    finally:
+        femm.mo_close()
+        femm.closefemm()
+
+
+def test_flux_density_matches_analytical_solution(solved_wire_field):
     bx, by = femm.mo_getb(PROBE_RADIUS_MM, 0)
     b_fem = math.hypot(bx, by)
 
@@ -86,28 +101,16 @@ def check_result():
 
     error_pct = abs(b_fem - b_analytical) / b_analytical * 100
 
-    print(f"Probe point:        r = {PROBE_RADIUS_MM} mm")
-    print(f"FEMM result:        |B| = {b_fem:.6e} T  (Bx={bx:.3e}, By={by:.3e})")
+    print(f"Probe point:         r = {PROBE_RADIUS_MM} mm")
+    print(f"FEMM result:         |B| = {b_fem:.6e} T  (Bx={bx:.3e}, By={by:.3e})")
     print(f"Analytical (Ampere): B  = {b_analytical:.6e} T")
     print(f"Relative error:      {error_pct:.2f} %")
 
-    return error_pct
-
-
-def main():
-    build_and_solve()
-    try:
-        error_pct = check_result()
-    finally:
-        femm.mo_close()
-        femm.closefemm()
-
-    if error_pct < 2.0:
-        print("PASS: FEMM result matches the analytical solution.")
-    else:
-        print("FAIL: FEMM result deviates from the analytical solution.")
-        raise SystemExit(1)
+    assert error_pct < MAX_RELATIVE_ERROR_PCT, (
+        f"FEMM result deviates {error_pct:.2f}% from the analytical solution "
+        f"(allowed: {MAX_RELATIVE_ERROR_PCT}%)"
+    )
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(pytest.main([__file__, "-v"]))

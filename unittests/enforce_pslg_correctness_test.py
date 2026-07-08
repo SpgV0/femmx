@@ -29,10 +29,16 @@ Expected result (a valid planar straight-line graph):
     and the new copied line split into 2 at the intersection.
 
 Requirements: pip install pyfemm pywin32; a built + COM-registered femm.exe.
+
+Usage:
+    pytest enforce_pslg_correctness_test.py -v
+    python enforce_pslg_correctness_test.py
 """
 
 import os
 import re
+
+import pytest
 
 import femm
 
@@ -41,13 +47,17 @@ RESULTS_DIR = os.path.join(SCRIPT_DIR, "results", "enforce_pslg_correctness_test
 RESULTS_PATH = os.path.join(RESULTS_DIR, "enforce_pslg_correctness.txt")
 MODEL_PATH = os.path.join(RESULTS_DIR, "enforce_pslg_correctness_test.fem")
 
-EXPECTED_POINTS = 6
-EXPECTED_SEGMENTS = 5
-EXPECTED_ARCS = 0
-EXPECTED_LABELS = 0
+EXPECTED_COUNTS = {
+    "NumPoints": 6,
+    "NumSegments": 5,
+    "NumArcSegments": 0,
+    "NumBlockLabels": 0,
+}
 
 
 def build_and_copy():
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    femm.openfemm()
     femm.newdocument(0)
     femm.mi_probdef(0, "millimeters", "planar", 1e-8, 1, 30)
 
@@ -74,28 +84,20 @@ def read_counts(fem_path):
     with open(fem_path, "r") as f:
         text = f.read()
     counts = {}
-    for key in ("NumPoints", "NumSegments", "NumArcSegments", "NumBlockLabels"):
+    for key in EXPECTED_COUNTS:
         m = re.search(rf"\[{key}\]\s*=\s*(\d+)", text)
         counts[key] = int(m.group(1))
     return counts
 
 
-def main():
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    femm.openfemm()
+@pytest.fixture(scope="module")
+def pslg_counts():
     try:
         build_and_copy()
     finally:
         femm.closefemm()
 
     counts = read_counts(MODEL_PATH)
-
-    checks = [
-        ("NumPoints", counts["NumPoints"], EXPECTED_POINTS),
-        ("NumSegments", counts["NumSegments"], EXPECTED_SEGMENTS),
-        ("NumArcSegments", counts["NumArcSegments"], EXPECTED_ARCS),
-        ("NumBlockLabels", counts["NumBlockLabels"], EXPECTED_LABELS),
-    ]
 
     lines = [
         "EnforcePSLG incremental-rebuild correctness test",
@@ -104,26 +106,29 @@ def main():
         "the intersection must still be detected and both lines split.",
         "",
     ]
-    all_pass = True
-    for name, actual, expected in checks:
+    for name, expected in EXPECTED_COUNTS.items():
+        actual = counts[name]
         ok = actual == expected
-        all_pass &= ok
         lines.append(f"{name}: expected {expected}, got {actual}  [{'PASS' if ok else 'FAIL'}]")
-
-    lines.append("")
-    lines.append("Overall: " + ("PASS" if all_pass else "FAIL"))
     report = "\n".join(lines)
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         f.write(report + "\n")
 
-    print(report)
-    print(f"\nWritten to {RESULTS_PATH}")
+    return counts
 
-    if not all_pass:
-        raise SystemExit(1)
+
+@pytest.mark.parametrize("key", list(EXPECTED_COUNTS))
+def test_pslg_count_after_crossing_copy(pslg_counts, key):
+    expected = EXPECTED_COUNTS[key]
+    actual = pslg_counts[key]
+    assert actual == expected, (
+        f"{key}: expected {expected} after copying a segment across a "
+        f"pre-existing one, got {actual} -- EnforcePSLG's incremental "
+        f"intersection-checking may be broken"
+    )
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(pytest.main([__file__, "-v"]))

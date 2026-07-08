@@ -17,6 +17,30 @@ jobs:
       shell: pwsh
       run: ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit
 
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: 'Install Python test dependencies'
+      shell: pwsh
+      run: python -m pip install -r ${{ github.workspace }}/unittests/requirements.txt
+
+    - name: 'Register femm.ActiveFEMM COM class'
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/register_femm_com.ps1
+
+    - name: 'Run regression tests'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/unittests/results | Out-Null
+        python -m pytest ${{ github.workspace }}/unittests --junitxml=${{ github.workspace }}/unittests/results/junit.xml -v
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: ${{ github.workspace }}/unittests/results
+
     - name: 'Build Installer'
       shell: pwsh
       run: makensis.exe ${{ github.workspace }}/script.nsi
