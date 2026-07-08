@@ -1,0 +1,2 @@
+- [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femm_mods for review
+- [GPU speedup investigation](gpu_speedup_investigation.md) — no CUDA toolkit, linked-list matrix blocks GPU port, deferred; CPU OpenMP recommended instead
