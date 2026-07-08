@@ -8,7 +8,7 @@
 // parallel and lets the whole PCG loop -- matvec, dot products, vector
 // updates, and the preconditioner -- run on the GPU without any per-
 // iteration host<->device transfer. See fkn/spars_cuda.h for the entry
-// point and unittests/gpu_solver_test.py for the correctness/benchmark
+// point and test/gpu_solver_test.py for the correctness/benchmark
 // check that motivated this trade-off (Jacobi needs more iterations than
 // SSOR, but each GPU iteration is fast enough that it still wins well
 // above roughly 15,000-20,000 unknowns).

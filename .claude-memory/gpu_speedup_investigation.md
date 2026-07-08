@@ -38,7 +38,7 @@ Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`).
   self-suppresses with 3+ argv (the `bLinehook` hidden-Lua path), and
   the normal 2-arg invocation does show it, so this needed checking
   (see toolchain section for how this surfaced a real bug).
-- Tests: `unittests/gpu_solver_test.py` solves a ~70K-node problem with
+- Tests: `test/gpu_solver_test.py` solves a ~70K-node problem with
   GPU off/on. The correctness check (results agree within 0.1%) always
   runs regardless of CUDA availability (regression guard on the
   GPUAccel plumbing itself); the speedup check only runs if CUDA DLLs

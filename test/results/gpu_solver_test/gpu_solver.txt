@@ -1,0 +1,9 @@
+GPU-accelerated solve: correctness + benchmark
+================================================
+CUDA-enabled build detected: True
+Probe point: (20, 0)
+
+CPU: |B| = 1.000462e-04 T  (time: 3.877s)
+GPU: |B| = 1.000462e-04 T  (time: 2.919s)
+Relative difference: 0.0000%
+Speedup: 1.33x
