@@ -41,9 +41,16 @@ jobs:
         name: test-results
         path: ${{ github.workspace }}/unittests/results
 
+    - name: 'Install NSIS'
+      shell: pwsh
+      run: choco install nsis -y --no-progress
+
     - name: 'Build Installer'
       shell: pwsh
-      run: makensis.exe ${{ github.workspace }}/script.nsi
+      run: |
+        $nsisDir = "${env:ProgramFiles(x86)}\NSIS"
+        if (-Not (Test-Path "$nsisDir\makensis.exe")) { $nsisDir = "$env:ProgramFiles\NSIS" }
+        & "$nsisDir\makensis.exe" ${{ github.workspace }}/script.nsi
 
     - uses: actions/upload-artifact@v4
       with:
