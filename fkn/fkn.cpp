@@ -1,9 +1,13 @@
 // fkn.cpp : Defines the class behaviors for the application.
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// shows the CPU/GPU load monitor window (LoadMonitorDlg) alongside the
+// existing progress dialog, before the solve thread starts.
 
 #include "stdafx.h"
 #include "fkn.h"
 #include "fknDlg.h"
+#include "LoadMonitorDlg.h"
 #include <process.h>
 #include "lua.h"
 
@@ -70,6 +74,13 @@ BOOL CFknApp::InitInstance()
   lua_strlibopen(lua);
   lua_mathlibopen(lua);
   lua_iolibopen(lua);
+
+  // Modeless and unowned (NULL parent) so it isn't disabled by dlg's
+  // modal loop below; it just samples system-wide CPU/GPU load on its
+  // own timer and isn't otherwise coupled to the solve thread.
+  CLoadMonitorDlg loadMonitor;
+  loadMonitor.Create(IDD_LOADMONITOR, NULL);
+  loadMonitor.ShowWindow(SW_SHOW);
 
   dlg.ComLine = m_lpCmdLine;
   _beginthread(old_main, 0, (void*)&dlg);

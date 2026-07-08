@@ -13,6 +13,7 @@ set(fkn_SOURCES
   fkn.h
   fknDlg.h
   fullmatrix.h
+  LoadMonitorDlg.h
   #lua.h
   mesh.h
   resource.h
@@ -26,6 +27,7 @@ set(fkn_SOURCES
   fkn.cpp
   fknDlg.cpp
   fullmatrix.cpp
+  LoadMonitorDlg.cpp
   main.cpp
   matprop.cpp
   prob1big.cpp
@@ -37,6 +39,13 @@ set(fkn_SOURCES
   #tmp_prob1big.cpp
   fkn.rc
 )
+
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# added LoadMonitorDlg.h/.cpp (CPU/GPU load monitor window shown while
+# solving). Links gdiplus.lib via #pragma comment in LoadMonitorDlg.cpp
+# (standard Windows SDK library, no extra CMake wiring needed); NVML is
+# loaded dynamically at run time, not linked, so this doesn't require
+# ENABLE_CUDA_SOLVER or the CUDA Toolkit to build.
 
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
 # optional CUDA-accelerated linear solve (spars_cuda.cu/.h). Off by
@@ -99,7 +108,7 @@ if(ENABLE_CUDA_SOLVER)
   # also pulls in nvJitLink transitively at run time); without them next
   # to the exe (or on PATH), it fails to even start -- silently, with no
   # error message of its own, since the OS loader rejects it before
-  # main() runs. Bundling them here means a built femm_mods doesn't require
+  # main() runs. Bundling them here means a built femm_plus doesn't require
   # end users to have the CUDA Toolkit's bin dir on their system PATH.
   file(GLOB FEMM_CUDA_RUNTIME_DLLS
     "${FEMM_CUDA_ROOT}/bin/cudart64_*.dll"

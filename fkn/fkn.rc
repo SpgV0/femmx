@@ -1,5 +1,8 @@
 //Microsoft Developer Studio generated resource script.
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added IDD_LOADMONITOR, the CPU/GPU load monitor window shown while
+// solving (see LoadMonitorDlg.h/.cpp).
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -90,6 +93,19 @@ BEGIN
     LTEXT           "",IDC_PROBSTATS,15,25,180,35
 END
 
+IDD_LOADMONITOR DIALOGEX 0, 0, 260, 170
+STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION |
+    WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "CPU / GPU Load"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL         "",IDC_LOADCHART,"Static",SS_OWNERDRAW | WS_BORDER,
+                    10,10,240,120
+    LTEXT           "",IDC_LOADLEGEND,10,135,240,10
+    PUSHBUTTON      "Save as PNG...",IDC_SAVEPNG,90,150,80,14
+END
+
 
 #ifndef _MAC
 /////////////////////////////////////////////////////////////////////////////
@@ -118,7 +134,7 @@ BEGIN
             VALUE "FileDescription", "FKN MFC Application\0"
             VALUE "FileVersion", "1, 0, 0, 1\0"
             VALUE "InternalName", "FKN\0"
-            VALUE "LegalCopyright", "Copyright © 1998\0"
+            VALUE "LegalCopyright", "Copyright ï¿½ 1998\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "FKN.EXE\0"
             VALUE "ProductName", "FKN Application\0"

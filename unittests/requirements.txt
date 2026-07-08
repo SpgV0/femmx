@@ -1,3 +1,0 @@
-pytest>=7
-pyfemm
-pywin32; sys_platform == "win32"

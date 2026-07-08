@@ -1,10 +1,11 @@
 ﻿FEMM 4.2 22Oct2023
 
-07Jul2026 (femm_mods fork)
+07Jul2026 (femm_plus fork)
 
-* Rehosted this repository as a fork (femm_mods) at
+* Rehosted this repository as a fork (originally femm_mods) at
   https://github.com/spgryparis/femm_mods, cloned from
-  https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
+  https://github.com/cenit/FEMM commit 7d9e8ed, then migrated to
+  https://github.com/SpgV0/femm_plus. See NOTICE.md for the
   license-required modification record.
 * Added test/, with Python scripts that build and solve FEMM
   models via the pyfemm COM interface: straight_wire_field.py (a
@@ -55,6 +56,33 @@
   canvas and title bar are re-themed -- menus, toolbars, and dialogs
   still use the OS's native (light) common-control rendering, since
   re-theming those would require owner-drawing every control.
+* Converted the regression scripts under test/ (renamed from
+  test_models, then unittests) into pytest-based unit tests with
+  skip-logic for machines missing prerequisites, and added a GitHub
+  Actions CI workflow (.github/workflows/ccpp.yml) that builds FEMM
+  and the NSIS installer and runs the full suite on windows-latest.
+* Added an optional CUDA-accelerated linear solve for fkn.exe's
+  magnetostatic/DC solver (fkn/spars_cuda.cu/.h): a CSR-based,
+  GPU-resident Jacobi-preconditioned conjugate gradient implementation
+  using cuSPARSE/cuBLAS, mirroring CBigLinProb::PCGSolve step for step.
+  Off by default; opt in per-problem via the "Use GPU Acceleration"
+  checkbox in the Problem Definition dialog (femm/probdlg.cpp) or the
+  mi_setgpuaccel(flag) Lua command (femm/femmeLua.cpp), persisted in the
+  .fem file's [GPUAccel] field. Falls back to the CPU solver at run
+  time if no usable GPU is found, or shows a dialog with setup
+  instructions if fkn.exe was built without CUDA support at all.
+  Building it requires -DENABLE_CUDA_SOLVER=ON and the CUDA Toolkit
+  (see fkn/CMakeLists.txt); a normal build.ps1 build is unaffected.
+  Validated correct (0.0000% relative difference from the CPU solver)
+  and faster (1.3x on a ~70k-node problem, 3.5x on a ~700k-node
+  problem) on real hardware; see test/gpu_solver_test.py.
+* Added a CPU/GPU load monitor window (fkn/LoadMonitorDlg.h/.cpp),
+  shown alongside the existing solver progress dialog whenever fkn.exe
+  is solving. Plots a rolling 60-second strip chart of CPU utilization
+  (via GetSystemTimes) and, when an NVIDIA GPU and driver are present,
+  GPU utilization (via NVML, loaded dynamically so this doesn't require
+  the CUDA Toolkit to build). Includes a "Save as PNG..." button
+  (GDI+). Builds unconditionally, independent of ENABLE_CUDA_SOLVER.
 
 22Oct2023
 
