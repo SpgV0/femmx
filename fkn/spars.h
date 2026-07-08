@@ -1,3 +1,8 @@
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added CBigLinProb::GPUAccel and PCGSolveGPU() (declared here, defined in
+// spars.cpp) for the optional CUDA-accelerated linear solve; see
+// spars_cuda.h/.cu.
+
 class CEntry {
   public:
   double x; // value stored in the entry
@@ -24,6 +29,8 @@ class CBigLinProb {
   int n; // dimensions of the matrix;
   int bdw; // Optional matrix bandwidth parameter;
   double Precision; // error tolerance for solution
+  int GPUAccel; // 1 = try the CUDA-accelerated solve (see PCGSolveGPU), falling
+                // back to the CPU path if unavailable or it fails; 0 = CPU only.
 
   // member functions
 
@@ -35,6 +42,9 @@ class CBigLinProb {
   double Get(int p, int q);
   void AddTo(double v, int p, int q);
   int PCGSolve(int flag); // flag==true if guess for V present;
+  bool PCGSolveGPU(int flag); // GPU path used by PCGSolve when GPUAccel is set;
+                               // returns false if unavailable/failed (caller
+                               // falls back to the CPU solve).
   void MultPC(double* X, double* Y);
   void MultA(double* X, double* Y);
   void SetValue(int i, double x);

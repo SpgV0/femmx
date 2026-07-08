@@ -9,6 +9,9 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
 // added lua_setredraw() to let scripts suspend/resume canvas redraw
 // around batch edit operations (e.g. mi_copytranslate/mi_copyrotate).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added GPUAccel field and lua_setgpuaccel() for the optional
+// CUDA-accelerated linear solve in fkn.exe (see fkn/spars_cuda.cu).
 #include "nosebl.h"
 
 #include "lua.h"
@@ -35,6 +38,9 @@ class CFemmeDoc : public CDocument {
   double Depth;
   int LengthUnits;
   int ACSolver;
+  int GPUAccel; // 1 = ask fkn.exe to try its optional CUDA-accelerated
+                // linear solve; 0 (default) = CPU only. No effect unless
+                // fkn.exe was built with ENABLE_CUDA_SOLVER.
   BOOL ProblemType;
   BOOL Coords;
   CString ProblemNote;
@@ -232,6 +238,7 @@ class CFemmeDoc : public CDocument {
   static int lua_saveWMF(lua_State* L);
   static int lua_updatewindow(lua_State* L);
   static int lua_setredraw(lua_State* L);
+  static int lua_setgpuaccel(lua_State* L);
   static int lua_shownames(lua_State* L);
   static int lua_showgrid(lua_State* L);
   static int lua_hidegrid(lua_State* L);

@@ -24,9 +24,9 @@ stack traceback:
   ci_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femm_mods\unittests\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
 
 --- SKIP details ---
-  create: opens a blocking modal dialog; cannot run unattended
-  prompt: opens a blocking modal dialog; cannot run unattended
   messagebox: opens a blocking modal dialog; cannot run unattended
+  prompt: opens a blocking modal dialog; cannot run unattended
+  create: opens a blocking modal dialog; cannot run unattended
   mi_moverotate2: not exposed by pyfemm
   mi_setfocus: requires an already-open document's exact window title; not attempted
   ei_moverotate2: not exposed by pyfemm
@@ -371,9 +371,9 @@ stack traceback:
   [PASS] main_restore
   [PASS] main_minimize
   [PASS] main_restore
-  [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
-  [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
   [PASS] mi_probdef
   [PASS] mi_getmaterial
   [PASS] mi_addcircprop

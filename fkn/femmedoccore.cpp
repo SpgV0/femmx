@@ -1,5 +1,8 @@
 // FemmeDocCore.cpp : implementation of the CFemmeDocCore class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added GPUAccel default + [GPUAccel] file field parsing, passed to
+// CBigLinProb::GPUAccel in main.cpp.
 
 #include <stdafx.h>
 #include <math.h>
@@ -476,6 +479,7 @@ BOOL CFemmeDocCore::OnOpenDocument()
   NumBlockProps = 0;
   NumCircProps = 0;
   ACSolver = 0;
+  GPUAccel = 0;
 
   // parse the file
 
@@ -501,6 +505,13 @@ BOOL CFemmeDocCore::OnOpenDocument()
     if (_strnicmp(q, "[acsolver]", 8) == 0) {
       v = StripKey(s);
       sscanf(v, "%i", &ACSolver);
+      q[0] = NULL;
+    }
+
+    // Whether to try the optional CUDA-accelerated linear solve
+    if (_strnicmp(q, "[gpuaccel]", 10) == 0) {
+      v = StripKey(s);
+      sscanf(v, "%i", &GPUAccel);
       q[0] = NULL;
     }
 

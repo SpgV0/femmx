@@ -4,6 +4,9 @@
 //
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
 // added ID_VIEW_DARKTHEME for the magnetics editor's dark theme toggle.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added IDC_GPUACCEL for the Problem Definition dialog's GPU-acceleration
+// checkbox.
 #define IDR_MAINFRAME 100
 #define IDR_FEMMETYPE 101
 #define IDR_BELADRAWTYPE 102
@@ -161,6 +164,7 @@
 #define IDC_LENGTH_UNITS 1024
 #define IDC_DEF_SHOWOUTWND 1025
 #define IDC_SOLVER 1025
+#define IDC_GPUACCEL 1493
 #define IDC_GRIDSIZE 1026
 #define IDC_BSMART 1026
 #define IDC_SHOW_A_RE 1027
@@ -854,7 +858,7 @@
 #define _APS_3D_CONTROLS 1
 #define _APS_NEXT_RESOURCE_VALUE 236
 #define _APS_NEXT_COMMAND_VALUE 32856
-#define _APS_NEXT_CONTROL_VALUE 1493
+#define _APS_NEXT_CONTROL_VALUE 1494
 #define _APS_NEXT_SYMED_VALUE 1663
 #endif
 #endif

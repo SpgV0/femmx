@@ -1,5 +1,9 @@
 // FemmeDoc.cpp : implementation file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added GPUAccel field (default, .fem file read/write) for the optional
+// CUDA-accelerated linear solve in fkn.exe (see fkn/spars_cuda.cu). Also
+// wired into the Problem Definition dialog (probdlg.h/.cpp).
 
 #include "stdafx.h"
 #include "femm.h"
@@ -105,6 +109,7 @@ BOOL CFemmeDoc::OnNewDocument()
   LengthUnits = d_length;
   ProblemType = d_type;
   ACSolver = d_solver;
+  GPUAccel = 0;
   Coords = d_coord;
   ProblemNote = "Add comments here.";
   PrevSoln = "";
@@ -173,6 +178,7 @@ void CFemmeDoc::OnDefineProblem()
   pDlg.m_depth = Depth;
   pDlg.lengthunits = LengthUnits;
   pDlg.solver = ACSolver;
+  pDlg.gpuaccel = GPUAccel;
   pDlg.m_prevsoln = PrevSoln;
   pDlg.prevtype = PrevType;
 
@@ -187,6 +193,7 @@ void CFemmeDoc::OnDefineProblem()
     LengthUnits = pDlg.lengthunits;
     Depth = pDlg.m_depth;
     ACSolver = pDlg.solver;
+    GPUAccel = pDlg.gpuaccel;
     PrevSoln = pDlg.m_prevsoln;
     if (PrevSoln.GetLength() == 0)
       PrevType = 0;
@@ -1719,6 +1726,13 @@ BOOL CFemmeDoc::OnOpenDocument(LPCTSTR lpszPathName)
       // 1 == newton
     }
 
+    // Whether to ask fkn.exe to try its optional CUDA-accelerated solve
+    if (_strnicmp(q, "[gpuaccel]", 10) == 0) {
+      v = StripKey(s);
+      sscanf(v, "%i", &GPUAccel);
+      q[0] = NULL;
+    }
+
     // Minimum Angle Constraint for finite element mesh
     if (_strnicmp(q, "[minangle]", 10) == 0) {
       v = StripKey(s);
@@ -2500,6 +2514,7 @@ BOOL CFemmeDoc::OnSaveDocument(LPCTSTR lpszPathName)
   }
 
   fprintf(fp, "[ACSolver]    =  %i\n", ACSolver);
+  fprintf(fp, "[GPUAccel]    =  %i\n", GPUAccel);
   fprintf(fp, "[PrevType]    =  %i\n", PrevType);
   fprintf(fp, "[PrevSoln]    =  \"%s\"\n", (const char*)PrevSoln);
   fprintf(fp, "[Comment]     =  \"%s\"\n", (const char*)s);

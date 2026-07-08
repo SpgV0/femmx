@@ -3,6 +3,9 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
 // added a "Dark Theme" item to the magnetics editor's View menu
 // (IDR_FEMMETYPE), ID_VIEW_DARKTHEME.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added a "Use GPU Acceleration" checkbox to IDD_PROBDLG (Problem
+// Definition dialog), IDC_GPUACCEL; grew the dialog by 16px to fit it.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -1278,7 +1281,7 @@ BEGIN
     EDITTEXT        IDC_EDIT1,7,7,306,14,ES_AUTOHSCROLL
 END
 
-IDD_PROBDLG DIALOGEX 0, 0, 162, 245
+IDD_PROBDLG DIALOGEX 0, 0, 162, 261
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Problem Definition"
 FONT 8, "Tahoma", 0, 0, 0x0
@@ -1290,12 +1293,12 @@ BEGIN
     EDITTEXT        IDC_PRC,70,65,79,14,ES_AUTOHSCROLL
     EDITTEXT        IDC_MINANG,70,80,79,14,ES_AUTOHSCROLL
     COMBOBOX        IDC_SOLVER,69,108,80,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    EDITTEXT        IDC_PROBNOTE,13,164,130,35,ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_WANTRETURN
-    DEFPUSHBUTTON   "OK",IDOK,47,222,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,97,222,50,14
+    EDITTEXT        IDC_PROBNOTE,13,180,130,35,ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_WANTRETURN
+    DEFPUSHBUTTON   "OK",IDOK,47,238,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,97,238,50,14
     LTEXT           "Frequency (Hz)",IDC_STATIC,10,38,55,8
     LTEXT           "Problem Type",IDC_STATIC,10,8,55,8
-    GROUPBOX        "Comment",IDC_STATIC,7,154,140,50
+    GROUPBOX        "Comment",IDC_STATIC,7,170,140,50
     LTEXT           "Length Units",IDC_STATIC,10,23,55,8
     LTEXT           "Solver Precision",IDC_STATIC,10,68,52,8
     LTEXT           "Depth",IDC_STATIC,10,52,55,8
@@ -1307,6 +1310,7 @@ BEGIN
     LTEXT           "Prev Type",IDC_STATIC,10,138,34,8
     COMBOBOX        IDC_BSMART,69,94,80,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Smart Mesh",IDC_STATIC,10,97,38,8
+    CONTROL         "Use GPU Acceleration (if available)",IDC_GPUACCEL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,155,140,10
 END
 
 IDD_EDITPREF DIALOG  0, 0, 351, 206

@@ -1,5 +1,8 @@
 // probdlg.h : header file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added gpuaccel checkbox (IDC_GPUACCEL) for the optional CUDA-accelerated
+// linear solve in fkn.exe.
 
 /////////////////////////////////////////////////////////////////////////////
 // probdlg dialog
@@ -15,6 +18,8 @@ class probdlg : public CDialog {
   int bsmart;
   int prevtype; // contains previous solution type for incremental/frozen perm problems
   int solver; // contains the solver type to be used in AC problems.
+  int gpuaccel; // 1 = ask fkn.exe to try its optional CUDA-accelerated
+                // linear solve; 0 = CPU only (default).
 
   // Dialog Data
   //{{AFX_DATA(probdlg)

@@ -1,3 +1,6 @@
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// passes Doc.GPUAccel through to CBigLinProb::GPUAccel for the linear
+// (DC/magnetostatic) solve path (see fkn/spars_cuda.cu).
 #include <stdafx.h>
 #include <stdio.h>
 #include <math.h>
@@ -98,6 +101,7 @@ void old_main(void* inptr)
     CBigLinProb L;
     L.TheView = TheView;
     L.Precision = Doc.Precision;
+    L.GPUAccel = Doc.GPUAccel;
     // initialize the problem, allocating the space required to solve it.
     if (L.Create(Doc.NumNodes, Doc.BandWidth) == FALSE) {
       MsgBox("couldn't allocate enough space for matrices");
