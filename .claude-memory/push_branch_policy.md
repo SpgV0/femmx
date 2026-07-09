@@ -1,6 +1,6 @@
 ---
 name: push-branch-policy
-description: "In femm_plus (formerly femm_mods), push new work to the new_features branch, not main, for later review"
+description: "In femm_plus (formerly femm_mods), commit to new_features locally but hold off pushing to origin until the user explicitly says to"
 metadata: 
   node_type: memory
   type: feedback
@@ -20,6 +20,16 @@ the `femm-4.2-22Oct2023` tag marking that exact pre-fork state).
 branch if the work is unrelated to prior new_features commits) and push
 that instead. Only push to `main` if the user explicitly asks for it in a
 given request.
+
+**Update (2026-07-09): hold pushes until told.** The user asked to keep
+committing locally on `new_features` as normal, but NOT run `git push` to
+`origin` until they explicitly say so (e.g. "push now" / "go ahead and
+push") — each push triggers the `.github/workflows/ccpp.yml` CI build,
+and they want to batch work rather than trigger a build per commit.
+**How to apply:** keep making local commits as work finishes (that's
+still expected), but stop before the `git push` step and tell the user
+what's queued locally instead of pushing automatically. Push only once
+they give explicit go-ahead in that session.
 
 **Repo note (2026-07-08):** The project was ported from
 `spgryparis/femm_mods` to `https://github.com/SpgV0/femm_plus` — this is
