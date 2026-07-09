@@ -10,6 +10,33 @@
 # whenever makensis is found, so a manual second invocation here would
 # just duplicate that (see CMakeLists.txt). Updated the final artifact
 # path to bin/FEMMX_installer.exe, its new location (see script.nsi).
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# added the win-cuda job, a CUDA-enabled build (fkn.exe built with
+# -DENABLE_CUDA_SOLVER=ON, see fkn/CMakeLists.txt) run alongside the
+# existing CPU-only win-vcpkg job. Needed build.ps1's own
+# -AdditionalBuildSetup passthrough bug fixed first (see build.ps1) --
+# that parameter was declared but silently never used.
+#
+# windows-latest runners have no NVIDIA GPU, so this job can only verify
+# the CUDA build actually compiles/links/runs, not that it's actually
+# faster: it deselects gpu_solver_test.py::test_gpu_is_faster_when_available
+# and ac_gpu_solver_test.py's equivalent (both would otherwise fail here,
+# since GPUAccel silently falls back to the CPU solve when no CUDA-capable
+# GPU is found at run time -- see fkn/spars.cpp -- so "GPU" and CPU timings
+# come out equal). The correctness tests in those same files are still
+# run and are meaningful even without a GPU present (see their docstrings).
+#
+# Pinned to CUDA 12.6 rather than the action's newer default: CUDA 13.x
+# dropped support for compute capability sm_60, one of the four
+# architectures fkn/CMakeLists.txt's FEMM_CUDA_ARCHS builds for by
+# default, which would otherwise break this build.
+#
+# `continue-on-error: true` for now since this is a new, unproven CI path
+# -- MSVC/nvcc version compatibility on windows-latest hasn't been
+# verified against a live run yet (nvcc rejects MSVC toolsets newer than
+# it was tested against; if that happens here, the fix is
+# -DFEMM_CUDA_CCBIN=<path to an older MSVC toolset>, see
+# fkn/CMakeLists.txt). Remove once a run has actually gone green.
 name: FEMMX Continuous Integration
 
 on:
@@ -60,4 +87,58 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: FEMMX-windows
+        path: ${{ github.workspace }}/bin/FEMMX_installer.exe
+
+  win-cuda:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: lukka/get-cmake@latest
+
+    - name: 'Install NSIS'
+      shell: pwsh
+      run: choco install nsis -y --no-progress
+
+    - name: 'Install CUDA Toolkit'
+      id: cuda-toolkit
+      uses: Jimver/cuda-toolkit@v0.2.35
+      with:
+        cuda: '12.6.0'
+        method: 'network'
+
+    - name: 'Build FEMM with -DENABLE_CUDA_SOLVER=ON'
+      shell: pwsh
+      run: |
+        $extra = "-DENABLE_CUDA_SOLVER=ON `"-DFEMM_CUDA_ROOT=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}`""
+        ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -AdditionalBuildSetup $extra
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: 'Install Python test dependencies'
+      shell: pwsh
+      run: python -m pip install -r ${{ github.workspace }}/test/requirements.txt
+
+    - name: 'Register femm.ActiveFEMM COM class'
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/register_femm_com.ps1
+
+    - name: 'Run GPU-build correctness tests (this runner has no GPU, so speedup-only assertions are deselected -- see the comment at the top of this file)'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
+        python -m pytest ${{ github.workspace }}/test/gpu_solver_test.py ${{ github.workspace }}/test/ac_gpu_solver_test.py -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-cuda
+        path: ${{ github.workspace }}/test/results
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: FEMMX-windows-cuda
         path: ${{ github.workspace }}/bin/FEMMX_installer.exe
