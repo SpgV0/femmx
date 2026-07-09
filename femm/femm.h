@@ -62,6 +62,7 @@ class CFemmApp : public CWinApp {
   static int CFemmApp::lua_setcurrentdirectory(lua_State* L);
   static int CFemmApp::lua_smartmesh(lua_State* L);
   static int CFemmApp::lua_makeplot(lua_State* L);
+  static int CFemmApp::lua_getsolvestats(lua_State* L);
 
   CString CFemmApp::GetExecutablePath();
   int HowManyDocs();

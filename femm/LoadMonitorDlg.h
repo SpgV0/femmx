@@ -39,6 +39,20 @@ class CLoadMonitorDlg : public CDialog {
   void MarkSolveStart(LPCTSTR label);
   void MarkSolveEnd();
 
+  // Snapshot of the most recently *completed* solve's stats, populated
+  // by MarkSolveEnd() and left untouched until the next MarkSolveStart()
+  // -- so it's safe to read any time after a solve finishes, e.g. from
+  // the get_solve_stats() Lua binding (femm.cpp) for benchmarking.
+  struct SolveStats {
+    BOOL bValid; // FALSE until the first solve has completed
+    double durationSec;
+    float cpuMax, cpuAvg;
+    BOOL bGpuAvailable;
+    float gpuMax, gpuAvg;
+    float ramMax, ramAvg;
+  };
+  const SolveStats& GetLastSolveStats() const { return m_lastSolveStats; }
+
   protected:
   virtual void DoDataExchange(CDataExchange* pDX);
   virtual BOOL OnInitDialog();
@@ -99,6 +113,8 @@ class CLoadMonitorDlg : public CDialog {
   float m_solveGpuMax, m_solveGpuSum;
   float m_solveRamMax, m_solveRamSum;
   int m_solveSampleCount;
+
+  SolveStats m_lastSolveStats;
 
   void InitCpuSampling();
   float SampleCpuPercent();

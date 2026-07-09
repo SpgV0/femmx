@@ -84,6 +84,7 @@ CLoadMonitorDlg::CLoadMonitorDlg(CWnd* pParent)
   m_solveGpuMax = m_solveGpuSum = 0.0f;
   m_solveRamMax = m_solveRamSum = 0.0f;
   m_solveSampleCount = 0;
+  m_lastSolveStats.bValid = FALSE;
 }
 
 CLoadMonitorDlg::~CLoadMonitorDlg() {
@@ -290,6 +291,16 @@ void CLoadMonitorDlg::MarkSolveEnd() {
   float cpuAvg = m_solveSampleCount > 0 ? m_solveCpuSum / m_solveSampleCount : 0.0f;
   float gpuAvg = m_solveSampleCount > 0 ? m_solveGpuSum / m_solveSampleCount : 0.0f;
   float ramAvg = m_solveSampleCount > 0 ? m_solveRamSum / m_solveSampleCount : 0.0f;
+
+  m_lastSolveStats.bValid = TRUE;
+  m_lastSolveStats.durationSec = durationSec;
+  m_lastSolveStats.cpuMax = m_solveCpuMax;
+  m_lastSolveStats.cpuAvg = cpuAvg;
+  m_lastSolveStats.bGpuAvailable = m_gpuAvailable;
+  m_lastSolveStats.gpuMax = m_solveGpuMax;
+  m_lastSolveStats.gpuAvg = gpuAvg;
+  m_lastSolveStats.ramMax = m_solveRamMax;
+  m_lastSolveStats.ramAvg = ramAvg;
 
   CTime now = CTime::GetCurrentTime();
 

@@ -5,6 +5,10 @@
 % documented mi_setgpuaccel (Problem Commands) and mi_setredraw (Editing
 % Commands), the two Lua commands added since the femm-4.2-22Oct2023
 % pre-fork baseline (see femm/femmeLua.cpp).
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% documented get_solve_stats() (Common Lua Command Set) -- reports the
+% last solve's CPU/GPU/RAM/duration stats from the Load window, for
+% benchmarking scripts (see femm/femm.cpp's lua_getsolvestats).
 
 \chapter{Lua Scripting}
 
@@ -39,6 +43,23 @@ associated with any particular problem type.
 \begin{itemize}
 
 \item {\tt clearconsole()} Clears the output window of the Lua console.
+
+\item {\tt get\_solve\_stats()} Returns CPU/GPU/RAM usage and execution
+time for the most recently completed solve (magnetics, heat flow,
+electrostatics, or current flow), as tracked by the CPU/GPU/RAM Load
+window (View menu). Intended for benchmarking scripts. Returns seven
+values, in order: {\tt exec\_time} (seconds), {\tt cpu\_max}, {\tt
+cpu\_avg}, {\tt gpu\_max}, {\tt gpu\_avg}, {\tt ram\_max}, {\tt
+ram\_avg}. All usage figures are percentages from 0 to 100. {\tt
+gpu\_max} and {\tt gpu\_avg} are {\tt -1} if no NVIDIA GPU was
+available to sample. Raises a Lua error if the Load window is
+disabled, or if no {\tt mi\_/hi\_/ei\_/ci\_analyze} has completed yet
+in this session. Example:
+\begin{verbatim}
+mi_analyze(1)
+exec_time,cpu_max,cpu_avg,gpu_max,gpu_avg,ram_max,ram_avg =
+    get_solve_stats()
+\end{verbatim}
 
 \item {\tt newdocument(doctype)} Creates a new preprocessor document
 and opens up a new preprocessor window.  Specify {\tt doctype} to
