@@ -83,6 +83,23 @@
   GPU utilization (via NVML, loaded dynamically so this doesn't require
   the CUDA Toolkit to build). Includes a "Save as PNG..." button
   (GDI+). Builds unconditionally, independent of ENABLE_CUDA_SOLVER.
+  The window now also stays open after the solve finishes (for
+  interactive/non-scripted runs only -- scripted mi_analyze() calls,
+  which femm.exe always waits on synchronously, are detected and exit
+  promptly as before) so the final chart and "Save as PNG" remain
+  usable until the user closes it.
+* Extended the CUDA-accelerated linear solve to fkn.exe's harmonic
+  (AC/eddy-current) solver (fkn/spars_cuda.cu's CudaPBCGSolve,
+  fkn/cspars.cpp's PBCGSolveGPU): the same Jacobi-preconditioner swap as
+  the DC solver above, but for CBigComplexLinProb's complex-symmetric
+  system (cuSPARSE/cuBLAS complex-valued CSR SpMV and dot products).
+  Uses the same GPUAccel opt-in (checkbox/mi_setgpuaccel/.fem field) as
+  the DC case -- one setting now covers both solvers. Profiling showed
+  the linear solve is ~85% of total solve time (assembly and meshing are
+  comparatively negligible), so this was the highest-value remaining
+  optimization target; see test/ac_gpu_solver_test.py. Validated correct
+  (0.0000% relative difference from the CPU solver) and faster (2.2-2.4x
+  on a ~40k-node eddy-current problem) on real hardware.
 
 22Oct2023
 

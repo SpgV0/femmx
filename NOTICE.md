@@ -49,3 +49,15 @@ record of modifications.
 - 2026-07-09: Repository migrated from https://github.com/spgryparis/femm_mods
   to https://github.com/SpgV0/femm_plus (renamed accordingly). No source
   files were altered as part of this change.
+- 2026-07-09: `fkn/LoadMonitorDlg.h`/`fkn/LoadMonitorDlg.cpp`/`fkn/fkn.cpp`
+  changes: the CPU/GPU load monitor window now stays open after the solve
+  finishes (interactive runs only) until the user closes it, via an
+  `atexit()` gate. See per-file modification notices.
+- 2026-07-09: Extended the optional CUDA-accelerated linear solve to
+  fkn.exe's harmonic (AC/eddy-current) solver: `fkn/spars_cuda.h`/
+  `fkn/spars_cuda.cu` (`CudaPBCGSolve`), `fkn/spars.h`/`fkn/cspars.cpp`
+  (`CBigComplexLinProb::GPUAccel` member, `PBCGSolveGPU()`), `fkn/main.cpp`
+  (field plumbing). Reuses the existing `GPUAccel` opt-in (checkbox/
+  `mi_setgpuaccel`/`.fem` field) added 2026-07-08 -- no new UI or file
+  format changes. See per-file modification notices for author/contact/
+  date/purpose.

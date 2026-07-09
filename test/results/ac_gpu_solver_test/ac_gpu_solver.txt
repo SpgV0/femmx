@@ -1,0 +1,10 @@
+AC/harmonic GPU-accelerated solve: correctness + benchmark
+============================================================
+CUDA-enabled build detected: True
+Frequency: 60.0 Hz
+Probe point: (5, 0)
+
+CPU: |B| = 5.237603e-04 T  (time: 8.734s)
+GPU: |B| = 5.237603e-04 T  (time: 3.682s)
+Relative difference: 0.0000%
+Speedup: 2.37x
