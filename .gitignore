@@ -4,6 +4,7 @@
 *.so
 *.a
 *.lib
+*.exp
 *.swp
 *.exe
 

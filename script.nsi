@@ -8,6 +8,16 @@
 ; automatically from CMake (see the root CMakeLists.txt's "installer"
 ; target) whenever makensis is found, with the working directory set to
 ; the repo root so the relative "bin\..." paths below resolve.
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+; restructured the installed layout to match FEMM 4.2's C:\femm42
+; convention: binaries now land in $INSTDIR\bin (previously flat in
+; $INSTDIR), and the Mathematica/Octave/Scilab interfaces are now
+; packaged too, at $INSTDIR\mathfemm, $INSTDIR\mfiles, $INSTDIR\scifemm
+; -- matching what mathfemm.m and octavefemm/mfiles/openfemm.m already
+; hardcode (c:\FEMMX\bin\femmx.exe). scifemm's scilink.dll is a new
+; build output (scifemm/CMakeLists.txt now builds it as a proper DLL
+; instead of an unused static lib) installed next to scifemm.sci, since
+; that's where scifemm.sci looks for it at Scilab runtime.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -46,8 +56,8 @@ Section
         ExecWait "$R0"
 
     ContinueInstall:
-    # set the installation directory as the destination for the following actions
-    SetOutPath "$INSTDIR"
+    # executables + runtime data files, mirroring FEMM 4.2's C:\femm42\bin
+    SetOutPath "$INSTDIR\bin"
     File "bin\belasolv.exe"
     File "bin\condlib.dat"
     File "bin\csolv.exe"
@@ -57,6 +67,7 @@ Section
     File "bin\heatlib.dat"
     File "bin\hsolv.exe"
     File "bin\init.lua"
+    File "bin\license.txt"
     File "bin\matlib.dat"
     File "bin\statlib.dat"
     File "bin\triangle.exe"
@@ -70,11 +81,27 @@ Section
     File /nonfatal "bin\cusparse64_*.dll"
     File /nonfatal "bin\nvJitLink_*.dll"
 
+    # Mathematica interface -- see mathfemm/usage.nb for setup instructions
+    SetOutPath "$INSTDIR\mathfemm"
+    File "mathfemm\mathfemm.m"
+    File "mathfemm\usage.nb"
+
+    # Octave interface (octavefemm/mfiles/ -> $INSTDIR\mfiles, matching
+    # FEMM 4.2's naming -- not "octavefemm")
+    SetOutPath "$INSTDIR\mfiles"
+    File "octavefemm\mfiles\*.m"
+
+    # Scilab interface. scilink.dll is /nonfatal since it's only built
+    # when scifemm isn't SKIP'd (see scifemm/CMakeLists.txt's SKIP_scifemm).
+    SetOutPath "$INSTDIR\scifemm"
+    File "scifemm\scifemm.sci"
+    File /nonfatal "scifemm\scilink.dll"
+
     # create the uninstaller and a link to it in the start menu
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     SetOutPath "$STARTMENU\Programs\${PROJECT_NAME}"
-    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\femmx.exe"
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmx.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
@@ -83,25 +110,11 @@ SectionEnd
 
 # uninstaller section start
 Section "uninstall"
-    # delete the EXEs and the DLLs
-    Delete "$INSTDIR\belasolv.exe"
-    Delete "$INSTDIR\condlib.dat"
-    Delete "$INSTDIR\csolv.exe"
-    Delete "$INSTDIR\femmx.exe"
-    Delete "$INSTDIR\femmplot.exe"
-    Delete "$INSTDIR\fkn.exe"
-    Delete "$INSTDIR\heatlib.dat"
-    Delete "$INSTDIR\hsolv.exe"
-    Delete "$INSTDIR\init.lua"
-    Delete "$INSTDIR\license.txt"
-    Delete "$INSTDIR\matlib.dat"
-    Delete "$INSTDIR\statlib.dat"
-    Delete "$INSTDIR\triangle.exe"
-    Delete "$INSTDIR\cublas64_*.dll"
-    Delete "$INSTDIR\cublasLt64_*.dll"
-    Delete "$INSTDIR\cudart64_*.dll"
-    Delete "$INSTDIR\cusparse64_*.dll"
-    Delete "$INSTDIR\nvJitLink_*.dll"
+    # delete the installed subfolders (bin, mathfemm, mfiles, scifemm)
+    RMDir /r "$INSTDIR\bin"
+    RMDir /r "$INSTDIR\mathfemm"
+    RMDir /r "$INSTDIR\mfiles"
+    RMDir /r "$INSTDIR\scifemm"
 
     # delete the uninstaller
     Delete "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
