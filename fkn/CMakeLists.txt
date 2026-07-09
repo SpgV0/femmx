@@ -60,8 +60,19 @@ if(ENABLE_CUDA_SOLVER)
   # with -- fkn (like the rest of this codebase) always builds as Debug,
   # which uses /MDd; without this, linking fails with LNK2038 CRT/iterator-
   # debug-level mismatches between spars_cuda.obj and the other objects.
+  # -allow-unsupported-compiler: nvcc hard-errors (fatal error C1189 in
+  # crt/host_config.h) if the detected MSVC toolset is newer than the CUDA
+  # Toolkit's officially-tested window (e.g. CUDA 12.6 only officially
+  # supports MSVC from VS2017-2022) -- this happens routinely in CI, where
+  # the runner image's VS version updates independently of any CUDA
+  # version pin. This project's spars_cuda.cu doesn't use anything
+  # toolset-version-specific, and a genuinely broken combination would
+  # still fail to compile (not silently miscompile), so it's safe to
+  # always skip the gate rather than needing FEMM_CUDA_CCBIN to point at
+  # a matching older toolset that may not even be installed.
   set(FEMM_NVCC_ARGS -c "${CMAKE_CURRENT_SOURCE_DIR}/spars_cuda.cu" -o "${FEMM_CUDA_OBJ}"
       -I "${FEMM_CUDA_ROOT}/include"
+      -allow-unsupported-compiler
       -Xcompiler "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")
   foreach(_arch ${FEMM_CUDA_ARCHS})
     list(APPEND FEMM_NVCC_ARGS -gencode arch=compute_${_arch},code=sm_${_arch})
