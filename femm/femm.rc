@@ -15,6 +15,9 @@
 // with the new FEMMX artwork, regenerated as a multi-resolution icon
 // (16/24/32/48/64/128/256px, up from the original's 16/32px only).
 // res/idr_femmetype.ico (the .fem document-type icon) is unchanged.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a "CPU/GPU Load Monitor" item to the magnetics editor's View
+// menu (IDR_FEMMETYPE), ID_VIEW_LOADMONITOR.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -430,6 +433,7 @@ BEGIN
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
         MENUITEM SEPARATOR
         MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
+        MENUITEM "CPU/GPU &Load Monitor",       ID_VIEW_LOADMONITOR
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"

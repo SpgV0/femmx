@@ -10,9 +10,21 @@
 // added OnSolveFinished(); see fkn.cpp's atexit gate, which keeps this
 // window (and the process) alive after the solve completes until the
 // user closes it, instead of exit() tearing it down instantly.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added the free function SetLoadMonitorVisible(), letting main.cpp
+// hide the window once the loaded problem's ShowLoadMonitor field
+// (femm/FemmeView.cpp's View-menu toggle) says not to show it. The
+// window is still always created in fkn.cpp's InitInstance() -- the
+// .fem file isn't read yet at that point -- so this just shows/hides
+// it once old_main() knows the answer.
 #pragma once
 
 #include <vector>
+
+// Defined in fkn.cpp, where the single process-wide CLoadMonitorDlg
+// instance lives. Safe to call from any thread (see fkn.cpp's
+// WaitForLoadMonitorClose for the same cross-thread CWnd call pattern).
+void SetLoadMonitorVisible(bool visible);
 
 class CLoadMonitorDlg : public CDialog {
   public:

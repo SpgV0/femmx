@@ -9,6 +9,11 @@
 // thread) calls exit() directly on every code path, which normally
 // tears down every window in the process instantly via ExitProcess()
 // with no chance to see the final chart.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added SetLoadMonitorVisible(), called from main.cpp once the loaded
+// problem's ShowLoadMonitor field is known, to honor the View-menu
+// toggle in femm/FemmeView.cpp. WaitForLoadMonitorClose() now also
+// skips its gate when the window is hidden this way.
 
 #include "stdafx.h"
 #include "fkn.h"
@@ -39,13 +44,16 @@ CLoadMonitorDlg* g_pLoadMonitor = NULL;
 // every script in this repo's test suite uses mi_analyze(1), so gating
 // only on the existing __argc>=3 signal keeps all of that unattended
 // automation exiting exactly as promptly as before this feature existed.
+// Also skipped if the window isn't visible (the user's View-menu setting
+// -- see SetLoadMonitorVisible below -- turned it off for this problem):
+// there's nothing to wait for anyone to close.
 void WaitForLoadMonitorClose() {
   if (__argc >= 3)
     return;
   if (g_pLoadMonitor == NULL)
     return;
   HWND hWnd = g_pLoadMonitor->GetSafeHwnd();
-  if (hWnd == NULL || !::IsWindow(hWnd))
+  if (hWnd == NULL || !::IsWindow(hWnd) || !g_pLoadMonitor->IsWindowVisible())
     return;
   g_pLoadMonitor->OnSolveFinished();
   while (::IsWindow(hWnd))
@@ -53,6 +61,22 @@ void WaitForLoadMonitorClose() {
 }
 
 }  // namespace
+
+// Shows or hides the process-wide load monitor window. Called from
+// main.cpp once old_main() has read the problem's ShowLoadMonitor field
+// (femm/FemmeView.cpp's View-menu toggle, persisted in the .fem file's
+// [LoadMonitor] field) -- the window is already created and briefly
+// visible by that point (see InitInstance() below), since the .fem file
+// isn't read yet when InitInstance() runs. Runs on old_main's worker
+// thread; safe for the same reason WaitForLoadMonitorClose's cross-
+// thread CWnd calls are (see its comment above).
+void SetLoadMonitorVisible(bool visible) {
+  if (g_pLoadMonitor == NULL)
+    return;
+  if (!::IsWindow(g_pLoadMonitor->GetSafeHwnd()))
+    return;
+  g_pLoadMonitor->ShowWindow(visible ? SW_SHOW : SW_HIDE);
+}
 
 extern void lua_baselibopen(lua_State* L);
 extern void lua_iolibopen(lua_State* L);

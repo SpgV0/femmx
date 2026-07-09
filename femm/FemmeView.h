@@ -9,6 +9,10 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
 // added a dark theme toggle (m_bDarkTheme, ApplyTheme, OnViewDarkTheme,
 // OnUpdateViewDarkTheme).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a View-menu toggle for fkn.exe's CPU/GPU load monitor window
+// (OnViewLoadMonitor, OnUpdateViewLoadMonitor), backed by
+// CFemmeDoc::ShowLoadMonitor.
 
 /////////////////////////////////////////////////////////////////////////////
 // CFemmeView view
@@ -170,6 +174,8 @@ class CFemmeView : public CView {
   afx_msg void OnMakeABC();
   afx_msg void OnViewDarkTheme();
   afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
+  afx_msg void OnViewLoadMonitor();
+  afx_msg void OnUpdateViewLoadMonitor(CCmdUI* pCmdUI);
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

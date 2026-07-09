@@ -3,6 +3,9 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
 // added GPUAccel default + [GPUAccel] file field parsing, passed to
 // CBigLinProb::GPUAccel in main.cpp.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added ShowLoadMonitor default + [LoadMonitor] file field parsing,
+// applied to the CPU/GPU load monitor window in fkn.cpp.
 
 #include <stdafx.h>
 #include <math.h>
@@ -480,6 +483,7 @@ BOOL CFemmeDocCore::OnOpenDocument()
   NumCircProps = 0;
   ACSolver = 0;
   GPUAccel = 0;
+  ShowLoadMonitor = 1;
 
   // parse the file
 
@@ -512,6 +516,13 @@ BOOL CFemmeDocCore::OnOpenDocument()
     if (_strnicmp(q, "[gpuaccel]", 10) == 0) {
       v = StripKey(s);
       sscanf(v, "%i", &GPUAccel);
+      q[0] = NULL;
+    }
+
+    // Whether to show the CPU/GPU load monitor window while solving
+    if (_strnicmp(q, "[loadmonitor]", 13) == 0) {
+      v = StripKey(s);
+      sscanf(v, "%i", &ShowLoadMonitor);
       q[0] = NULL;
     }
 
