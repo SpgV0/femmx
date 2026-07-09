@@ -31,12 +31,20 @@
 # architectures fkn/CMakeLists.txt's FEMM_CUDA_ARCHS builds for by
 # default, which would otherwise break this build.
 #
-# `continue-on-error: true` for now since this is a new, unproven CI path
-# -- MSVC/nvcc version compatibility on windows-latest hasn't been
-# verified against a live run yet (nvcc rejects MSVC toolsets newer than
-# it was tested against; if that happens here, the fix is
-# -DFEMM_CUDA_CCBIN=<path to an older MSVC toolset>, see
-# fkn/CMakeLists.txt). Remove once a run has actually gone green.
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# pinned this job's runner to windows-2022 instead of windows-latest.
+# windows-latest turned out to have Visual Studio 18 (2026) installed --
+# far newer than CUDA 12.6's officially supported MSVC window (2017-2022)
+# -- and this wasn't just the soft version-string gate that
+# -allow-unsupported-compiler (fkn/CMakeLists.txt) skips: nvcc's own
+# cudafe++ preprocessor crashed outright (ACCESS_VIOLATION) trying to
+# parse that MSVC's headers, a genuine binary incompatibility no flag
+# fixes. windows-2022 ships VS2022, squarely inside CUDA 12.6's tested
+# range, which sidesteps the whole problem instead of chasing forward
+# compatibility with whatever MSVC a "latest" runner happens to have.
+#
+# `continue-on-error: true` still on for now since this exact
+# runner+CUDA combination hasn't gone green in a live run yet.
 name: FEMMX Continuous Integration
 
 on:
@@ -90,7 +98,7 @@ jobs:
         path: ${{ github.workspace }}/bin/FEMMX_installer.exe
 
   win-cuda:
-    runs-on: windows-latest
+    runs-on: windows-2022
     continue-on-error: true
     steps:
     - uses: actions/checkout@v4
