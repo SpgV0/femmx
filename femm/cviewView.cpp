@@ -553,28 +553,35 @@ void CcviewView::PlotFluxDensity(CDC* pDC, int elmnum, int flag)
       lav = 0;
 
     {
-      CPen FillPen, *pOldPen;
-      CBrush FillBrush, *pOldBrush;
-      BOOL DrawIt = TRUE;
+      // Cache the (at most 20) legend-band pens/brushes instead of
+      // creating and destroying a fresh GDI pen+brush for every
+      // sub-triangle of every element on every redraw -- for a large
+      // mesh this is by far the dominant cost of a density-plot repaint,
+      // since the per-element math above is cheap and only ~20 distinct
+      // colors ever get used. Each slot is rebuilt only if the color it
+      // actually resolves to has changed (GreyContours toggled, or the
+      // legend colors themselves changed via Preferences).
+      static CPen s_pens[20];
+      static CBrush s_brushes[20];
+      static COLORREF s_cachedColor[20];
+      static BOOL s_bBuilt[20] = { FALSE };
 
-      if (GreyContours == FALSE) {
-        if (mymap[lav] == BackColor)
-          DrawIt = FALSE;
-        else {
-          FillBrush.CreateSolidBrush(mymap[lav]);
-          FillPen.CreatePen(PS_SOLID, 1, mymap[lav]);
+      COLORREF thisColor = (GreyContours == FALSE) ? mymap[lav] : greymap[lav];
+      BOOL DrawIt = (thisColor != BackColor);
+      if (DrawIt && (!s_bBuilt[lav] || s_cachedColor[lav] != thisColor)) {
+        if (s_bBuilt[lav]) {
+          s_pens[lav].DeleteObject();
+          s_brushes[lav].DeleteObject();
         }
-      } else {
-        if (greymap[lav] == BackColor)
-          DrawIt = FALSE;
-        else {
-          FillBrush.CreateSolidBrush(greymap[lav]);
-          FillPen.CreatePen(PS_SOLID, 1, greymap[lav]);
-        }
+        s_brushes[lav].CreateSolidBrush(thisColor);
+        s_pens[lav].CreatePen(PS_SOLID, 1, thisColor);
+        s_cachedColor[lav] = thisColor;
+        s_bBuilt[lav] = TRUE;
       }
+
       if (DrawIt == TRUE) {
-        pOldBrush = pDC->SelectObject(&FillBrush);
-        pOldPen = pDC->SelectObject(&FillPen);
+        CBrush* pOldBrush = pDC->SelectObject(&s_brushes[lav]);
+        CPen* pOldPen = pDC->SelectObject(&s_pens[lav]);
         ps[0].x = (long)c[i][0];
         ps[0].y = (long)c[i][1];
         ps[1].x = (long)c[j][0];
