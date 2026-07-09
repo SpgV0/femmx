@@ -1,6 +1,6 @@
 ---
 name: gpu-speedup-investigation
-description: "GPU-accelerated linear solve for FEMM's magnetostatic solver, plus a CPU/GPU load monitor window — implemented, validated, and shipped on new_features in SpgV0/femm_plus"
+description: "GPU-accelerated linear solve for FEMM's magnetostatic AND harmonic solvers, plus a CPU/GPU load monitor window — implemented, validated, and shipped on new_features in SpgV0/femm_plus"
 metadata: 
   node_type: memory
   type: project
@@ -10,7 +10,69 @@ metadata:
 Investigated (2026-07-07), then implemented and shipped (2026-07-08).
 Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`,
 migrated to `SpgV0/femm_plus`; see [[push_branch_policy]]). Load monitor
-window shipped 2026-07-09 in commit `4a3568d`, same branch.
+window shipped 2026-07-09 in commit `4a3568d`, same branch. AC/harmonic
+GPU solve (see below) shipped 2026-07-09 too, same branch.
+
+## CPU profiling that motivated the AC/harmonic extension (2026-07-09)
+
+Real phase-timing breakdown on the ~700K-node DC test model (GPU off,
+temporary instrumentation, not committed): PCGSolve 51.95s (~85%),
+LoadMesh 4.52s (~7%), Cuthill renumber 4.14s (~7%), assembly 0.39s
+(<1%). Confirms the linear solve dominates everything else by an order
+of magnitude, and that element-assembly parallelization (OpenMP,
+embarrassingly parallel per-element except for the global-matrix
+scatter step) is not worth pursuing for linear problems -- it stays
+proportionally tiny even for nonlinear problems since both assembly and
+solve repeat per Newton-Raphson iteration. This is what pointed at the
+AC/harmonic solver (100% CPU-only until this session) as the next
+target rather than assembly parallelization.
+
+## AC/harmonic (eddy-current) GPU extension
+
+`fkn/cspars.cpp`'s `PBCGSolveMod`/`PBCGSolve` (used for any
+`Doc.Frequency != 0` problem -- motors, transformers, induction
+heating, any eddy-current analysis) had zero GPU acceleration; only the
+DC/magnetostatic path did. Structurally nearly identical to the DC case
+(same SSOR-preconditioned iterative solve, same linked-list upper-
+triangle matrix storage), just complex-symmetric (A = A^T, not
+Hermitian) instead of real-symmetric.
+
+- `fkn/spars_cuda.h`/`.cu`: added `CudaPBCGSolve`, mirroring
+  `CudaPCGSolve`'s Jacobi-preconditioner-instead-of-SSOR trick, but with
+  `cuDoubleComplex` throughout. Two complex dot products needed, not
+  one: `cublasZdotu` (unconjugated, matches `CBigComplexLinProb::Dot`,
+  used for the CG recurrence) and `cublasDznrm2` (matches `nrm()` =
+  `sqrt(Re(ConjDot(x,x)))`, used only for the convergence check --
+  `PBCGSolve`'s stopping criterion is `nrm(R)/nrm(b)`, a different
+  quantity than the real case's `sqrt(res/res_o)` ratio, so this
+  couldn't just reuse the real solver's convergence logic).
+- `CComplex` (`fkn/complex.h`, `{double re, im;}`, no vtable) and
+  `cuDoubleComplex` are binary-layout-compatible -- host code
+  `reinterpret_cast`s contiguous `CComplex*` arrays (`b`, `V`) directly
+  to `cuDoubleComplex*` rather than copying.
+- `fkn/spars.h`/`fkn/cspars.cpp`: `CBigComplexLinProb::GPUAccel` +
+  `PBCGSolveGPU()`, dispatched from `PBCGSolveMod` exactly where
+  `PCGSolve` dispatches for the real case. Scoped to the non-Newton-
+  Raphson path only (`bNewton` still goes straight to CPU
+  `KludgeSolve`, an existing, rarer edge case) -- and `V` is always
+  treated as a pre-set initial guess (never zeroed), since
+  `PBCGSolveMod` always calls `PBCGSolve(2)`, never with V=0.
+- Reuses the *existing* `GPUAccel` field end-to-end (checkbox in the
+  Problem Definition dialog, `mi_setgpuaccel` Lua command, `.fem` file
+  `[GPUAccel]` field) -- it was already problem-type-agnostic, just
+  only consumed by the DC path before. One setting now covers both
+  solvers; no new UI.
+- Test: `test/ac_gpu_solver_test.py`, mirrors `gpu_solver_test.py`'s
+  shape. Model needed a genuine conductor (not just the stranded
+  excitation coil, which FEMM zeroes conductivity on -- see
+  `bIsWound` in `fkn/prob1big.cpp`) to get real `jwsigma` terms and
+  exercise complex arithmetic properly: added a passive solid copper
+  disk near the coil, not part of any circuit. Gotcha: `mo_getb()`
+  returns complex phasors for AC solutions, so the field magnitude is
+  `sqrt(|bx|^2+|by|^2)` using complex `abs()`, not `math.hypot` (which
+  rejects complex args).
+- Validated on real hardware: **0.0000% relative difference**,
+  **2.2-2.4x speedup** on a ~40K-node eddy-current problem.
 
 ## What shipped
 
