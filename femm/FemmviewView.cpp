@@ -1,9 +1,17 @@
 // femmviewView.cpp : implementation of the CFemmviewView class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added the dwmapi include/lib/fallback-define for ApplyTheme()'s dark
+// title bar switch, same as FemmeView.cpp.
 
 #include "stdafx.h"
 #include <afx.h>
 #include <afxtempl.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 #include "femm.h"
 #include "problem.h"
 #include "xyplot.h"
@@ -87,6 +95,8 @@ ON_COMMAND(ID_EDIT_COPY_AS_METAFILE, OnEditCopyAsMetafile)
 ON_COMMAND(ID_VIEW_BHCURVES, OnViewBHcurves)
 ON_COMMAND(ID_VIEW_INFO, OnViewInfo)
 ON_COMMAND(ID_VIEW_SHOWNAMES, OnViewShownames)
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 ON_COMMAND(ID_VPLOT, OnVplot)
 ON_WM_SIZE()
 //}}AFX_MSG_MAP
@@ -214,6 +224,11 @@ CFemmviewView::CFemmviewView()
   NameColor = dNameColor;
   RealVectorColor = dRealVectorColor;
   ImagVectorColor = dImagVectorColor;
+
+  m_bDarkTheme = FALSE;
+
+  for (int k = 0; k < 20; k++)
+    m_densityBuilt[k] = FALSE;
 
   BinDir = ((CFemmApp*)AfxGetApp())->GetExecutablePath();
 
@@ -725,37 +740,40 @@ void CFemmviewView::PlotFluxDensity(CDC* pDC, int elmnum, int flag)
       // since the per-element math above is cheap and only ~20 distinct
       // colors ever get used. Each slot is rebuilt only if the color it
       // actually resolves to has changed (GreyContours toggled, or the
-      // legend colors themselves changed via Preferences).
-      static CPen s_pens[20];
-      static CBrush s_brushes[20];
-      static COLORREF s_cachedColor[20];
-      static BOOL s_bBuilt[20] = { FALSE };
-
+      // legend colors themselves changed via Preferences). Promoted from
+      // this function's own statics to view members (m_density*) so
+      // OnDraw can also reach them for the batched PolyPolygon() flush
+      // below.
       COLORREF thisColor = (GreyContours == FALSE) ? mymap[lav] : greymap[lav];
       BOOL DrawIt = (thisColor != BackColor);
-      if (DrawIt && (!s_bBuilt[lav] || s_cachedColor[lav] != thisColor)) {
-        if (s_bBuilt[lav]) {
-          s_pens[lav].DeleteObject();
-          s_brushes[lav].DeleteObject();
+      if (DrawIt && (!m_densityBuilt[lav] || m_densityCachedColor[lav] != thisColor)) {
+        if (m_densityBuilt[lav]) {
+          m_densityPens[lav].DeleteObject();
+          m_densityBrushes[lav].DeleteObject();
         }
-        s_brushes[lav].CreateSolidBrush(thisColor);
-        s_pens[lav].CreatePen(PS_SOLID, 1, thisColor);
-        s_cachedColor[lav] = thisColor;
-        s_bBuilt[lav] = TRUE;
+        m_densityBrushes[lav].CreateSolidBrush(thisColor);
+        m_densityPens[lav].CreatePen(PS_SOLID, 1, thisColor);
+        m_densityCachedColor[lav] = thisColor;
+        m_densityBuilt[lav] = TRUE;
       }
 
+      // Deferred: accumulate this sub-triangle's vertices into its
+      // color band's buffer instead of drawing it immediately. OnDraw
+      // flushes each band with one PolyPolygon() call after the full
+      // element loop finishes, instead of one Polygon() call per
+      // sub-triangle here -- for a large mesh with several sub-triangles
+      // per element, that's easily millions of individual GDI calls cut
+      // down to at most 20.
       if (DrawIt == TRUE) {
-        CBrush* pOldBrush = pDC->SelectObject(&s_brushes[lav]);
-        CPen* pOldPen = pDC->SelectObject(&s_pens[lav]);
         ps[0].x = (long)c[i][0];
         ps[0].y = (long)c[i][1];
         ps[1].x = (long)c[j][0];
         ps[1].y = (long)c[j][1];
         ps[2].x = (long)c[k][0];
         ps[2].y = (long)c[k][1];
-        pDC->Polygon(ps, 3);
-        pDC->SelectObject(pOldPen);
-        pDC->SelectObject(pOldBrush);
+        m_densityBandPts[lav].push_back(ps[0]);
+        m_densityBandPts[lav].push_back(ps[1]);
+        m_densityBandPts[lav].push_back(ps[2]);
       }
     }
 
@@ -1082,6 +1100,9 @@ void CFemmviewView::OnDraw(CDC* pDC)
 
   // Draw flux densities if they are enabled...
   if (DensityPlot != 0) {
+    for (k = 0; k < 20; k++)
+      m_densityBandPts[k].clear();
+
     for (i = 0; i < pDoc->meshelem.GetSize(); i++) {
       if ((pDoc->meshelem[i].lbl == DrawSelected) || (DrawSelected == -1)) {
         rt = abs(CComplex(xss, yss) - pDoc->meshelem[i].ctr);
@@ -1089,6 +1110,19 @@ void CFemmviewView::OnDraw(CDC* pDC)
           PlotFluxDensity(pDC, i, DensityPlot);
           Pump();
         }
+      }
+    }
+
+    // Flush each color band's accumulated sub-triangles with a single
+    // PolyPolygon() call -- see the comment in PlotFluxDensity.
+    for (k = 0; k < 20; k++) {
+      if (!m_densityBandPts[k].empty() && m_densityBuilt[k]) {
+        CBrush* pOldBrush = pDC->SelectObject(&m_densityBrushes[k]);
+        CPen* pOldPen = pDC->SelectObject(&m_densityPens[k]);
+        std::vector<INT> counts(m_densityBandPts[k].size() / 3, 3);
+        pDC->PolyPolygon(m_densityBandPts[k].data(), counts.data(), (int)counts.size());
+        pDC->SelectObject(pOldPen);
+        pDC->SelectObject(pOldBrush);
       }
     }
   }
@@ -4649,6 +4683,69 @@ void CFemmviewView::OnViewShownames()
 {
   ShowNames = 1 - ShowNames;
   RedrawView();
+}
+
+// Dark theme -- mirrors CFemmeView::ApplyTheme (FemmeView.cpp) for the
+// colors both views share, plus dark equivalents for the plot-specific
+// ones (flux lines, vectors, region/mask overlays, text) that only exist
+// here.
+void CFemmviewView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+    RegionColor = RGB(120, 220, 120);
+    TextColor = RGB(230, 230, 230);
+    RealFluxLineColor = RGB(230, 230, 230);
+    ImagFluxLineColor = RGB(160, 160, 160);
+    MaskLineColor = RGB(255, 150, 80);
+    RealVectorColor = RGB(230, 230, 230);
+    ImagVectorColor = RGB(160, 160, 160);
+  } else {
+    BackColor = dBackColor;
+    LineColor = dLineColor;
+    NodeColor = dNodeColor;
+    BlockColor = dBlockColor;
+    MeshColor = dMeshColor;
+    GridColor = dGridColor;
+    NameColor = dNameColor;
+    SelColor = dSelColor;
+    RegionColor = dRegionColor;
+    TextColor = dTextColor;
+    RealFluxLineColor = dRealFluxLineColor;
+    ImagFluxLineColor = dImagFluxLineColor;
+    MaskLineColor = dMaskLineColor;
+    RealVectorColor = dRealVectorColor;
+    ImagVectorColor = dImagVectorColor;
+  }
+
+  // Best-effort: also switch the main frame's title bar between light
+  // and dark (Windows 10 1809+/11). A no-op on older systems.
+  HWND hFrame = AfxGetMainWnd() ? AfxGetMainWnd()->GetSafeHwnd() : NULL;
+  if (hFrame != NULL) {
+    BOOL useDark = bDark;
+    DwmSetWindowAttribute(hFrame, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
+  }
+
+  RedrawView();
+}
+
+void CFemmviewView::OnViewDarkTheme()
+{
+  ApplyTheme(!m_bDarkTheme);
+}
+
+void CFemmviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(m_bDarkTheme);
 }
 
 void CFemmviewView::OnVplot()

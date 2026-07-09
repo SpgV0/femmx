@@ -18,6 +18,10 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 // added a "CPU/GPU Load Monitor" item to the magnetics editor's View
 // menu (IDR_FEMMETYPE), ID_VIEW_LOADMONITOR.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a "Dark Theme" item to the results viewer's View menu
+// (IDR_FEMMVIEWTYPE, the .ans window), reusing ID_VIEW_DARKTHEME -- see
+// CFemmviewView::ApplyTheme in FemmviewView.cpp.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -550,6 +554,8 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Output Window",              ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM SEPARATOR
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN

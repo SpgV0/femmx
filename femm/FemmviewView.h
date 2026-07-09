@@ -1,5 +1,18 @@
 // femmviewView.h : interface of the CFemmviewView class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a dark theme toggle (m_bDarkTheme, ApplyTheme, OnViewDarkTheme,
+// OnUpdateViewDarkTheme), mirroring FemmeView.h/.cpp's editor-side one --
+// see ApplyTheme() in FemmviewView.cpp for the color choices.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// promoted the density plot's per-legend-band (0-19) cached pens/brushes
+// from PlotFluxDensity's function-local statics to view members
+// (m_densityPens/m_densityBrushes/m_densityCachedColor/m_densityBuilt),
+// and added m_densityBandPts to accumulate each band's sub-triangle
+// vertices for a single batched PolyPolygon() call per band in OnDraw,
+// instead of one Polygon() GDI call per sub-triangle. See PlotFluxDensity
+// and OnDraw in FemmviewView.cpp.
+#include <vector>
 /////////////////////////////////////////////////////////////////////////////
 
 class CFemmviewView : public CView {
@@ -125,6 +138,19 @@ class CFemmviewView : public CView {
   COLORREF RealVectorColor;
   COLORREF ImagVectorColor;
 
+  // Dark theme (View > Dark Theme). ID_VIEW_DARKTHEME toggles
+  // m_bDarkTheme and swaps the colors above between the light defaults
+  // and a dark palette -- see ApplyTheme() in FemmviewView.cpp.
+  BOOL m_bDarkTheme;
+  void ApplyTheme(BOOL bDark);
+
+  // Density plot GDI batching -- see PlotFluxDensity/OnDraw.
+  CPen m_densityPens[20];
+  CBrush m_densityBrushes[20];
+  COLORREF m_densityCachedColor[20];
+  BOOL m_densityBuilt[20];
+  std::vector<POINT> m_densityBandPts[20];
+
   // Operations
   public:
   void DoContours(CDC* pDC, int* p, int side, int Aflag);
@@ -210,6 +236,8 @@ class CFemmviewView : public CView {
   afx_msg void OnViewBHcurves();
   afx_msg void OnViewInfo();
   afx_msg void OnViewShownames();
+  afx_msg void OnViewDarkTheme();
+  afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
   afx_msg void OnVplot();
   afx_msg void OnSize(UINT nType, int cx, int cy);
   //}}AFX_MSG
