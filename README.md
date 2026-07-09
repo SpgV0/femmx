@@ -100,6 +100,10 @@
   optimization target; see test/ac_gpu_solver_test.py. Validated correct
   (0.0000% relative difference from the CPU solver) and faster (2.2-2.4x
   on a ~40k-node eddy-current problem) on real hardware.
+* Documented mi_setgpuaccel and mi_setredraw -- the two Lua commands
+  added since the femm-4.2-22Oct2023 pre-fork baseline -- in the
+  manual's Lua Scripting chapter (manual/magnlua.tex, Problem Commands
+  and Editing Commands sections respectively).
 
 22Oct2023
 

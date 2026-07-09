@@ -61,3 +61,7 @@ record of modifications.
   `mi_setgpuaccel`/`.fem` field) added 2026-07-08 -- no new UI or file
   format changes. See per-file modification notices for author/contact/
   date/purpose.
+- 2026-07-09: `manual/magnlua.tex`: documented `mi_setgpuaccel` and
+  `mi_setredraw`, the two Lua commands added since the
+  `femm-4.2-22Oct2023` pre-fork baseline, in the Lua Scripting chapter
+  of the manual. See per-file modification notice.

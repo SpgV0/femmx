@@ -1,5 +1,10 @@
 % ------------------------------------------------------------------------
 %  My Format for a Article
+%
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% documented mi_setgpuaccel (Problem Commands) and mi_setredraw (Editing
+% Commands), the two Lua commands added since the femm-4.2-22Oct2023
+% pre-fork baseline (see femm/femmeLua.cpp).
 
 \chapter{Lua Scripting}
 
@@ -246,6 +251,16 @@ visible window, either specify no value for {\tt flag} or specify
 \item{\tt mi\_loadsolution()} loads and displays the solution corresponding to the
 current geometry.
 
+\item{\tt mi\_setgpuaccel(flag)} Sets whether {\tt fkern} should try
+its optional CUDA-accelerated linear solve for this problem. Set {\tt
+flag} to {\tt 1} to request GPU acceleration, or {\tt 0} (the default)
+for the normal CPU solve. If {\tt fkern} was not built with CUDA
+support, or if no usable GPU is found at run time, the solve
+transparently falls back to the CPU solver. This setting is saved with
+the problem file (like the AC solver choice), and can also be set via
+the ``Use GPU Acceleration'' checkbox in the Problem Definition
+dialog.
+
 \item {\tt mi\_setfocus("documentname")} Switches the
 magnetics input file upon which Lua commands are to act. If
 more than one magnetics input file is being edited at a time,
@@ -338,6 +353,15 @@ Sets the current editmode to:
         \end{itemize}
 This command will affect all subsequent uses of the other editing
 commands, if they are used WITHOUT the {\tt editaction} parameter.
+
+\item{\tt mi\_setredraw(flag)} Suspends or resumes the canvas redraw
+while editing. Set {\tt flag} to {\tt 0} to suspend redraw before a
+batch of edit operations ({\em e.g.} many {\tt mi\_copytranslate} or
+{\tt mi\_copyrotate} calls on a densely-drawn model), and back to {\tt
+1} (the default state) afterward to resume it and force a single
+refresh showing everything that changed while it was off. Useful for
+speeding up scripts that perform many repeated copy or move operations
+on a model that already has a lot of geometry drawn.
 \end{itemize}
 
 \subsection{Zoom Commands}
