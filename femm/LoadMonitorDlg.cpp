@@ -271,20 +271,23 @@ void CLoadMonitorDlg::MarkSolveEnd() {
   float ramAvg = m_solveSampleCount > 0 ? m_solveRamSum / m_solveSampleCount : 0.0f;
 
   CTime now = CTime::GetCurrentTime();
-  CString line;
-  if (m_gpuAvailable) {
-    line.Format("%s  %s  (%.1fs)  CPU %.0f%%/%.0f%%  GPU %.0f%%/%.0f%%  RAM %.0f%%/%.0f%% (max/avg)",
-        now.Format("%H:%M:%S"), (LPCTSTR)m_solveLabel, durationSec,
-        m_solveCpuMax, cpuAvg, m_solveGpuMax, gpuAvg, m_solveRamMax, ramAvg);
-  } else {
-    line.Format("%s  %s  (%.1fs)  CPU %.0f%%/%.0f%%  RAM %.0f%%/%.0f%% (max/avg)",
-        now.Format("%H:%M:%S"), (LPCTSTR)m_solveLabel, durationSec,
-        m_solveCpuMax, cpuAvg, m_solveRamMax, ramAvg);
-  }
+
+  // One short line per stat instead of a single long one, so nothing gets
+  // clipped in the listbox regardless of the dialog's width.
+  CString lines[6];
+  int nLines = 0;
+  lines[nLines++].Format("%s  %s", now.Format("%H:%M:%S"), (LPCTSTR)m_solveLabel);
+  lines[nLines++].Format("  Time: %.1fs", durationSec);
+  lines[nLines++].Format("  CPU: %.0f%% max / %.0f%% avg", m_solveCpuMax, cpuAvg);
+  if (m_gpuAvailable)
+    lines[nLines++].Format("  GPU: %.0f%% max / %.0f%% avg", m_solveGpuMax, gpuAvg);
+  lines[nLines++].Format("  RAM: %.0f%% max / %.0f%% avg", m_solveRamMax, ramAvg);
+  lines[nLines++] = ""; // blank separator before the next (older) entry
 
   CListBox* pLog = (CListBox*)GetDlgItem(IDC_LOADLOG);
   if (pLog != NULL) {
-    pLog->InsertString(0, line); // newest on top
+    for (int i = 0; i < nLines; i++)
+      pLog->InsertString(i, lines[i]); // newest group on top, in order
     while (pLog->GetCount() > kMaxLogLines)
       pLog->DeleteString(pLog->GetCount() - 1);
   }

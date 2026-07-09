@@ -52,7 +52,7 @@ class CLoadMonitorDlg : public CDialog {
   private:
   static const int kMaxSamples = 240; // 240 * 250ms = 60s rolling window
   static const UINT kSampleIntervalMs = 250;
-  static const int kMaxLogLines = 50; // cap the stats log's memory use
+  static const int kMaxLogLines = 200; // cap the stats log's memory use -- each solve now logs several short lines instead of one long one
 
   BOOL m_bEnabled;
 
