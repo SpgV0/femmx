@@ -1,5 +1,9 @@
 // MainFrm.cpp : implementation of the CMainFrame class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// creates m_LoadMonitor (enabled by default) alongside m_LuaConsole in
+// OnCreate, and adds OnViewLoadMonitor()/OnUpdateViewLoadMonitor() --
+// see LoadMonitorDlg.h.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -19,6 +23,7 @@ static char THIS_FILE[] = __FILE__;
 
 extern int m_luaWindowStatus;
 extern CLuaConsoleDlg* LuaConsole;
+extern CLoadMonitorDlg* LoadMonitorWnd;
 extern BOOL bLinehook;
 extern HANDLE hProc;
 extern lua_State* lua;
@@ -39,6 +44,8 @@ ON_WM_CLOSE()
 ON_COMMAND(ID_PREFERENCES, OnPreferences)
 ON_COMMAND(ID_HELP_FINDER, OnHelpFinder)
 ON_COMMAND(ID_HELP_LICENSE, OnHelpLicense)
+ON_COMMAND(ID_VIEW_LOADMONITOR, OnViewLoadMonitor)
+ON_UPDATE_COMMAND_UI(ID_VIEW_LOADMONITOR, OnUpdateViewLoadMonitor)
 //}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
@@ -203,6 +210,15 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
     m_LuaConsole.ShowWindow(SW_SHOW);
   LuaConsole = &m_LuaConsole;
 
+  // Persistent CPU/GPU/RAM load monitor -- always created, enabled by
+  // default (matching the always-on-while-solving behavior this
+  // replaces). OnMenuAnalyze() and its heatflow/electrostatics/
+  // currentflow equivalents call LoadMonitorWnd->MarkSolveStart()/
+  // MarkSolveEnd() around each solve.
+  m_LoadMonitor.Create(IDD_LOADMONITOR);
+  LoadMonitorWnd = &m_LoadMonitor;
+  m_LoadMonitor.Enable(TRUE);
+
   lua_register(lua, "main_minimize", luaMinimize);
   lua_register(lua, "main_maximize", luaMaximize);
   lua_register(lua, "main_restore", luaRestore);
@@ -298,6 +314,16 @@ void CMainFrame::OnViewLuaConsole()
     m_LuaConsole.ShowWindow(SW_HIDE);
   else
     m_LuaConsole.ShowWindow(SW_SHOW);
+}
+
+void CMainFrame::OnViewLoadMonitor()
+{
+  m_LoadMonitor.Enable(!m_LoadMonitor.IsEnabled());
+}
+
+void CMainFrame::OnUpdateViewLoadMonitor(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(m_LoadMonitor.IsEnabled());
 }
 
 void CMainFrame::SetBar(int n)

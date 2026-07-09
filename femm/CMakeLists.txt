@@ -135,6 +135,7 @@ set(femm_SOURCES
   KCurve.h
   LibFolderInfo.h
   LIntDlg.h
+  LoadMonitorDlg.h
   LUA.H
   LuaConsoleDlg.h
   luaDDX.h
@@ -320,6 +321,7 @@ set(femm_SOURCES
   KCurve.cpp
   LibFolderInfo.cpp
   LIntDlg.cpp
+  LoadMonitorDlg.cpp
   LuaConsoleDlg.cpp
   luaDDX.cpp
   LuaEdit.cpp

@@ -36,6 +36,7 @@ extern int Xm, Ym;
 extern lua_State* lua;
 extern BOOL bLinehook;
 extern HANDLE hProc;
+extern CLoadMonitorDlg* LoadMonitorWnd;
 
 /////////////////////////////////////////////////////////////////////////////
 // CcdrawView
@@ -2505,6 +2506,8 @@ void CcdrawView::OnMenuAnalyze()
           0, NULL, MyPath, &StartupInfo2, &ProcessInfo2)) {
     if (bLinehook != FALSE) {
       DWORD ExitCode;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveStart("electrostatics: " + pn.Mid(pn.ReverseFind('\\') + 1));
       hProc = ProcessInfo2.hProcess;
       do {
         GetExitCodeProcess(ProcessInfo2.hProcess, &ExitCode);
@@ -2512,6 +2515,8 @@ void CcdrawView::OnMenuAnalyze()
         Sleep(1);
       } while (ExitCode == STILL_ACTIVE);
       hProc = NULL;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveEnd();
 
       if (ExitCode == 1)
         MsgBox("Material properties have not been defined for all regions");

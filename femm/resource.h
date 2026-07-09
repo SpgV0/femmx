@@ -10,6 +10,11 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 // added ID_VIEW_LOADMONITOR for the magnetics editor's View-menu toggle
 // of fkn.exe's CPU/GPU load monitor window.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added IDD_LOADMONITOR and its controls -- the load monitor moved from
+// fkn.exe into femm.exe (CMainFrame::m_LoadMonitor) so it can run
+// continuously across solves instead of being tied to one fkn.exe
+// process; see femm/LoadMonitorDlg.h.
 #define IDR_MAINFRAME 100
 #define IDR_FEMMETYPE 101
 #define IDR_BELADRAWTYPE 102
@@ -855,14 +860,20 @@
 #define ID_VIEW_DARKTHEME 32855
 #define ID_VIEW_LOADMONITOR 32856
 
+#define IDD_LOADMONITOR 238
+#define IDC_LOADCHART 1494
+#define IDC_SAVEPNG 1495
+#define IDC_LOADLEGEND 1496
+#define IDC_LOADLOG 1497
+
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_3D_CONTROLS 1
-#define _APS_NEXT_RESOURCE_VALUE 236
+#define _APS_NEXT_RESOURCE_VALUE 239
 #define _APS_NEXT_COMMAND_VALUE 32857
-#define _APS_NEXT_CONTROL_VALUE 1494
+#define _APS_NEXT_CONTROL_VALUE 1498
 #define _APS_NEXT_SYMED_VALUE 1663
 #endif
 #endif

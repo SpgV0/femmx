@@ -13,9 +13,10 @@
 // added GPUAccel field and lua_setgpuaccel() for the optional
 // CUDA-accelerated linear solve in fkn.exe (see fkn/spars_cuda.cu).
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// added ShowLoadMonitor field, toggled from the View menu
-// (ID_VIEW_LOADMONITOR, femm/FemmeView.cpp), controlling whether
-// fkn.exe shows its CPU/GPU load monitor window on the next solve.
+// added, then removed, a ShowLoadMonitor field: the load monitor moved
+// from being a per-problem, fkn.exe-hosted setting to a persistent
+// window owned by CMainFrame (see femm/LoadMonitorDlg.h), so it no
+// longer needs a .fem-file field or a per-document toggle.
 #include "nosebl.h"
 
 #include "lua.h"
@@ -45,9 +46,6 @@ class CFemmeDoc : public CDocument {
   int GPUAccel; // 1 = ask fkn.exe to try its optional CUDA-accelerated
                 // linear solve; 0 (default) = CPU only. No effect unless
                 // fkn.exe was built with ENABLE_CUDA_SOLVER.
-  int ShowLoadMonitor; // 1 (default) = fkn.exe shows its CPU/GPU load
-                       // monitor window while solving; 0 = suppressed.
-                       // Toggled from the View menu (ID_VIEW_LOADMONITOR).
   BOOL ProblemType;
   BOOL Coords;
   CString ProblemNote;

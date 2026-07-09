@@ -5,8 +5,9 @@
 // CUDA-accelerated linear solve in fkn.exe (see fkn/spars_cuda.cu). Also
 // wired into the Problem Definition dialog (probdlg.h/.cpp).
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// added ShowLoadMonitor field (default, .fem file read/write) toggled
-// from the View menu (FemmeView.cpp's OnViewLoadMonitor).
+// added, then removed, a ShowLoadMonitor field/[LoadMonitor] .fem field
+// -- the load monitor is now a persistent CMainFrame-owned window, not
+// a per-problem setting; see femm/LoadMonitorDlg.h.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -113,7 +114,6 @@ BOOL CFemmeDoc::OnNewDocument()
   ProblemType = d_type;
   ACSolver = d_solver;
   GPUAccel = 0;
-  ShowLoadMonitor = 1;
   Coords = d_coord;
   ProblemNote = "Add comments here.";
   PrevSoln = "";
@@ -1737,13 +1737,6 @@ BOOL CFemmeDoc::OnOpenDocument(LPCTSTR lpszPathName)
       q[0] = NULL;
     }
 
-    // Whether fkn.exe should show its CPU/GPU load monitor window
-    if (_strnicmp(q, "[loadmonitor]", 13) == 0) {
-      v = StripKey(s);
-      sscanf(v, "%i", &ShowLoadMonitor);
-      q[0] = NULL;
-    }
-
     // Minimum Angle Constraint for finite element mesh
     if (_strnicmp(q, "[minangle]", 10) == 0) {
       v = StripKey(s);
@@ -2526,7 +2519,6 @@ BOOL CFemmeDoc::OnSaveDocument(LPCTSTR lpszPathName)
 
   fprintf(fp, "[ACSolver]    =  %i\n", ACSolver);
   fprintf(fp, "[GPUAccel]    =  %i\n", GPUAccel);
-  fprintf(fp, "[LoadMonitor] =  %i\n", ShowLoadMonitor);
   fprintf(fp, "[PrevType]    =  %i\n", PrevType);
   fprintf(fp, "[PrevSoln]    =  \"%s\"\n", (const char*)PrevSoln);
   fprintf(fp, "[Comment]     =  \"%s\"\n", (const char*)s);

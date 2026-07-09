@@ -10,9 +10,13 @@
 // added a dark theme toggle (m_bDarkTheme, ApplyTheme, OnViewDarkTheme,
 // OnUpdateViewDarkTheme).
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// added a View-menu toggle for fkn.exe's CPU/GPU load monitor window
-// (OnViewLoadMonitor, OnUpdateViewLoadMonitor), backed by
-// CFemmeDoc::ShowLoadMonitor.
+// added mi_analyze() markers (MarkSolveStart/MarkSolveEnd) around the
+// fkn.exe wait loop in OnMenuAnalyze(), for CMainFrame's persistent
+// load monitor (see LoadMonitorDlg.h). The View-menu toggle itself
+// (ID_VIEW_LOADMONITOR) now lives on CMainFrame, not here -- the
+// monitor moved from being a per-document, fkn.exe-hosted window to a
+// single persistent one, so a per-view command handler no longer made
+// sense; MFC's normal view->frame command routing still gets it there.
 
 /////////////////////////////////////////////////////////////////////////////
 // CFemmeView view
@@ -174,8 +178,6 @@ class CFemmeView : public CView {
   afx_msg void OnMakeABC();
   afx_msg void OnViewDarkTheme();
   afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
-  afx_msg void OnViewLoadMonitor();
-  afx_msg void OnUpdateViewLoadMonitor(CCmdUI* pCmdUI);
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

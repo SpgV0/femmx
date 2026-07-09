@@ -128,6 +128,13 @@ BOOL bLinehook;
 BOOL lua_byebye;
 CString luafiles[20];
 CLuaConsoleDlg* LuaConsole = NULL;
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09: the
+// persistent CPU/GPU/RAM load monitor window, owned by CMainFrame (see
+// LoadMonitorDlg.h); set once in CMainFrame::OnCreate, same pattern as
+// LuaConsole above. Used by OnMenuAnalyze() and its heatflow/
+// electrostatics/currentflow equivalents to bracket solves with
+// MarkSolveStart()/MarkSolveEnd().
+CLoadMonitorDlg* LoadMonitorWnd = NULL;
 int luafilepointer; // both used during the CMyCommandLineInfo parsing
 CFemmApp* pApp;
 HANDLE hProc;

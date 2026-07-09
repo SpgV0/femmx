@@ -6,9 +6,6 @@
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 // GPUAccel is now also passed through to CBigComplexLinProb::GPUAccel in
 // main.cpp for the harmonic (AC/eddy-current) solve path.
-// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// added ShowLoadMonitor, read from the saved [LoadMonitor] field and
-// applied to the CPU/GPU load monitor window in fkn.cpp.
 /////////////////////////////////////////////////////////////////////////////
 #define muo 1.2566370614359173e-6
 #define Golden 0.3819660112501051517954131656
@@ -27,7 +24,6 @@ class CFemmeDocCore {
   int LengthUnits;
   int ACSolver;
   int GPUAccel;
-  int ShowLoadMonitor;
   BOOL ProblemType;
   BOOL Coords;
   CString PrevSoln;

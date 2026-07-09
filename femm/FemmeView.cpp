@@ -8,9 +8,9 @@
 // Also added a dark theme toggle: ApplyTheme(), OnViewDarkTheme(),
 // OnUpdateViewDarkTheme() (ID_VIEW_DARKTHEME).
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// added a View-menu toggle for fkn.exe's CPU/GPU load monitor window:
-// OnViewLoadMonitor(), OnUpdateViewLoadMonitor() (ID_VIEW_LOADMONITOR),
-// backed by CFemmeDoc::ShowLoadMonitor.
+// OnMenuAnalyze() now calls CMainFrame's persistent load monitor's
+// MarkSolveStart()/MarkSolveEnd() around the fkn.exe wait loop (see
+// LoadMonitorDlg.h). The View-menu toggle itself moved to CMainFrame.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -49,6 +49,7 @@ int Xm, Ym;
 extern lua_State* lua;
 extern BOOL bLinehook;
 extern HANDLE hProc;
+extern CLoadMonitorDlg* LoadMonitorWnd;
 
 /////////////////////////////////////////////////////////////////////////////
 // CFemmeView
@@ -107,8 +108,6 @@ ON_COMMAND(ID_CREATERADIUS, OnCreateRadius)
 ON_UPDATE_COMMAND_UI(ID_EDIT_EXTERIOR, OnUpdateEditExterior)
 ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
 ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
-ON_COMMAND(ID_VIEW_LOADMONITOR, OnViewLoadMonitor)
-ON_UPDATE_COMMAND_UI(ID_VIEW_LOADMONITOR, OnUpdateViewLoadMonitor)
 //}}AFX_MSG_MAP
 // Standard printing commands
 ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
@@ -2602,6 +2601,8 @@ void CFemmeView::OnMenuAnalyze()
           0, NULL, MyPath, &StartupInfo2, &ProcessInfo2)) {
     if (bLinehook != FALSE) {
       DWORD ExitCode;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveStart("magnetics: " + pn.Mid(pn.ReverseFind('\\') + 1));
       hProc = ProcessInfo2.hProcess;
       do {
         GetExitCodeProcess(ProcessInfo2.hProcess, &ExitCode);
@@ -2609,6 +2610,8 @@ void CFemmeView::OnMenuAnalyze()
         Sleep(1);
       } while (ExitCode == STILL_ACTIVE);
       hProc = NULL;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveEnd();
 
       if (ExitCode == 1)
         MsgBox("Material properties have not been defined for all regions");
@@ -3540,18 +3543,4 @@ void CFemmeView::OnViewDarkTheme()
 void CFemmeView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
 {
   pCmdUI->SetCheck(m_bDarkTheme);
-}
-
-// Toggles whether fkn.exe shows its CPU/GPU load monitor window on the
-// next solve (CFemmeDoc::ShowLoadMonitor, persisted in the .fem file's
-// [LoadMonitor] field -- see fkn/fkn.cpp for the consuming side).
-void CFemmeView::OnViewLoadMonitor()
-{
-  CFemmeDoc* pDoc = GetDocument();
-  pDoc->ShowLoadMonitor = !pDoc->ShowLoadMonitor;
-}
-
-void CFemmeView::OnUpdateViewLoadMonitor(CCmdUI* pCmdUI)
-{
-  pCmdUI->SetCheck(GetDocument()->ShowLoadMonitor);
 }

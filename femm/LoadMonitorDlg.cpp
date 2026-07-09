@@ -3,7 +3,7 @@
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 // see LoadMonitorDlg.h for the overview.
 #include "stdafx.h"
-#include "fkn.h"
+#include "femm.h"
 #include "LoadMonitorDlg.h"
 #include <gdiplus.h>
 
@@ -19,8 +19,7 @@ namespace {
 
 // Mirrors NVML's public ABI struct (nvmlUtilization_t) without requiring
 // the CUDA Toolkit's headers at build time -- this file only ever talks
-// to nvml.dll via GetProcAddress, so it builds and runs the same whether
-// or not fkn was built with ENABLE_CUDA_SOLVER.
+// to nvml.dll via GetProcAddress.
 struct NvmlUtilization {
   unsigned int gpu;
   unsigned int memory;
@@ -67,6 +66,7 @@ END_MESSAGE_MAP()
 
 CLoadMonitorDlg::CLoadMonitorDlg(CWnd* pParent)
     : CDialog(CLoadMonitorDlg::IDD, pParent) {
+  m_bEnabled = FALSE;
   m_lastIdle = 0;
   m_lastTotal = 0;
   m_haveLastCpuSample = FALSE;
@@ -77,6 +77,13 @@ CLoadMonitorDlg::CLoadMonitorDlg(CWnd* pParent)
   m_nvmlGetHandle = NULL;
   m_nvmlGetUtil = NULL;
   m_nvmlShutdown = NULL;
+  m_totalTicks = 0;
+  m_bSolveInProgress = FALSE;
+  m_solveStartTick = 0;
+  m_solveCpuMax = m_solveCpuSum = 0.0f;
+  m_solveGpuMax = m_solveGpuSum = 0.0f;
+  m_solveRamMax = m_solveRamSum = 0.0f;
+  m_solveSampleCount = 0;
 }
 
 CLoadMonitorDlg::~CLoadMonitorDlg() {
@@ -96,36 +103,43 @@ BOOL CLoadMonitorDlg::OnInitDialog() {
 
   m_cpuHistory.reserve(kMaxSamples);
   m_gpuHistory.reserve(kMaxSamples);
+  m_ramHistory.reserve(kMaxSamples);
 
   InitCpuSampling();
   InitGpuSampling();
 
   CString legend;
-  legend.Format("CPU (blue)%s", m_gpuAvailable ? "   GPU (orange)" : "   GPU: not available");
+  legend.Format("CPU (blue)   RAM (purple)%s   |   green/red markers: solve start/end",
+      m_gpuAvailable ? "   GPU (orange)" : "   GPU: not available");
   SetDlgItemText(IDC_LOADLEGEND, legend);
 
-  SetTimer(1, kSampleIntervalMs, NULL);
-
+  // Whoever creates this dialog (CMainFrame::OnCreate) calls Enable()
+  // explicitly based on the current View-menu toggle state -- don't
+  // start sampling here unconditionally.
   return TRUE;
 }
 
 void CLoadMonitorDlg::OnCancel() {
-  // Modeless dialog -- DestroyWindow(), not EndDialog(). Fine to close
-  // this at any time, mid-solve or after: it's purely observational and
-  // doesn't drive the solve itself. fkn.cpp's atexit gate polls
-  // IsWindow() on this handle to decide when the process may actually
-  // exit, so destroying it here is what lets that gate release.
-  DestroyWindow();
-}
-
-void CLoadMonitorDlg::OnSolveFinished() {
-  if (::IsWindow(m_hWnd))
-    SetWindowText("CPU / GPU Load (solve finished -- close to continue)");
+  Enable(FALSE);
 }
 
 void CLoadMonitorDlg::OnDestroy() {
   KillTimer(1);
   CDialog::OnDestroy();
+}
+
+void CLoadMonitorDlg::Enable(BOOL bEnable) {
+  if (!::IsWindow(m_hWnd) || bEnable == m_bEnabled)
+    return;
+  m_bEnabled = bEnable;
+  if (bEnable) {
+    InitCpuSampling(); // reset the delta baseline so the first sample isn't stale
+    ShowWindow(SW_SHOW);
+    SetTimer(1, kSampleIntervalMs, NULL);
+  } else {
+    KillTimer(1);
+    ShowWindow(SW_HIDE);
+  }
 }
 
 void CLoadMonitorDlg::InitCpuSampling() {
@@ -216,17 +230,100 @@ float CLoadMonitorDlg::SampleGpuPercent() {
   return (float)util.gpu;
 }
 
+float CLoadMonitorDlg::SampleRamPercent() {
+  MEMORYSTATUSEX statex;
+  statex.dwLength = sizeof(statex);
+  if (!GlobalMemoryStatusEx(&statex))
+    return 0.0f;
+  return (float)statex.dwMemoryLoad; // already a 0-100 system-wide percentage
+}
+
+void CLoadMonitorDlg::MarkSolveStart(LPCTSTR label) {
+  if (!m_bEnabled || !::IsWindow(m_hWnd))
+    return;
+  m_bSolveInProgress = TRUE;
+  m_solveLabel = label;
+  m_solveStartTick = GetTickCount();
+  m_solveCpuMax = m_solveCpuSum = 0.0f;
+  m_solveGpuMax = m_solveGpuSum = 0.0f;
+  m_solveRamMax = m_solveRamSum = 0.0f;
+  m_solveSampleCount = 0;
+
+  Marker mk;
+  mk.tick = m_totalTicks;
+  mk.bStart = TRUE;
+  m_markers.push_back(mk);
+}
+
+void CLoadMonitorDlg::MarkSolveEnd() {
+  if (!m_bEnabled || !::IsWindow(m_hWnd) || !m_bSolveInProgress)
+    return;
+  m_bSolveInProgress = FALSE;
+
+  Marker mk;
+  mk.tick = m_totalTicks;
+  mk.bStart = FALSE;
+  m_markers.push_back(mk);
+
+  double durationSec = (GetTickCount() - m_solveStartTick) / 1000.0;
+  float cpuAvg = m_solveSampleCount > 0 ? m_solveCpuSum / m_solveSampleCount : 0.0f;
+  float gpuAvg = m_solveSampleCount > 0 ? m_solveGpuSum / m_solveSampleCount : 0.0f;
+  float ramAvg = m_solveSampleCount > 0 ? m_solveRamSum / m_solveSampleCount : 0.0f;
+
+  CTime now = CTime::GetCurrentTime();
+  CString line;
+  if (m_gpuAvailable) {
+    line.Format("%s  %s  (%.1fs)  CPU %.0f%%/%.0f%%  GPU %.0f%%/%.0f%%  RAM %.0f%%/%.0f%% (max/avg)",
+        now.Format("%H:%M:%S"), (LPCTSTR)m_solveLabel, durationSec,
+        m_solveCpuMax, cpuAvg, m_solveGpuMax, gpuAvg, m_solveRamMax, ramAvg);
+  } else {
+    line.Format("%s  %s  (%.1fs)  CPU %.0f%%/%.0f%%  RAM %.0f%%/%.0f%% (max/avg)",
+        now.Format("%H:%M:%S"), (LPCTSTR)m_solveLabel, durationSec,
+        m_solveCpuMax, cpuAvg, m_solveRamMax, ramAvg);
+  }
+
+  CListBox* pLog = (CListBox*)GetDlgItem(IDC_LOADLOG);
+  if (pLog != NULL) {
+    pLog->InsertString(0, line); // newest on top
+    while (pLog->GetCount() > kMaxLogLines)
+      pLog->DeleteString(pLog->GetCount() - 1);
+  }
+}
+
 void CLoadMonitorDlg::OnTimer(UINT_PTR nIDEvent) {
   if (nIDEvent == 1) {
     float cpu = SampleCpuPercent();
     float gpu = SampleGpuPercent();
+    float ram = SampleRamPercent();
 
     if ((int)m_cpuHistory.size() >= kMaxSamples)
       m_cpuHistory.erase(m_cpuHistory.begin());
     if ((int)m_gpuHistory.size() >= kMaxSamples)
       m_gpuHistory.erase(m_gpuHistory.begin());
+    if ((int)m_ramHistory.size() >= kMaxSamples)
+      m_ramHistory.erase(m_ramHistory.begin());
     m_cpuHistory.push_back(cpu);
     m_gpuHistory.push_back(gpu);
+    m_ramHistory.push_back(ram);
+    m_totalTicks++;
+
+    // prune markers that have scrolled out of the rolling window
+    long oldestVisible = m_totalTicks - (long)m_cpuHistory.size();
+    while (!m_markers.empty() && m_markers.front().tick < oldestVisible)
+      m_markers.erase(m_markers.begin());
+
+    if (m_bSolveInProgress) {
+      m_solveCpuSum += cpu;
+      if (cpu > m_solveCpuMax)
+        m_solveCpuMax = cpu;
+      m_solveGpuSum += gpu;
+      if (gpu > m_solveGpuMax)
+        m_solveGpuMax = gpu;
+      m_solveRamSum += ram;
+      if (ram > m_solveRamMax)
+        m_solveRamMax = ram;
+      m_solveSampleCount++;
+    }
 
     CWnd* pChart = GetDlgItem(IDC_LOADCHART);
     if (pChart != NULL)
@@ -263,6 +360,22 @@ void CLoadMonitorDlg::DrawChart(CDC* pDC, const CRect& rect) {
   }
   pDC->SelectObject(pOldPen);
 
+  // Solve start/end markers, drawn before the trace lines so the traces
+  // stay legible on top.
+  long oldestVisible = m_totalTicks - (long)m_cpuHistory.size();
+  for (size_t i = 0; i < m_markers.size(); i++) {
+    const Marker& mk = m_markers[i];
+    if (mk.tick < oldestVisible)
+      continue;
+    long relPos = mk.tick - oldestVisible;
+    int x = rect.left + (int)((rect.Width() - 1) * ((double)relPos / (kMaxSamples - 1)));
+    CPen markerPen(PS_SOLID, 1, mk.bStart ? RGB(0, 150, 0) : RGB(200, 0, 0));
+    CPen* pOldMarker = pDC->SelectObject(&markerPen);
+    pDC->MoveTo(x, rect.top);
+    pDC->LineTo(x, rect.bottom);
+    pDC->SelectObject(pOldMarker);
+  }
+
   auto drawSeries = [&](const std::vector<float>& hist, COLORREF color) {
     if (hist.size() < 2)
       return;
@@ -283,6 +396,7 @@ void CLoadMonitorDlg::DrawChart(CDC* pDC, const CRect& rect) {
   drawSeries(m_cpuHistory, RGB(30, 90, 220));
   if (m_gpuAvailable)
     drawSeries(m_gpuHistory, RGB(230, 120, 20));
+  drawSeries(m_ramHistory, RGB(150, 60, 200));
 
   CPen borderPen(PS_SOLID, 1, RGB(120, 120, 120));
   pOldPen = pDC->SelectObject(&borderPen);
@@ -342,7 +456,7 @@ void CLoadMonitorDlg::OnSavePng() {
   pChart->GetClientRect(&rect);
 
   if (SaveChartAsPng(rect, dlg.GetPathName()))
-    MessageBox("Chart saved.", "CPU / GPU Load", MB_OK | MB_ICONINFORMATION);
+    MessageBox("Chart saved.", "CPU / GPU / RAM Load", MB_OK | MB_ICONINFORMATION);
   else
-    MessageBox("Could not save the chart as PNG.", "CPU / GPU Load", MB_OK | MB_ICONERROR);
+    MessageBox("Could not save the chart as PNG.", "CPU / GPU / RAM Load", MB_OK | MB_ICONERROR);
 }

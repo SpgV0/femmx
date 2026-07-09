@@ -1,5 +1,8 @@
 // MainFrm.h : interface of the CMainFrame class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added m_LoadMonitor (the persistent CPU/GPU/RAM load monitor window)
+// and its View-menu toggle handlers -- see LoadMonitorDlg.h.
 /////////////////////////////////////////////////////////////////////////////
 
 #if !defined(AFX_MAINFRM_H__50FDBCE8_9046_4FD7_907E_2A9DAEC8F0B6__INCLUDED_)
@@ -10,6 +13,7 @@
 #endif // _MSC_VER > 1000
 
 #include "MDITabs.h"
+#include "LoadMonitorDlg.h"
 
 class CMainFrame : public CMDIFrameWnd {
   DECLARE_DYNAMIC(CMainFrame)
@@ -31,6 +35,7 @@ class CMainFrame : public CMDIFrameWnd {
   CToolBar m_wndToolBar1, m_wndToolBar2;
   CFont m_StatusBarFont;
   CLuaConsoleDlg m_LuaConsole;
+  CLoadMonitorDlg m_LoadMonitor;
 
   // Operations
   public:
@@ -75,6 +80,8 @@ class CMainFrame : public CMDIFrameWnd {
   afx_msg void OnPreferences();
   afx_msg void OnHelpFinder();
   afx_msg void OnHelpLicense();
+  afx_msg void OnViewLoadMonitor();
+  afx_msg void OnUpdateViewLoadMonitor(CCmdUI* pCmdUI);
   //}}AFX_MSG
 
   DECLARE_MESSAGE_MAP()

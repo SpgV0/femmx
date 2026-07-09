@@ -5,9 +5,6 @@
 // also passes Doc.GPUAccel through to CBigComplexLinProb::GPUAccel for the
 // harmonic (AC/eddy-current) solve path (see fkn/cspars.cpp's
 // PBCGSolveGPU and fkn/spars_cuda.cu's CudaPBCGSolve).
-// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-// applies Doc.ShowLoadMonitor to the load monitor window right after
-// the .fem file is read (see fkn/LoadMonitorDlg.h's SetLoadMonitorVisible).
 #include <stdafx.h>
 #include <stdio.h>
 #include <math.h>
@@ -19,7 +16,6 @@
 #include "spars.h"
 #include "mesh.h"
 #include "FemmeDocCore.h"
-#include "LoadMonitorDlg.h"
 
 void old_main(void* inptr)
 {
@@ -62,7 +58,6 @@ void old_main(void* inptr)
     MsgBox("problem loading .fem file");
     exit(7);
   }
-  SetLoadMonitorVisible(Doc.ShowLoadMonitor != 0);
 
   // load mesh
   if (Doc.LoadMesh() != TRUE) {
