@@ -3,6 +3,13 @@
 # femm_plus -> femmx). The femm.exe -> femmx.exe rename itself is in
 # femm/CMakeLists.txt; the "Register femm.ActiveFEMM COM class" step
 # name is unchanged since that ProgID string is unchanged.
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# moved "Install NSIS" before "Build FEMM" and removed the separate
+# "Build Installer" step -- the root CMakeLists.txt now builds the
+# installer automatically as part of build.ps1's own install step
+# whenever makensis is found, so a manual second invocation here would
+# just duplicate that (see CMakeLists.txt). Updated the final artifact
+# path to bin/FEMMX_installer.exe, its new location (see script.nsi).
 name: FEMMX Continuous Integration
 
 on:
@@ -17,6 +24,10 @@ jobs:
     - uses: actions/checkout@v4
 
     - uses: lukka/get-cmake@latest
+
+    - name: 'Install NSIS'
+      shell: pwsh
+      run: choco install nsis -y --no-progress
 
     - name: 'Build FEMM'
       shell: pwsh
@@ -46,18 +57,7 @@ jobs:
         name: test-results
         path: ${{ github.workspace }}/test/results
 
-    - name: 'Install NSIS'
-      shell: pwsh
-      run: choco install nsis -y --no-progress
-
-    - name: 'Build Installer'
-      shell: pwsh
-      run: |
-        $nsisDir = "${env:ProgramFiles(x86)}\NSIS"
-        if (-Not (Test-Path "$nsisDir\makensis.exe")) { $nsisDir = "$env:ProgramFiles\NSIS" }
-        & "$nsisDir\makensis.exe" ${{ github.workspace }}/script.nsi
-
     - uses: actions/upload-artifact@v4
       with:
         name: FEMMX-windows
-        path: ${{ github.workspace }}/FEMMX_installer.exe
+        path: ${{ github.workspace }}/bin/FEMMX_installer.exe

@@ -2,6 +2,12 @@
 ; rebranded from femm/FEMM to femmx/FEMMX (project rebrand: femm_plus ->
 ; femmx): PROJECT_NAME, the packaged femm.exe -> femmx.exe, and the
 ; start-menu shortcut.
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+; OutFile now writes into bin\ instead of the repo root, so the built
+; installer lands next to the executables it packages. Invoked
+; automatically from CMake (see the root CMakeLists.txt's "installer"
+; target) whenever makensis is found, with the working directory set to
+; the repo root so the relative "bin\..." paths below resolve.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -17,7 +23,7 @@ UninstPage uninstConfirm
 UninstPage instfiles
 
 # define name of installer
-OutFile "${PROJECT_NAME}_installer.exe"
+OutFile "bin\${PROJECT_NAME}_installer.exe"
 
 # define installation directory
 InstallDir "$APPDATA\${PROJECT_NAME}"
