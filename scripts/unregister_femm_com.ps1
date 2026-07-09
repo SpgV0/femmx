@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
 <#
 .SYNOPSIS
   Undoes register_femm_com.ps1: restores whatever femm.ActiveFEMM COM

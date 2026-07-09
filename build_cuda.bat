@@ -1,4 +1,6 @@
 @echo off
+rem Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
+rem
 rem Builds FEMMX (femmx.exe) with the CUDA-accelerated solver enabled and
 rem the NSIS installer (bin\FEMMX_installer.exe), locally.
 rem Real logic lives in build_femmx.ps1, which wraps build.ps1.

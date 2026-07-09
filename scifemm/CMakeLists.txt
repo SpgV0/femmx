@@ -1,3 +1,6 @@
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# build scifemm as a real scilink.dll instead of an unused static lib --
+# see the comment on add_library() below.
 cmake_minimum_required(VERSION 3.10)
 project(scifemm C CXX)
 

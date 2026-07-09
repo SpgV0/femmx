@@ -72,3 +72,47 @@ record of modifications.
   `mi_setredraw`, the two Lua commands added since the
   `femm-4.2-22Oct2023` pre-fork baseline, in the Lua Scripting chapter
   of the manual. See per-file modification notice.
+- 2026-07-09: Added local dev build scripts: `build_plain.bat`,
+  `build_cuda.bat`, `build_femmx.ps1` (new). Fixed `build.ps1` (folder
+  cleanup never matched the `build_win_release64_notriangle` directory
+  `-ForceTriangle32bit` creates, letting a cached `ENABLE_CUDA_SOLVER=ON`
+  leak into a later CPU-only build) and `fkn/CMakeLists.txt` (`-ccbin`
+  alone doesn't override the `INCLUDE` environment variable, so `nvcc`
+  could still resolve a too-new MSVC's STL headers; added an explicit
+  `-I` for `-ccbin`'s own toolset headers). See per-file modification
+  notices for author/contact/date/purpose.
+- 2026-07-09: Restructured the installer to match the original FEMM 4.2
+  installer's `C:\femm42` layout and bundle the Mathematica/Octave/
+  Scilab interfaces and CUDA runtime DLLs: `script.nsi`,
+  `CMakeLists.txt`, `installer/CMakeLists.txt` (new, moved the NSIS
+  install step here to fix a CMake install-ordering bug), and
+  `scifemm/CMakeLists.txt` (now builds `scilink.dll`, a real shared
+  library, instead of an unused static one). Added Octave wrappers
+  `octavefemm/mfiles/mi_setredraw.m`, `mi_setgpuaccel.m`,
+  `get_solve_stats.m` (new). See per-file modification notices.
+- 2026-07-09: The installer now self-registers the `femm.ActiveFEMM` COM
+  class on install/uninstall (`script.nsi`). `scripts/register_femm_com.ps1`
+  now snapshots any prior registration before overwriting it; new
+  `scripts/unregister_femm_com.ps1` (new) restores or removes it
+  afterwards, wired into `.github/workflows/ccpp.yml` as a cleanup step.
+  See per-file modification notices.
+- 2026-07-09: Fixed the CPU/GPU load monitor not updating during an
+  interactive (GUI, not Lua-scripted) solve: `femm/LoadMonitorDlg.h`/
+  `femm/LoadMonitorDlg.cpp` (`MarkSolveStart` now optionally watches a
+  process handle via the existing sample timer), `femm/FemmeView.cpp`,
+  `femm/hdrawView.cpp`, `femm/cdrawView.cpp`, `femm/beladrawView.cpp`
+  (call it unconditionally, not just on the Lua-scripted path). Reworded
+  the GPU-solve failure dialog to name non-convergence as a distinct
+  cause from "no GPU found": `fkn/spars.cpp`, `fkn/cspars.cpp`,
+  `fkn/spars_cuda.cu`. See per-file modification notices.
+- 2026-07-09: Added the magnetics editor's Dark Theme toggle to the
+  results/postprocessor window and batched its density-plot GDI calls:
+  `femm/FemmviewView.h`/`femm/FemmviewView.cpp` (`ApplyTheme`, and
+  `PlotFluxDensity`/`OnDraw` now accumulate each color band's
+  sub-triangles for one `PolyPolygon()` call instead of one `Polygon()`
+  call per sub-triangle), `femm/femm.rc` (View menu item). See per-file
+  modification notices.
+- 2026-07-09: `README.md` and `manual/manual.tex.in`: documented all of
+  the above, plus the preexisting Dark Theme and CPU/GPU Load Monitor
+  View-menu toggles, which had no manual coverage until now. See
+  per-file modification notice on `manual/manual.tex.in`.

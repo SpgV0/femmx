@@ -1,3 +1,5 @@
+% Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
+%
 % mi_setgpuaccel(flag): flag=1 asks fkn.exe to try its optional CUDA-
 % accelerated linear solve for this problem; it transparently falls back
 % to the normal CPU solve if fkn.exe wasn't built with CUDA support, or

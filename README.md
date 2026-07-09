@@ -116,6 +116,92 @@
   reference from this file and NOTICE.md, keeping only the original
   https://github.com/cenit/FEMM upstream reference and the current
   https://github.com/SpgV0/femmx hosting.
+* Added build_plain.bat and build_cuda.bat, zero-argument wrappers
+  around build.ps1 (via the new build_femmx.ps1) for a local CPU-only
+  or CUDA-enabled dev build. build_cuda.bat auto-detects the CUDA
+  Toolkit root (preferring 12.x over 13.x, which dropped compute
+  capability sm_60) and an nvcc-compatible MSVC toolset (-ccbin),
+  falling back to VS2022's if a newer Visual Studio is installed. Each
+  outputs to bin/plain/ or bin/cuda/ so the two builds don't clobber
+  each other. Fixed two bugs found while building this: build.ps1's
+  folder cleanup never matched build_win_release64_notriangle (the
+  directory -ForceTriangle32bit actually creates), so a cached
+  ENABLE_CUDA_SOLVER=ON could silently leak into the next CPU-only
+  build; and -ccbin alone doesn't override the INCLUDE environment
+  variable VsDevCmd.bat sets for the newest installed Visual Studio, so
+  nvcc kept resolving MSVC STL headers new enough to require CUDA 13.2+
+  even with an older -ccbin (fkn/CMakeLists.txt now adds an explicit
+  -I for -ccbin's own toolset headers, which take precedence).
+* Restructured the installer (script.nsi) to match the original FEMM
+  4.2 installer's C:\femm42 layout: executables now install to
+  $INSTDIR\bin (previously flat in $INSTDIR), and the Mathematica/
+  Octave/Scilab interfaces are packaged too, at $INSTDIR\mathfemm,
+  \mfiles, and \scifemm -- matching what mathfemm.m and octavefemm's
+  openfemm.m already hardcoded. Defaults to a fixed C:\FEMMX install
+  directory (was $APPDATA\FEMMX) to match. The installer now also
+  bundles the CUDA runtime DLLs for a CUDA build (previously left out,
+  so an installed CUDA build silently fell back to CPU), and
+  self-registers the femm.ActiveFEMM COM class on install/uninstall
+  (see scripts/register_femm_com.ps1's docstring for why femmx.exe's
+  own COM self-registration doesn't currently work under this CMake
+  build) -- so pyfemm/Octave/Mathematica/Scilab automation works
+  immediately after a normal install, no separate manual step needed.
+  Fixed a CMake ordering bug found while building this: the installer-
+  build step was running before the install(TARGETS...) steps that
+  copy executables into bin/, so it packaged stale leftovers rather
+  than the current build -- moved into its own subdirectory
+  (installer/CMakeLists.txt), added last, since sibling subdirectories
+  preserve add_subdirectory() call order but a directory's own
+  install() rules do not run after its subdirectories' regardless of
+  source order.
+* scifemm/CMakeLists.txt now actually builds scilink.dll (was building
+  an unused static library, even though scilink.cpp already declared
+  proper dllexports for the three functions scifemm.sci loads via
+  link(..., "scilink.dll", ...)) -- the Scilab interface is now
+  functional. Added Octave wrappers (octavefemm/mfiles/) for three
+  Lua commands that had none: mi_setredraw.m, mi_setgpuaccel.m,
+  get_solve_stats.m.
+* register_femm_com.ps1 now snapshots whatever COM registration
+  existed before it runs (to $env:TEMP, first call of a session only,
+  so switching builds mid-session doesn't lose the true original); new
+  scripts/unregister_femm_com.ps1 restores it afterwards, or removes
+  the registration entirely if there wasn't one. Wired into
+  .github/workflows/ccpp.yml as an always-run cleanup step, so running
+  the regression suite no longer leaves a permanent side effect on the
+  machine's registry.
+* Fixed the CPU/GPU load monitor not updating during an interactive
+  (GUI "Analyze" click, not scripted) solve: MarkSolveStart()/
+  MarkSolveEnd() were only ever called from each analyze entry point's
+  Lua-scripted branch, since the interactive path fires off the solver
+  process and returns immediately with no wait loop to call
+  MarkSolveEnd() from. MarkSolveStart() now optionally takes the
+  child process handle, and CLoadMonitorDlg's existing sample timer
+  polls a duplicate of it to detect completion and end the solve
+  itself (femm/LoadMonitorDlg.h/.cpp, femm/FemmeView.cpp,
+  femm/hdrawView.cpp, femm/cdrawView.cpp, femm/beladrawView.cpp).
+* Reworded the GPU-accelerated-solve failure dialog (fkn/spars.cpp,
+  fkn/cspars.cpp): it said "no usable GPU was found" even when the GPU
+  ran fine but the Jacobi preconditioner (needed for GPU parallelism,
+  weaker than the CPU solver's SSOR on some matrices, e.g. finely-
+  stranded litz windings) simply didn't converge -- now names
+  non-convergence as a distinct third cause, and fkn/spars_cuda.cu logs
+  which of the three actually happened.
+* Added the same dark theme toggle the magnetics editor has to the
+  results/post-processor window (CFemmviewView, the .ans window):
+  "Dark Theme" on its View menu (IDR_FEMMVIEWTYPE), with dark
+  equivalents for the plot-specific colors (region/text/flux-line/
+  vector) the editor doesn't have (femm/FemmviewView.h/.cpp,
+  femm/femm.rc).
+* Batched the density plot's GDI drawing (femm/FemmviewView.cpp):
+  PlotFluxDensity issued one Polygon() call per rendered sub-triangle,
+  easily millions for a fine mesh, since the per-element field math is
+  cheap and GDI call count -- not computation -- is what actually
+  dominates a large density-plot repaint. The existing per-legend-band
+  (0-19) cached pens/brushes are now view members instead of
+  function-local statics, and OnDraw accumulates each band's
+  sub-triangle vertices and flushes them with a single PolyPolygon()
+  call per band (at most 20 GDI calls per repaint) instead of drawing
+  each sub-triangle immediately.
 
 22Oct2023
 

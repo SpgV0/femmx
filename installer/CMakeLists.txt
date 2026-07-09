@@ -1,3 +1,5 @@
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
+#
 # Moved here (out of the root CMakeLists.txt) so this runs after every
 # other target's install(TARGETS...) rules. CMake orders a directory's own
 # install() rules before any add_subdirectory()-included ones, regardless

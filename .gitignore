@@ -4,6 +4,8 @@
 *.so
 *.a
 *.lib
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09: *.exp
+# is MSVC's export-file byproduct of building scifemm/scilink.dll.
 *.exp
 *.swp
 *.exe

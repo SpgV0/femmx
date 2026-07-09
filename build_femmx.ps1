@@ -1,3 +1,5 @@
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
+#
 # Shared helper behind build_plain.bat / build_cuda.bat. Not meant to be
 # run directly -- use one of those instead. Both run with zero required
 # arguments; everything below is auto-detected, with diagnostics printed

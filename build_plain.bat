@@ -1,4 +1,6 @@
 @echo off
+rem Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09.
+rem
 rem Builds FEMMX (femmx.exe) and the NSIS installer (bin\FEMMX_installer.exe)
 rem locally, CPU-only. For CUDA GPU acceleration use build_cuda.bat instead.
 rem Real logic lives in build_femmx.ps1, which wraps build.ps1.
