@@ -79,6 +79,7 @@ CLoadMonitorDlg::CLoadMonitorDlg(CWnd* pParent)
   m_nvmlShutdown = NULL;
   m_totalTicks = 0;
   m_bSolveInProgress = FALSE;
+  m_hWatchProcess = NULL;
   m_solveStartTick = 0;
   m_solveCpuMax = m_solveCpuSum = 0.0f;
   m_solveGpuMax = m_solveGpuSum = 0.0f;
@@ -140,6 +141,13 @@ void CLoadMonitorDlg::Enable(BOOL bEnable) {
   } else {
     KillTimer(1);
     ShowWindow(SW_HIDE);
+    // Disabling mid-solve would otherwise leak the duplicated handle below
+    // (its only owner, the timer that polls it, just got killed).
+    if (m_hWatchProcess != NULL) {
+      CloseHandle(m_hWatchProcess);
+      m_hWatchProcess = NULL;
+    }
+    m_bSolveInProgress = FALSE;
   }
 }
 
@@ -239,10 +247,19 @@ float CLoadMonitorDlg::SampleRamPercent() {
   return (float)statex.dwMemoryLoad; // already a 0-100 system-wide percentage
 }
 
-void CLoadMonitorDlg::MarkSolveStart(LPCTSTR label) {
+void CLoadMonitorDlg::MarkSolveStart(LPCTSTR label, HANDLE hWatchProcess) {
   if (!m_bEnabled || !::IsWindow(m_hWnd))
     return;
   m_bSolveInProgress = TRUE;
+  if (m_hWatchProcess != NULL) {
+    CloseHandle(m_hWatchProcess); // shouldn't happen (MarkSolveEnd always clears it), but don't leak if it does
+    m_hWatchProcess = NULL;
+  }
+  if (hWatchProcess != NULL) {
+    HANDLE hDup = NULL;
+    if (DuplicateHandle(GetCurrentProcess(), hWatchProcess, GetCurrentProcess(), &hDup, 0, FALSE, DUPLICATE_SAME_ACCESS))
+      m_hWatchProcess = hDup;
+  }
   m_solveLabel = label;
   m_solveStartTick = GetTickCount();
   m_solveCpuMax = m_solveCpuSum = 0.0f;
@@ -274,6 +291,10 @@ void CLoadMonitorDlg::MarkSolveEnd() {
   if (!m_bEnabled || !::IsWindow(m_hWnd) || !m_bSolveInProgress)
     return;
   m_bSolveInProgress = FALSE;
+  if (m_hWatchProcess != NULL) {
+    CloseHandle(m_hWatchProcess);
+    m_hWatchProcess = NULL;
+  }
 
   Marker mk;
   mk.tick = m_totalTicks;
@@ -327,6 +348,16 @@ void CLoadMonitorDlg::MarkSolveEnd() {
 
 void CLoadMonitorDlg::OnTimer(UINT_PTR nIDEvent) {
   if (nIDEvent == 1) {
+    // The interactive (non-Lua-scripted) solve path has no synchronous
+    // wait loop to call MarkSolveEnd() from -- it fires off the solver
+    // process and returns immediately -- so if MarkSolveStart() was given
+    // a process handle to watch, poll it here and end the solve
+    // ourselves once it exits.
+    if (m_bSolveInProgress && m_hWatchProcess != NULL &&
+        WaitForSingleObject(m_hWatchProcess, 0) == WAIT_OBJECT_0) {
+      MarkSolveEnd();
+    }
+
     // Only sample -- and thus only advance/redraw the chart -- while a
     // solve is actually running. Once it ends the chart simply stops
     // getting new points and freezes on whatever it last showed, until

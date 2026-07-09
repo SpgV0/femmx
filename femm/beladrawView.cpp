@@ -2500,10 +2500,14 @@ void CbeladrawView::OnMenuAnalyze()
   }
   if (CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
           0, NULL, MyPath, &StartupInfo2, &ProcessInfo2)) {
+    // Called unconditionally (not just for bLinehook != FALSE below):
+    // the interactive path has no wait loop here to call MarkSolveEnd()
+    // from, so it relies on MarkSolveStart's optional process handle to
+    // detect completion itself (see LoadMonitorDlg.cpp's OnTimer).
+    if (LoadMonitorWnd != NULL)
+      LoadMonitorWnd->MarkSolveStart("current flow: " + pn.Mid(pn.ReverseFind('\\') + 1), ProcessInfo2.hProcess);
     if (bLinehook != FALSE) {
       DWORD ExitCode;
-      if (LoadMonitorWnd != NULL)
-        LoadMonitorWnd->MarkSolveStart("current flow: " + pn.Mid(pn.ReverseFind('\\') + 1));
       hProc = ProcessInfo2.hProcess;
       do {
         GetExitCodeProcess(ProcessInfo2.hProcess, &ExitCode);

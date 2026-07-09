@@ -36,7 +36,17 @@ class CLoadMonitorDlg : public CDialog {
   // max/avg/RAM summary line appended to the log once it ends. Safe to
   // call even when the monitor is disabled (no-ops). `label` identifies
   // the problem, e.g. "magnetics: motor.fem".
-  void MarkSolveStart(LPCTSTR label);
+  //
+  // hWatchProcess is optional: the interactive (non-Lua-scripted) solve
+  // path fires off the solver process and returns immediately, with no
+  // synchronous wait loop to call MarkSolveEnd() from -- so if given, a
+  // duplicate of this handle (this dialog's own, independent of the
+  // caller's copy) is polled on the existing sample timer, and
+  // MarkSolveEnd() is called automatically once the process exits.
+  // Callers that already have their own synchronous wait loop (the
+  // Lua-scripted path) can omit it and call MarkSolveEnd() explicitly
+  // instead, as before.
+  void MarkSolveStart(LPCTSTR label, HANDLE hWatchProcess = NULL);
   void MarkSolveEnd();
 
   // Snapshot of the most recently *completed* solve's stats, populated
@@ -107,6 +117,7 @@ class CLoadMonitorDlg : public CDialog {
   // so they stay correct even after the chart's rolling window has
   // scrolled past the solve's start.
   BOOL m_bSolveInProgress;
+  HANDLE m_hWatchProcess; // this dialog's own duplicate; NULL if none is being watched
   CString m_solveLabel;
   DWORD m_solveStartTick;
   float m_solveCpuMax, m_solveCpuSum;
