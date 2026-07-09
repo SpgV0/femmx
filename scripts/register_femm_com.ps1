@@ -38,6 +38,18 @@
   ./scripts/register_femm_com.ps1
 .EXAMPLE
   ./scripts/register_femm_com.ps1 -FemmExePath C:\path\to\femmx.exe
+
+.NOTES
+  Before overwriting anything, this snapshots whatever LocalServer32 this
+  CLSID already pointed at (if any) to
+  $env:TEMP\femmx_com_registration_snapshot.json -- but only if that
+  snapshot file doesn't already exist, so re-running this repeatedly in
+  one session (e.g. switching between a CPU and a CUDA build while
+  testing) doesn't lose track of the true pre-session original. Run
+  scripts/unregister_femm_com.ps1 afterwards (e.g. once a regression test
+  session is done) to restore that original registration, or remove it
+  entirely if there wasn't one -- so running the test suite doesn't
+  permanently repoint femm.ActiveFEMM on the machine it runs on.
 #>
 param(
   [string]$FemmExePath = (Join-Path (Split-Path -Parent $PSScriptRoot) "bin\femmx.exe")
@@ -52,6 +64,18 @@ $FemmExePath = (Resolve-Path $FemmExePath).Path
 
 $clsid = "{0A35D5BD-DCA9-4C39-9512-1D89A1A37047}"
 $progid = "femm.ActiveFEMM"
+
+$snapshotPath = Join-Path $env:TEMP "femmx_com_registration_snapshot.json"
+if (-not (Test-Path $snapshotPath)) {
+  $localServerKey = "HKCU:\Software\Classes\CLSID\$clsid\LocalServer32"
+  if (Test-Path $localServerKey) {
+    $priorPath = (Get-Item $localServerKey).GetValue("")
+    @{ HadPriorRegistration = $true; PriorLocalServer32 = $priorPath } | ConvertTo-Json | Set-Content $snapshotPath
+  }
+  else {
+    @{ HadPriorRegistration = $false; PriorLocalServer32 = $null } | ConvertTo-Json | Set-Content $snapshotPath
+  }
+}
 
 New-Item -Path "HKCU:\Software\Classes\$progid" -Force | Out-Null
 Set-Item -Path "HKCU:\Software\Classes\$progid" -Value "Femm.ActiveFEMM Object"

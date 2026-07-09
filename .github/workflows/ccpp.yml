@@ -86,6 +86,11 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
         python -m pytest ${{ github.workspace }}/test --junitxml=${{ github.workspace }}/test/results/junit.xml -v
 
+    - name: 'Restore femm.ActiveFEMM COM registration'
+      if: always()
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/unregister_femm_com.ps1
+
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -139,6 +144,11 @@ jobs:
       run: |
         New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
         python -m pytest ${{ github.workspace }}/test/gpu_solver_test.py ${{ github.workspace }}/test/ac_gpu_solver_test.py -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
+
+    - name: 'Restore femm.ActiveFEMM COM registration'
+      if: always()
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/unregister_femm_com.ps1
 
     - uses: actions/upload-artifact@v4
       if: always()

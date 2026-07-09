@@ -25,6 +25,17 @@ Unicode True
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
+; femm.ActiveFEMM's COM automation CLSID -- hardcoded in femm/ActiveFEMM.cpp's
+; IMPLEMENT_OLECREATE2 call, so it's fixed regardless of install location.
+; See scripts/register_femm_com.ps1's docstring for why this needs to be
+; written by hand at all: femmx.exe's own COM self-registration
+; (COleObjectFactory::UpdateRegistryAll) doesn't currently write anything
+; under this CMake build. Written here too so a normal end-user install
+; (not just a dev build + that script) leaves pyfemm/Octave/Mathematica/
+; Scilab automation working out of the box.
+!define FEMM_COM_CLSID "{0A35D5BD-DCA9-4C39-9512-1D89A1A37047}"
+!define FEMM_COM_PROGID "femm.ActiveFEMM"
+
 LicenseData "license.txt"
 Page license
 Page directory
@@ -97,6 +108,14 @@ Section
     File "scifemm\scifemm.sci"
     File /nonfatal "scifemm\scilink.dll"
 
+    # register the femm.ActiveFEMM COM automation class (see the
+    # FEMM_COM_CLSID comment above) -- HKCU only, no admin rights needed
+    WriteRegStr HKCU "Software\Classes\${FEMM_COM_PROGID}" "" "Femm.ActiveFEMM Object"
+    WriteRegStr HKCU "Software\Classes\${FEMM_COM_PROGID}\CLSID" "" "${FEMM_COM_CLSID}"
+    WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}" "" "Femm.ActiveFEMM Object"
+    WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}\LocalServer32" "" '"$INSTDIR\bin\femmx.exe"'
+    WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}\ProgID" "" "${FEMM_COM_PROGID}"
+
     # create the uninstaller and a link to it in the start menu
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
@@ -110,6 +129,10 @@ SectionEnd
 
 # uninstaller section start
 Section "uninstall"
+    # unregister the femm.ActiveFEMM COM automation class
+    DeleteRegKey HKCU "Software\Classes\${FEMM_COM_PROGID}"
+    DeleteRegKey HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}"
+
     # delete the installed subfolders (bin, mathfemm, mfiles, scifemm)
     RMDir /r "$INSTDIR\bin"
     RMDir /r "$INSTDIR\mathfemm"
