@@ -1038,14 +1038,19 @@ int CBigComplexLinProb::PBCGSolveMod(int flag)
     if (PBCGSolveGPU())
       return 1;
     MsgBox(
-        "GPU-accelerated solve failed or no usable GPU was found at run "
-        "time (see the console/stderr output above for details).\n\n"
-        "This usually means either:\n"
+        "GPU-accelerated solve did not produce a result (see the "
+        "console/stderr output for the exact reason).\n\n"
+        "This usually means one of:\n"
         "- No CUDA-capable NVIDIA GPU is present on this machine, or\n"
         "- The installed NVIDIA driver is older than this build's CUDA "
         "Toolkit requires -- run \"nvidia-smi\" to check the maximum CUDA "
         "version your driver supports, then either update the driver or "
-        "rebuild fkn.exe with an older -DFEMM_CUDA_ROOT to match it.\n\n"
+        "rebuild fkn.exe with an older -DFEMM_CUDA_ROOT to match it, or\n"
+        "- The GPU solve ran but did not converge: the Jacobi preconditioner "
+        "used for GPU parallelism is weaker than the CPU's SSOR, and some "
+        "matrices (e.g. finely-stranded litz windings) need more iterations "
+        "than it can provide. This isn't a GPU/driver problem -- try the "
+        "CPU solver for this specific problem instead.\n\n"
         "Continuing with the CPU solver for this run.");
 #endif
     // GPU path unavailable, not built with CUDA support, or failed to

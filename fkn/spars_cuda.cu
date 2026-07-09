@@ -150,9 +150,14 @@ extern "C" int CudaPCGSolve(
 
   cusparseHandle_t cusparse = nullptr;
   cublasHandle_t cublas = nullptr;
-  if (cusparseCreate(&cusparse) != CUSPARSE_STATUS_SUCCESS)
+  if (cusparseCreate(&cusparse) != CUSPARSE_STATUS_SUCCESS) {
+    fprintf(stderr, "CudaPCGSolve: cusparseCreate failed -- no CUDA-capable GPU "
+                     "found, or driver/toolkit mismatch (run nvidia-smi).\n");
     return 0;
+  }
   if (cublasCreate(&cublas) != CUBLAS_STATUS_SUCCESS) {
+    fprintf(stderr, "CudaPCGSolve: cublasCreate failed -- no CUDA-capable GPU "
+                     "found, or driver/toolkit mismatch (run nvidia-smi).\n");
     cusparseDestroy(cusparse);
     return 0;
   }
@@ -298,7 +303,15 @@ extern "C" int CudaPCGSolve(
   if (out_iters) *out_iters = iters;
 
   cleanup();
-  return (er <= precision) ? 1 : 0;
+  if (er > precision) {
+    fprintf(stderr, "CudaPCGSolve: did not converge after %d iterations "
+                     "(reached relative error %.3e, requested %.3e). The GPU "
+                     "ran fine -- the Jacobi preconditioner used for GPU "
+                     "parallelism is just weaker than the CPU's SSOR on this "
+                     "particular matrix.\n", iters, er, precision);
+    return 0;
+  }
+  return 1;
 }
 
 // ---- complex-symmetric solve, for CBigComplexLinProb::PBCGSolve ----
@@ -328,9 +341,14 @@ extern "C" int CudaPBCGSolve(
 
   cusparseHandle_t cusparse = nullptr;
   cublasHandle_t cublas = nullptr;
-  if (cusparseCreate(&cusparse) != CUSPARSE_STATUS_SUCCESS)
+  if (cusparseCreate(&cusparse) != CUSPARSE_STATUS_SUCCESS) {
+    fprintf(stderr, "CudaPBCGSolve: cusparseCreate failed -- no CUDA-capable GPU "
+                     "found, or driver/toolkit mismatch (run nvidia-smi).\n");
     return 0;
+  }
   if (cublasCreate(&cublas) != CUBLAS_STATUS_SUCCESS) {
+    fprintf(stderr, "CudaPBCGSolve: cublasCreate failed -- no CUDA-capable GPU "
+                     "found, or driver/toolkit mismatch (run nvidia-smi).\n");
     cusparseDestroy(cusparse);
     return 0;
   }
@@ -481,5 +499,13 @@ extern "C" int CudaPBCGSolve(
   if (out_iters) *out_iters = iters;
 
   cleanup();
-  return (er <= precision) ? 1 : 0;
+  if (er > precision) {
+    fprintf(stderr, "CudaPBCGSolve: did not converge after %d iterations "
+                     "(reached relative error %.3e, requested %.3e). The GPU "
+                     "ran fine -- the Jacobi preconditioner used for GPU "
+                     "parallelism is just weaker than the CPU's SSOR on this "
+                     "particular matrix.\n", iters, er, precision);
+    return 0;
+  }
+  return 1;
 }

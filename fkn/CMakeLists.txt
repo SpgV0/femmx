@@ -70,7 +70,24 @@ if(ENABLE_CUDA_SOLVER)
   # still fail to compile (not silently miscompile), so it's safe to
   # always skip the gate rather than needing FEMM_CUDA_CCBIN to point at
   # a matching older toolset that may not even be installed.
-  set(FEMM_NVCC_ARGS -c "${CMAKE_CURRENT_SOURCE_DIR}/spars_cuda.cu" -o "${FEMM_CUDA_OBJ}"
+  set(FEMM_NVCC_ARGS -c "${CMAKE_CURRENT_SOURCE_DIR}/spars_cuda.cu" -o "${FEMM_CUDA_OBJ}")
+  if(FEMM_CUDA_CCBIN)
+    # -ccbin only picks which cl.exe runs -- it does NOT override the
+    # INCLUDE environment variable that build.ps1's VsDevCmd.bat set up for
+    # whatever Visual Studio it detected as "latest" (VS2026 on this
+    # machine), so cl.exe still resolves <yvals_core.h> etc. from THAT
+    # toolset's headers first, defeating the whole point of pointing
+    # -ccbin at an older, CUDA-supported toolset -- MSVC's STL has a
+    # static_assert gating its own version against a minimum supported
+    # CUDA release ("error STL1002: Unexpected compiler version, expected
+    # CUDA 13.2 or newer" for VS2026's headers under CUDA 12.6). Explicit
+    # -I search paths are consulted before the INCLUDE env var, so putting
+    # FEMM_CUDA_CCBIN's own toolset include dir first in FEMM_NVCC_ARGS
+    # (added here, before anything else) makes it win instead.
+    get_filename_component(FEMM_CUDA_CCBIN_TOOLSET "${FEMM_CUDA_CCBIN}/../../.." ABSOLUTE)
+    list(APPEND FEMM_NVCC_ARGS -I "${FEMM_CUDA_CCBIN_TOOLSET}/include")
+  endif()
+  list(APPEND FEMM_NVCC_ARGS
       -I "${FEMM_CUDA_ROOT}/include"
       -allow-unsupported-compiler
       -Xcompiler "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")

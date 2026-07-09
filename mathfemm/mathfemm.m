@@ -3050,7 +3050,7 @@ PackDir = DirectoryName[StringReplace[$Input, "/" -> "\\"]];
 
 Print["MathFEMM loaded at " <> DateString[]];
 
-FEMMPath = "c:\\femm42\\bin\\femmx.exe";
+FEMMPath = "c:\\FEMMX\\bin\\femmx.exe";
 
 SetPathToFEMM[path_]:=Module[{},
         Export[ToFileName[PackDir,"path.txt"], path];

@@ -7,7 +7,7 @@
 function openfemm(fn)
     global ifile ofile HandleToFEMM
 
-    rootdir='c:/femm42/bin/';
+    rootdir='c:/FEMMX/bin/';
 
 	try
 		pkg load windows

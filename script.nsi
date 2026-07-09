@@ -26,7 +26,12 @@ UninstPage instfiles
 OutFile "bin\${PROJECT_NAME}_installer.exe"
 
 # define installation directory
-InstallDir "$APPDATA\${PROJECT_NAME}"
+# Fixed C:\FEMMX (not $APPDATA), matching the original FEMM 4.2 installer's
+# fixed C:\femm42 default -- mathfemm.m and octavefemm/mfiles/openfemm.m
+# hardcode this exact path (as C:\FEMMX\bin\femmx.exe) rather than probing
+# the registry, so it needs to be predictable. Still user-overridable via
+# the "Page directory" step below.
+InstallDir "C:\${PROJECT_NAME}"
 
 # We do not need any admin privilege
 RequestExecutionLevel user
@@ -56,6 +61,15 @@ Section
     File "bin\statlib.dat"
     File "bin\triangle.exe"
 
+    # CUDA runtime DLLs, only present in bin\ for a -DENABLE_CUDA_SOLVER=ON
+    # build (see fkn/CMakeLists.txt); /nonfatal so a CPU-only build, where
+    # these don't exist, still packages fine.
+    File /nonfatal "bin\cublas64_*.dll"
+    File /nonfatal "bin\cublasLt64_*.dll"
+    File /nonfatal "bin\cudart64_*.dll"
+    File /nonfatal "bin\cusparse64_*.dll"
+    File /nonfatal "bin\nvJitLink_*.dll"
+
     # create the uninstaller and a link to it in the start menu
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
@@ -83,6 +97,11 @@ Section "uninstall"
     Delete "$INSTDIR\matlib.dat"
     Delete "$INSTDIR\statlib.dat"
     Delete "$INSTDIR\triangle.exe"
+    Delete "$INSTDIR\cublas64_*.dll"
+    Delete "$INSTDIR\cublasLt64_*.dll"
+    Delete "$INSTDIR\cudart64_*.dll"
+    Delete "$INSTDIR\cusparse64_*.dll"
+    Delete "$INSTDIR\nvJitLink_*.dll"
 
     # delete the uninstaller
     Delete "$INSTDIR\${PROJECT_UNINSTALL_EXE}"

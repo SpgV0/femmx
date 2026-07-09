@@ -2,10 +2,21 @@ cmake_minimum_required(VERSION 3.10)
 project(FEMM C CXX)
 
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
-# added the automatic NSIS installer build below (after the
-# add_subdirectory() calls), so `cmake --build . --target install`
-# (what build.ps1 always runs) also produces bin/FEMMX_installer.exe
-# whenever makensis is available -- no separate manual step needed.
+# added the automatic NSIS installer build (installer/CMakeLists.txt), so
+# `cmake --build . --target install` (what build.ps1 always runs) also
+# produces bin/FEMMX_installer.exe whenever makensis is available -- no
+# separate manual step needed.
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# moved the NSIS install(CODE) block out into installer/CMakeLists.txt,
+# added via add_subdirectory(installer) as the LAST add_subdirectory()
+# call below. It used to live directly in this file, after all the
+# add_subdirectory() calls -- which looked like it should make it run
+# last, but doesn't: CMake orders a directory's own install() rules
+# before any add_subdirectory()-included ones regardless of source
+# order, so it was actually packaging whatever was already sitting in
+# INSTALL_BIN_DIR from an earlier build, not this build's fresh output.
+# Sibling subdirectories DO preserve call order relative to each other,
+# which is what actually fixes it.
 
 option(BUILD_MANUAL "Build the manual" OFF)
 option(SKIP_belasolv "Skip building belasolv" OFF)
@@ -60,30 +71,5 @@ if(NOT SKIP_triangle)
   endif()
 endif()
 
-# Build the NSIS installer (script.nsi) as part of `--target install`,
-# once everything above has been copied into INSTALL_BIN_DIR. Silently
-# skipped (like the optional LaTeX manual) if makensis isn't found --
-# most dev machines won't have NSIS installed, and a partial build
-# (any SKIP_* option set) will make makensis itself fail with a clear
-# "file not found" error, which is reported as a warning rather than
-# failing the whole install step.
-find_program(MAKENSIS_EXECUTABLE makensis
-  HINTS
-    "$ENV{ProgramFiles}/NSIS"
-    "$ENV{ProgramFiles\(x86\)}/NSIS"
-)
-if(MAKENSIS_EXECUTABLE)
-  message(STATUS "Found makensis: ${MAKENSIS_EXECUTABLE} -- installer will be built")
-  install(CODE "
-    execute_process(
-      COMMAND \"${MAKENSIS_EXECUTABLE}\" \"${CMAKE_SOURCE_DIR}/script.nsi\"
-      WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
-      RESULT_VARIABLE _makensis_result
-    )
-    if(NOT _makensis_result EQUAL 0)
-      message(WARNING \"makensis exited with code \${_makensis_result} -- installer was not built (see script.nsi; this is expected for a partial build, e.g. with a SKIP_* option set)\")
-    endif()
-  ")
-else()
-  message(STATUS "makensis not found -- skipping automatic installer build (see script.nsi; CI installs NSIS via choco)")
-endif()
+# Must stay the LAST add_subdirectory() call -- see installer/CMakeLists.txt.
+add_subdirectory(installer)

@@ -281,6 +281,7 @@ Write-Host "Setting up environment to use CMake generator: $generator"
 if (-Not $DoNotDeleteBuildFolder) {
   Write-Host "Removing build folders" -ForegroundColor Yellow
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64
+  Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64_notriangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32_triangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32
 }
@@ -398,6 +399,7 @@ Set-Location ..
 if (-Not $DoNotDeleteBuildFolder) {
   Write-Host "Removing build folders" -ForegroundColor Yellow
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64
+  Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64_notriangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32_triangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32
 }
