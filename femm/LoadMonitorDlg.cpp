@@ -249,10 +249,24 @@ void CLoadMonitorDlg::MarkSolveStart(LPCTSTR label) {
   m_solveRamMax = m_solveRamSum = 0.0f;
   m_solveSampleCount = 0;
 
+  // The chart only ever shows the solve currently (or most recently)
+  // running -- wipe it clean so this solve starts from an empty graph
+  // instead of picking up wherever the last one (or idle time) left off.
+  m_cpuHistory.clear();
+  m_gpuHistory.clear();
+  m_ramHistory.clear();
+  m_markers.clear();
+  m_totalTicks = 0;
+  InitCpuSampling(); // reset the delta baseline so the first sample isn't stale
+
   Marker mk;
   mk.tick = m_totalTicks;
   mk.bStart = TRUE;
   m_markers.push_back(mk);
+
+  CWnd* pChart = GetDlgItem(IDC_LOADCHART);
+  if (pChart != NULL)
+    pChart->Invalidate(FALSE);
 }
 
 void CLoadMonitorDlg::MarkSolveEnd() {
@@ -264,6 +278,13 @@ void CLoadMonitorDlg::MarkSolveEnd() {
   mk.tick = m_totalTicks;
   mk.bStart = FALSE;
   m_markers.push_back(mk);
+
+  // No more OnTimer samples will arrive now that m_bSolveInProgress is
+  // FALSE, so the chart freezes here -- make sure this final frame
+  // (including the end marker) actually gets drawn.
+  CWnd* pChart = GetDlgItem(IDC_LOADCHART);
+  if (pChart != NULL)
+    pChart->Invalidate(FALSE);
 
   double durationSec = (GetTickCount() - m_solveStartTick) / 1000.0;
   float cpuAvg = m_solveSampleCount > 0 ? m_solveCpuSum / m_solveSampleCount : 0.0f;
@@ -295,27 +316,31 @@ void CLoadMonitorDlg::MarkSolveEnd() {
 
 void CLoadMonitorDlg::OnTimer(UINT_PTR nIDEvent) {
   if (nIDEvent == 1) {
-    float cpu = SampleCpuPercent();
-    float gpu = SampleGpuPercent();
-    float ram = SampleRamPercent();
-
-    if ((int)m_cpuHistory.size() >= kMaxSamples)
-      m_cpuHistory.erase(m_cpuHistory.begin());
-    if ((int)m_gpuHistory.size() >= kMaxSamples)
-      m_gpuHistory.erase(m_gpuHistory.begin());
-    if ((int)m_ramHistory.size() >= kMaxSamples)
-      m_ramHistory.erase(m_ramHistory.begin());
-    m_cpuHistory.push_back(cpu);
-    m_gpuHistory.push_back(gpu);
-    m_ramHistory.push_back(ram);
-    m_totalTicks++;
-
-    // prune markers that have scrolled out of the rolling window
-    long oldestVisible = m_totalTicks - (long)m_cpuHistory.size();
-    while (!m_markers.empty() && m_markers.front().tick < oldestVisible)
-      m_markers.erase(m_markers.begin());
-
+    // Only sample -- and thus only advance/redraw the chart -- while a
+    // solve is actually running. Once it ends the chart simply stops
+    // getting new points and freezes on whatever it last showed, until
+    // the next MarkSolveStart() clears it again.
     if (m_bSolveInProgress) {
+      float cpu = SampleCpuPercent();
+      float gpu = SampleGpuPercent();
+      float ram = SampleRamPercent();
+
+      if ((int)m_cpuHistory.size() >= kMaxSamples)
+        m_cpuHistory.erase(m_cpuHistory.begin());
+      if ((int)m_gpuHistory.size() >= kMaxSamples)
+        m_gpuHistory.erase(m_gpuHistory.begin());
+      if ((int)m_ramHistory.size() >= kMaxSamples)
+        m_ramHistory.erase(m_ramHistory.begin());
+      m_cpuHistory.push_back(cpu);
+      m_gpuHistory.push_back(gpu);
+      m_ramHistory.push_back(ram);
+      m_totalTicks++;
+
+      // prune markers that have scrolled out of the rolling window
+      long oldestVisible = m_totalTicks - (long)m_cpuHistory.size();
+      while (!m_markers.empty() && m_markers.front().tick < oldestVisible)
+        m_markers.erase(m_markers.begin());
+
       m_solveCpuSum += cpu;
       if (cpu > m_solveCpuMax)
         m_solveCpuMax = cpu;
@@ -326,11 +351,11 @@ void CLoadMonitorDlg::OnTimer(UINT_PTR nIDEvent) {
       if (ram > m_solveRamMax)
         m_solveRamMax = ram;
       m_solveSampleCount++;
-    }
 
-    CWnd* pChart = GetDlgItem(IDC_LOADCHART);
-    if (pChart != NULL)
-      pChart->Invalidate(FALSE);
+      CWnd* pChart = GetDlgItem(IDC_LOADCHART);
+      if (pChart != NULL)
+        pChart->Invalidate(FALSE);
+    }
   }
   CDialog::OnTimer(nIDEvent);
 }
@@ -350,32 +375,45 @@ void CLoadMonitorDlg::OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct) 
 void CLoadMonitorDlg::DrawChart(CDC* pDC, const CRect& rect) {
   pDC->FillSolidRect(rect, RGB(255, 255, 255));
 
+  // Reserve a strip along the bottom for the time axis labels so they
+  // don't overlap the plotted data or the 0% gridline.
+  const int kXAxisHeight = 14;
+  CRect plotRect(rect.left, rect.top, rect.right, rect.bottom - kXAxisHeight);
+
+  pDC->SetBkMode(TRANSPARENT);
+
   CPen axisPen(PS_SOLID, 1, RGB(200, 200, 200));
   CPen* pOldPen = pDC->SelectObject(&axisPen);
   for (int pct = 0; pct <= 100; pct += 25) {
-    int y = rect.bottom - (int)((rect.Height() - 1) * (pct / 100.0));
-    pDC->MoveTo(rect.left, y);
-    pDC->LineTo(rect.right, y);
+    int y = plotRect.bottom - (int)((plotRect.Height() - 1) * (pct / 100.0));
+    pDC->MoveTo(plotRect.left, y);
+    pDC->LineTo(plotRect.right, y);
     CString label;
     label.Format("%d%%", pct);
-    pDC->SetBkMode(TRANSPARENT);
-    pDC->TextOut(rect.left + 2, y - 12, label);
+    pDC->TextOut(plotRect.left + 2, y - 12, label);
   }
   pDC->SelectObject(pOldPen);
 
+  // The x axis autoscales to whatever's actually been sampled so far,
+  // stretched to fill the available width, rather than always spanning
+  // the full 60s rolling-window capacity -- otherwise a short solve
+  // would be squeezed into an unreadable sliver on the left.
+  int historySize = (int)m_cpuHistory.size();
+  int xDenom = historySize > 1 ? historySize - 1 : 1;
+  long oldestVisible = m_totalTicks - (long)historySize;
+
   // Solve start/end markers, drawn before the trace lines so the traces
   // stay legible on top.
-  long oldestVisible = m_totalTicks - (long)m_cpuHistory.size();
   for (size_t i = 0; i < m_markers.size(); i++) {
     const Marker& mk = m_markers[i];
     if (mk.tick < oldestVisible)
       continue;
     long relPos = mk.tick - oldestVisible;
-    int x = rect.left + (int)((rect.Width() - 1) * ((double)relPos / (kMaxSamples - 1)));
+    int x = plotRect.left + (int)((plotRect.Width() - 1) * ((double)relPos / xDenom));
     CPen markerPen(PS_SOLID, 1, mk.bStart ? RGB(0, 150, 0) : RGB(200, 0, 0));
     CPen* pOldMarker = pDC->SelectObject(&markerPen);
-    pDC->MoveTo(x, rect.top);
-    pDC->LineTo(x, rect.bottom);
+    pDC->MoveTo(x, plotRect.top);
+    pDC->LineTo(x, plotRect.bottom);
     pDC->SelectObject(pOldMarker);
   }
 
@@ -386,10 +424,10 @@ void CLoadMonitorDlg::DrawChart(CDC* pDC, const CRect& rect) {
     CPen* pOld = pDC->SelectObject(&pen);
     int n = (int)hist.size();
     for (int i = 1; i < n; i++) {
-      int x0 = rect.left + (int)((rect.Width() - 1) * ((double)(i - 1) / (kMaxSamples - 1)));
-      int x1 = rect.left + (int)((rect.Width() - 1) * ((double)i / (kMaxSamples - 1)));
-      int y0 = rect.bottom - (int)((rect.Height() - 1) * (hist[i - 1] / 100.0));
-      int y1 = rect.bottom - (int)((rect.Height() - 1) * (hist[i] / 100.0));
+      int x0 = plotRect.left + (int)((plotRect.Width() - 1) * ((double)(i - 1) / xDenom));
+      int x1 = plotRect.left + (int)((plotRect.Width() - 1) * ((double)i / xDenom));
+      int y0 = plotRect.bottom - (int)((plotRect.Height() - 1) * (hist[i - 1] / 100.0));
+      int y1 = plotRect.bottom - (int)((plotRect.Height() - 1) * (hist[i] / 100.0));
       pDC->MoveTo(x0, y0);
       pDC->LineTo(x1, y1);
     }
@@ -404,8 +442,27 @@ void CLoadMonitorDlg::DrawChart(CDC* pDC, const CRect& rect) {
   CPen borderPen(PS_SOLID, 1, RGB(120, 120, 120));
   pOldPen = pDC->SelectObject(&borderPen);
   pDC->SelectStockObject(NULL_BRUSH);
-  pDC->Rectangle(rect);
+  pDC->Rectangle(plotRect);
   pDC->SelectObject(pOldPen);
+
+  // Time axis labels, using the same autoscaled mapping as the traces
+  // above. Sub-second solves get one decimal place so the labels aren't
+  // all just "0s".
+  double totalSpanSeconds = xDenom * kSampleIntervalMs / 1000.0;
+  LPCTSTR secFmt = totalSpanSeconds < 10.0 ? "%.1fs" : "%.0fs";
+  int nLabels = historySize > 1 ? 5 : 1;
+  for (int i = 0; i < nLabels; i++) {
+    double frac = nLabels > 1 ? (double)i / (nLabels - 1) : 0.0;
+    int x = plotRect.left + (int)((plotRect.Width() - 1) * frac);
+    long tick = oldestVisible + (long)(xDenom * frac);
+    double seconds = tick * kSampleIntervalMs / 1000.0;
+    if (seconds < 0)
+      seconds = 0;
+    CString label;
+    label.Format(secFmt, seconds);
+    int textX = (i == nLabels - 1 && nLabels > 1) ? x - 22 : x + 2; // keep the last label from running off the right edge
+    pDC->TextOut(textX, plotRect.bottom + 1, label);
+  }
 }
 
 BOOL CLoadMonitorDlg::SaveChartAsPng(const CRect& rect, LPCTSTR path) {
