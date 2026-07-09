@@ -1,8 +1,8 @@
 """
 Shared pytest fixtures for the test regression suite.
 
-All tests here drive a real, built femm.exe over its COM automation
-interface (femm.ActiveFEMM). If femm.exe hasn't been built, or the COM
+All tests here drive a real, built femmx.exe over its COM automation
+interface (femm.ActiveFEMM). If femmx.exe hasn't been built, or the COM
 class isn't registered, or pywin32/pyfemm aren't installed, the whole
 suite is skipped with a clear reason rather than erroring -- this lets
 `pytest test/` run harmlessly on a machine that hasn't set up the
@@ -28,7 +28,7 @@ def _femm_available():
         import win32com.client  # noqa: F401
     except ImportError:
         return False, "pywin32 is not installed (pip install pywin32)"
-    # Check the COM class is registered without actually launching femm.exe
+    # Check the COM class is registered without actually launching femmx.exe
     # (avoids spawning a process just to probe availability at collection time).
     for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_CLASSES_ROOT):
         try:
@@ -38,7 +38,7 @@ def _femm_available():
         except FileNotFoundError:
             continue
     return False, (
-        "femm.ActiveFEMM is not registered as a COM class. Build femm.exe and "
+        "femm.ActiveFEMM is not registered as a COM class. Build femmx.exe and "
         "register it (see scripts/register_femm_com.ps1)."
     )
 
@@ -49,7 +49,7 @@ _AVAILABLE, _REASON = _femm_available()
 @pytest.fixture(scope="session", autouse=True)
 def _require_femm():
     if not _AVAILABLE:
-        pytest.skip(f"femm.exe COM automation not available: {_REASON}")
+        pytest.skip(f"femmx.exe COM automation not available: {_REASON}")
 
 
 @pytest.fixture(autouse=True)

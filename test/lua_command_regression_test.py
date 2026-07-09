@@ -35,7 +35,7 @@ there rather than failing CI on every run; any *new* failure in those
 types still fails the build.
 
 Requirements: pip install pyfemm pywin32; a built + COM-registered
-femm.exe.
+femmx.exe.
 
 Usage:
     pytest lua_command_regression_test.py -v
@@ -70,9 +70,9 @@ BLOCKING_COMMANDS = {"prompt", "messagebox", "create"}
 # and will fail the build.
 KNOWN_ISSUES = {
     "AWG": "pyfemm packaging bug: AWG()/IEC() reference `exp` without importing it "
-           "(NameError: name 'exp' is not defined) -- not FEMM/femm_plus code",
+           "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
     "IEC": "pyfemm packaging bug: AWG()/IEC() reference `exp` without importing it "
-           "(NameError: name 'exp' is not defined) -- not FEMM/femm_plus code",
+           "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
     "mi_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
                       "unmeshed input view raises a 'possible page fault' error",
     "ei_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "

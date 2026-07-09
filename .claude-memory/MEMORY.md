@@ -1,4 +1,5 @@
-- [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femm_plus (formerly femm_mods, now SpgV0/femm_plus) for review
+- [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femmx (formerly femm_mods, then femm_plus, now SpgV0/femmx) for review
 - [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA-accelerated linear solve shipped (commit f19a90e): 0% error, 1.32x speedup on 70K nodes, opt-in via mi_setgpuaccel
-- [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femm_plus/.claude-memory/ and push, for cross-machine reuse
+- [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
+- [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged

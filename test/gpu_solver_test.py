@@ -22,7 +22,7 @@ once with mi_setgpuaccel(1) (GPU if available), and checks:
      otherwise this is skipped, since there's nothing to speed up.
 
 Requirements: pip install pyfemm pywin32; a built + COM-registered
-femm.exe. For the speedup assertion specifically: fkn.exe built with
+femmx.exe. For the speedup assertion specifically: fkn.exe built with
 -DENABLE_CUDA_SOLVER=ON (see fkn/CMakeLists.txt) and a CUDA-capable GPU.
 
 Usage:

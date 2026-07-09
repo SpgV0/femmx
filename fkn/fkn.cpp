@@ -33,7 +33,7 @@ CLoadMonitorDlg* g_pLoadMonitor = NULL;
 //
 // Skipped entirely for scripted invocations (mi_analyze(1) and friends,
 // __argc >= 3 -- see fkn/StdAfx.cpp's MsgBox, which uses this exact same
-// check to self-suppress). femm.exe's OnMenuAnalyze() polls
+// check to self-suppress). femmx.exe's OnMenuAnalyze() polls
 // GetExitCodeProcess() and blocks the calling Lua/pyfemm script until
 // fkn.exe exits, for *every* scripted mi_analyze() call (hidden or not);
 // every script in this repo's test suite uses mi_analyze(1), so gating
@@ -124,7 +124,7 @@ BOOL CFknApp::InitInstance()
   CLoadMonitorDlg loadMonitor;
   loadMonitor.Create(IDD_LOADMONITOR, NULL);
   loadMonitor.ShowWindow(SW_SHOW);
-  // For hidden/scripted runs, femm.exe's CreateProcess() sets
+  // For hidden/scripted runs, femmx.exe's CreateProcess() sets
   // STARTF_USESHOWWINDOW/SW_SHOWMINNOACTIVE (see FemmeView.cpp's
   // OnMenuAnalyze) so the fkern progress dialog doesn't interrupt the
   // user. Windows applies that as a one-shot hint to the *first*

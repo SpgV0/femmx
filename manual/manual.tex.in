@@ -1,5 +1,9 @@
 % !TEX program = XeLaTeX
 % !TEX spellcheck = en_US
+%
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% rebranded the title page and the "femm.exe" executable reference to
+% femmx.exe (project rebrand: femm_plus -> femmx).
 
 % ------------------------------------------------------------------------
 %  My Format for a Article
@@ -53,7 +57,9 @@
 
 \vspace*{0.5in}
 \begin{center}
-{\LARGE Finite Element Method Magnetics}
+{\LARGE FEMMX}
+
+\vspace*{16pt} {\Large Finite Element Method Magnetics}
 
 \vspace*{16pt} {\Large Version 4.2}
 
@@ -123,7 +129,7 @@ flow problems.
 FEMM is divided into three parts:
 
 \begin{itemize}
-\item Interactive shell ({\tt femm.exe}).  This program is a Multiple
+\item Interactive shell ({\tt femmx.exe}).  This program is a Multiple
 Document Interface pre-processor and a post-processor for the
 various types of problems solved by FEMM. It contains a CAD-like
 interface for laying out the geometry of the problem to be solved

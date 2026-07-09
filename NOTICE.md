@@ -1,6 +1,6 @@
 # Notice of Modifications
 
-This repository, `femm_plus` (https://github.com/SpgV0/femm_plus), is a
+This repository, `FEMMX` (https://github.com/SpgV0/femmx), is a
 derivative of Finite Element Method Magnetics (FEMM), originally distributed
 by David C. Meeker at https://github.com/cenit/FEMM under the Aladdin Free
 Public License v8 (see [license.txt](license.txt)). This repository
@@ -19,7 +19,7 @@ entries, most recent first). This section is the condensed, license-required
 record of modifications.
 
 - 2026-07-06: Repository cloned from https://github.com/cenit/FEMM
-  (commit 7d9e8ed) and re-hosted at https://github.com/spgryparis/femm_mods.
+  (commit 7d9e8ed) and re-hosted at https://github.com/SpgV0/femmx.
   No source files were altered as part of this change.
 - 2026-07-07: Added `femm/femmeLua.cpp` and `femm/FemmeDoc.h` changes
   (new `mi_setredraw` Lua command), `femm/FemmeView.cpp` changes
@@ -46,9 +46,16 @@ record of modifications.
   required); GPU utilization is sampled via NVML, loaded dynamically at run
   time with a graceful fallback to CPU-only display if unavailable. See
   per-file modification notices for author/contact/date/purpose.
-- 2026-07-09: Repository migrated from https://github.com/spgryparis/femm_mods
-  to https://github.com/SpgV0/femm_plus (renamed accordingly). No source
-  files were altered as part of this change.
+- 2026-07-09: Rebranded the fork from femm_plus to FEMMX: `femm/CMakeLists.txt`
+  (executable renamed femm.exe -> femmx.exe), `femm/femm.rc` (window title,
+  VERSIONINFO strings), `femm/femm.odl` (comment only), `script.nsi`
+  (installer), `.github/workflows/ccpp.yml` (CI), `scripts/register_femm_com.ps1`,
+  `fkn/fkn.cpp`/`fkn/CMakeLists.txt`/`fkn/spars.cpp`/`fkn/cspars.cpp` (comments/
+  messages), `mathfemm/mathfemm.m`, `mathfemm/usage.nb`, and
+  `octavefemm/mfiles/openfemm.m` (executable path references). The
+  femm.ActiveFEMM COM ProgID and the solver executables (fkn.exe/csolv.exe/
+  hsolv.exe/belasolv.exe) are unchanged. See per-file modification notices
+  for author/contact/date/purpose.
 - 2026-07-09: `fkn/LoadMonitorDlg.h`/`fkn/LoadMonitorDlg.cpp`/`fkn/fkn.cpp`
   changes: the CPU/GPU load monitor window now stays open after the solve
   finishes (interactive runs only) until the user closes it, via an

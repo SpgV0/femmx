@@ -1,4 +1,8 @@
 % ActiveFEMM (C)2006 David Meeker, dmeeker@ieee.org
+%
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% updated the femm.exe launch reference to femmx.exe (project rebrand:
+% femm_plus -> femmx).
 
 function openfemm(fn)
     global ifile ofile HandleToFEMM
@@ -46,7 +50,7 @@ function openfemm(fn)
 		end
         if (fid==-1)
             unlink(ifile);
-            system([rootdir,'femm.exe -filelink'],1,'async');
+            system([rootdir,'femmx.exe -filelink'],1,'async');
         else
             fclose(fid);
             unlink(ofile);

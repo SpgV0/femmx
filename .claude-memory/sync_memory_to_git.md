@@ -1,6 +1,6 @@
 ---
 name: sync-memory-to-git
-description: "Keep .claude-memory/ in the femm_mods repo synced with local memory files, for reuse on other PCs"
+description: "Keep .claude-memory/ in the femmx repo synced with local memory files, for reuse on other PCs"
 metadata: 
   node_type: memory
   type: feedback
@@ -9,7 +9,7 @@ metadata:
 
 The user wants this project's Claude memory backed up in git so it can be
 reused from another PC. A snapshot lives at `.claude-memory/` in the
-`femm_mods` repo (pushed to `new_features`, commit e698a95).
+`femmx` repo (pushed to `new_features`, commit e698a95).
 
 **Why:** Memory normally only exists locally at
 `~/.claude/projects/<project-hash>/memory/`, which doesn't transfer to a

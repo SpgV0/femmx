@@ -1,6 +1,6 @@
 ---
 name: gpu-speedup-investigation
-description: "GPU-accelerated linear solve for FEMM's magnetostatic AND harmonic solvers, plus a CPU/GPU load monitor window — implemented, validated, and shipped on new_features in SpgV0/femm_plus"
+description: "GPU-accelerated linear solve for FEMM's magnetostatic AND harmonic solvers, plus a CPU/GPU load monitor window — implemented, validated, and shipped on new_features in SpgV0/femmx"
 metadata: 
   node_type: memory
   type: project
@@ -8,8 +8,8 @@ metadata:
 ---
 
 Investigated (2026-07-07), then implemented and shipped (2026-07-08).
-Commit `f19a90e` on `new_features` in `femm_plus` (formerly `femm_mods`,
-migrated to `SpgV0/femm_plus`; see [[push_branch_policy]]). Load monitor
+Commit `f19a90e` on `new_features` in `femmx` (formerly `femm_mods`,
+then `femm_plus`, now `SpgV0/femmx`; see [[push_branch_policy]]). Load monitor
 window shipped 2026-07-09 in commit `4a3568d`, same branch. AC/harmonic
 GPU solve (see below) shipped 2026-07-09 too, same branch.
 

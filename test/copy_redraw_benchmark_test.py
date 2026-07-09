@@ -22,7 +22,7 @@ on -- CI runners are too noisy for a tight performance SLA), but a loose
 regression guard is asserted: the suppressed run should not be dramatically
 slower than the baseline, which would indicate mi_setredraw itself broke.
 
-Requirements: pip install pyfemm pywin32; a built + COM-registered femm.exe.
+Requirements: pip install pyfemm pywin32; a built + COM-registered femmx.exe.
 
 Usage:
     pytest copy_redraw_benchmark_test.py -v

@@ -3,14 +3,14 @@ Regression test: scripted FEMM magnetostatics model of a long straight
 current-carrying wire.
 
 Builds a 2D planar magnetics problem in FEMM entirely from Python (via the
-pyfemm COM interface to femm.exe), solves it, and checks the computed flux
+pyfemm COM interface to femmx.exe), solves it, and checks the computed flux
 density against the closed-form solution for an infinite straight wire:
 
     B(r) = mu0 * I / (2 * pi * r)
 
 Requirements:
-    - Windows, with a built femm.exe registered as an OLE Automation server
-      (running femm.exe once is enough for it to self-register).
+    - Windows, with a built femmx.exe registered as an OLE Automation server
+      (running femmx.exe once is enough for it to self-register).
     - pip install pyfemm pywin32
 
 Usage:

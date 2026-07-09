@@ -25,8 +25,8 @@ stack traceback:
 
 --- SKIP details ---
   prompt: opens a blocking modal dialog; cannot run unattended
-  messagebox: opens a blocking modal dialog; cannot run unattended
   create: opens a blocking modal dialog; cannot run unattended
+  messagebox: opens a blocking modal dialog; cannot run unattended
   mi_moverotate2: not exposed by pyfemm
   mi_setfocus: requires an already-open document's exact window title; not attempted
   ei_moverotate2: not exposed by pyfemm
@@ -372,8 +372,8 @@ stack traceback:
   [PASS] main_minimize
   [PASS] main_restore
   [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
-  [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
   [PASS] mi_probdef
   [PASS] mi_getmaterial
   [PASS] mi_addcircprop

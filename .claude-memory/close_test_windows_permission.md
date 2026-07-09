@@ -1,6 +1,6 @@
 ---
 name: close-test-windows-permission
-description: "User grants standing permission to close/kill windows and processes I spawned myself during testing in femm_plus, without asking each time"
+description: "User grants standing permission to close/kill windows and processes I spawned myself during testing in femmx, without asking each time"
 metadata: 
   node_type: memory
   type: feedback
@@ -26,5 +26,5 @@ ask.
 to a script or build I ran myself this session (e.g. a test script's
 python.exe, or a femm.exe/fkn.exe launched by one of my own test
 commands). Still don't touch unrelated PIDs or windows I can't attribute
-to my own actions. This is scoped to the femm_plus project's
+to my own actions. This is scoped to the femmx project's
 testing/dev workflow, not a blanket license elsewhere.

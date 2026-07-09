@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
-project(femm C CXX)
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# renamed the femm target/output executable to femmx (project rebrand:
+# femm_plus -> femmx). Source file names (femm.h/.cpp/.rc) are unchanged.
+project(femmx C CXX)
 
 set(INSTALL_BIN_DIR  "${CMAKE_SOURCE_DIR}" CACHE PATH "Path where exe will be installed")
 
@@ -359,7 +362,7 @@ set(femm_SOURCES
   femm.rc
 )
 
-add_executable(femm WIN32 ${femm_SOURCES})
-target_include_directories(femm PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(femm liblua ResizableLib)
-install(TARGETS femm DESTINATION "${INSTALL_BIN_DIR}")
+add_executable(femmx WIN32 ${femm_SOURCES})
+target_include_directories(femmx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(femmx liblua ResizableLib)
+install(TARGETS femmx DESTINATION "${INSTALL_BIN_DIR}")

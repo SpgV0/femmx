@@ -1,4 +1,6 @@
-// femm.odl : type library source for femm.exe
+// femm.odl : type library source for femmx.exe (COM ProgID femm.ActiveFEMM
+// and this library's own name/GUIDs are unchanged by the femmx rename --
+// see scripts/register_femm_com.ps1)
 
 // This file will be processed by the MIDL compiler to produce the
 // type library (femm.tlb).

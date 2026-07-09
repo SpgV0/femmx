@@ -1,11 +1,10 @@
 ﻿FEMM 4.2 22Oct2023
 
-07Jul2026 (femm_plus fork)
+07Jul2026 (FEMMX fork)
 
-* Rehosted this repository as a fork (originally femm_mods) at
-  https://github.com/spgryparis/femm_mods, cloned from
-  https://github.com/cenit/FEMM commit 7d9e8ed, then migrated to
-  https://github.com/SpgV0/femm_plus. See NOTICE.md for the
+* Rehosted this repository as a fork, FEMMX, at
+  https://github.com/SpgV0/femmx, cloned from
+  https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
   license-required modification record.
 * Added test/, with Python scripts that build and solve FEMM
   models via the pyfemm COM interface: straight_wire_field.py (a
@@ -85,7 +84,7 @@
   (GDI+). Builds unconditionally, independent of ENABLE_CUDA_SOLVER.
   The window now also stays open after the solve finishes (for
   interactive/non-scripted runs only -- scripted mi_analyze() calls,
-  which femm.exe always waits on synchronously, are detected and exit
+  which femmx.exe always waits on synchronously, are detected and exit
   promptly as before) so the final chart and "Save as PNG" remain
   usable until the user closes it.
 * Extended the CUDA-accelerated linear solve to fkn.exe's harmonic
@@ -104,6 +103,19 @@
   added since the femm-4.2-22Oct2023 pre-fork baseline -- in the
   manual's Lua Scripting chapter (manual/magnlua.tex, Problem Commands
   and Editing Commands sections respectively).
+* Rebranded the fork from femm_plus to FEMMX: the main GUI/COM-server
+  executable is now femmx.exe (femm/CMakeLists.txt), with the window
+  title, VERSIONINFO strings, installer (script.nsi), CI workflow, and
+  the Mathematica/Octave interface scripts (mathfemm/mathfemm.m,
+  octavefemm/mfiles/openfemm.m) updated to match. The femm.ActiveFEMM
+  COM ProgID, the solver executables (fkn.exe/csolv.exe/hsolv.exe/
+  belasolv.exe), and the femm/ source directory and file names are all
+  unchanged by this rename -- see scripts/register_femm_com.ps1 for how
+  the ProgID's LocalServer32 registry entry now points at femmx.exe.
+  Also removed the now-superseded spgryparis/femm_mods hosting
+  reference from this file and NOTICE.md, keeping only the original
+  https://github.com/cenit/FEMM upstream reference and the current
+  https://github.com/SpgV0/femmx hosting.
 
 22Oct2023
 

@@ -108,7 +108,7 @@ if(ENABLE_CUDA_SOLVER)
   # also pulls in nvJitLink transitively at run time); without them next
   # to the exe (or on PATH), it fails to even start -- silently, with no
   # error message of its own, since the OS loader rejects it before
-  # main() runs. Bundling them here means a built femm_plus doesn't require
+  # main() runs. Bundling them here means a built femmx doesn't require
   # end users to have the CUDA Toolkit's bin dir on their system PATH.
   file(GLOB FEMM_CUDA_RUNTIME_DLLS
     "${FEMM_CUDA_ROOT}/bin/cudart64_*.dll"

@@ -1,7 +1,11 @@
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+; rebranded from femm/FEMM to femmx/FEMMX (project rebrand: femm_plus ->
+; femmx): PROJECT_NAME, the packaged femm.exe -> femmx.exe, and the
+; start-menu shortcut.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
-!define PROJECT_NAME "FEMM"
+!define PROJECT_NAME "FEMMX"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
@@ -36,7 +40,7 @@ Section
     File "bin\belasolv.exe"
     File "bin\condlib.dat"
     File "bin\csolv.exe"
-    File "bin\femm.exe"
+    File "bin\femmx.exe"
     File "bin\femmplot.exe"
     File "bin\fkn.exe"
     File "bin\heatlib.dat"
@@ -50,7 +54,7 @@ Section
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     SetOutPath "$STARTMENU\Programs\${PROJECT_NAME}"
-    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMM.lnk" "$INSTDIR\femm.exe"
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\femmx.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
@@ -63,7 +67,7 @@ Section "uninstall"
     Delete "$INSTDIR\belasolv.exe"
     Delete "$INSTDIR\condlib.dat"
     Delete "$INSTDIR\csolv.exe"
-    Delete "$INSTDIR\femm.exe"
+    Delete "$INSTDIR\femmx.exe"
     Delete "$INSTDIR\femmplot.exe"
     Delete "$INSTDIR\fkn.exe"
     Delete "$INSTDIR\heatlib.dat"
@@ -78,7 +82,7 @@ Section "uninstall"
     Delete "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     # remove the links from the start menu
-    Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMM.lnk"
+    Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk"
     RMDir "$STARTMENU\Programs\${PROJECT_NAME}"
 

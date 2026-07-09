@@ -1,6 +1,6 @@
 ---
 name: push-branch-policy
-description: "In femm_plus (formerly femm_mods), commit to new_features locally but hold off pushing to origin until the user explicitly says to"
+description: "In femmx (formerly femm_mods, then femm_plus), commit to new_features locally but hold off pushing to origin until the user explicitly says to"
 metadata: 
   node_type: memory
   type: feedback
@@ -31,13 +31,14 @@ still expected), but stop before the `git push` step and tell the user
 what's queued locally instead of pushing automatically. Push only once
 they give explicit go-ahead in that session.
 
-**Repo note (2026-07-08):** The project was ported from
-`spgryparis/femm_mods` to `https://github.com/SpgV0/femm_plus` — this is
-now the sole remote (`origin`), with the same two branches and history
-(the `new_features`-only commits were re-authored to `SpgV0
+**Repo note (2026-07-08):** The project was ported from its earlier
+GitHub host to `https://github.com/SpgV0/femmx` — this is now the sole
+remote (`origin`), with the same two branches and history (the
+`new_features`-only commits were re-authored to `SpgV0
 <spgr.eng.v0@gmail.com>` during the port; `main`'s original upstream
-history is untouched). The old `spgryparis/femm_mods` credential was
-explicitly cleared from this machine's credential manager and replaced
-with `SpgV0`'s — don't try to push to the old repo/account, and don't
-re-add it as a remote. See [[gpu-speedup-investigation]] for the first
+history, cloned from `cenit/FEMM`, is untouched). The old host's
+credential was explicitly cleared from this machine's credential
+manager and replaced with `SpgV0`'s — don't try to push to the old
+repo/account, and don't re-add it as a remote. See
+[[gpu-speedup-investigation]] for the first
 feature shipped under the new repo.

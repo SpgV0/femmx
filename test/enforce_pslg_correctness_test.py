@@ -28,7 +28,7 @@ Expected result (a valid planar straight-line graph):
     the untouched original vertical line (5,-5)-(5,-1) (still 1 segment),
     and the new copied line split into 2 at the intersection.
 
-Requirements: pip install pyfemm pywin32; a built + COM-registered femm.exe.
+Requirements: pip install pyfemm pywin32; a built + COM-registered femmx.exe.
 
 Usage:
     pytest enforce_pslg_correctness_test.py -v

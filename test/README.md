@@ -2,8 +2,8 @@
 
 Pytest-based regression tests that build and solve real FEMM models
 entirely from Python, using the `pyfemm` COM interface to a locally built
-`femm.exe`. These run automatically in CI (`.github/workflows/ccpp.yml`,
-after `femm.exe` is built) and can be run locally the same way.
+`femmx.exe`. These run automatically in CI (`.github/workflows/ccpp.yml`,
+after `femmx.exe` is built) and can be run locally the same way.
 
 Every test module writes its generated files (models, solutions, reports)
 under `results/<script_name>/`. The `.txt` reports are tracked in git as
@@ -13,7 +13,7 @@ gitignored.
 
 ### Prerequisites
 
-- A built `femm.exe` (see the repository root `README.md` / `build.ps1`),
+- A built `femmx.exe` (see the repository root `README.md` / `build.ps1`),
   registered as a COM automation server (`femm.ActiveFEMM`) -- run
   `scripts/register_femm_com.ps1` after building if it isn't already
   self-registered.
@@ -26,7 +26,7 @@ pytest test/ -v
 ```
 
 Each module can also still be run directly as a script, e.g.
-`python test/straight_wire_field_test.py`. If `femm.exe`/COM
+`python test/straight_wire_field_test.py`. If `femmx.exe`/COM
 automation isn't available, the whole suite is skipped (not failed) with a
 clear reason -- see `conftest.py`.
 

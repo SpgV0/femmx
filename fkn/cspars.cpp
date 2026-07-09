@@ -1025,7 +1025,7 @@ int CBigComplexLinProb::PBCGSolveMod(int flag)
         "1. Install the NVIDIA CUDA Toolkit (a version supported by your GPU "
         "driver -- run \"nvidia-smi\" to check the maximum CUDA version it "
         "supports).\n"
-        "2. Rebuild femm_plus with CMake options -DENABLE_CUDA_SOLVER=ON "
+        "2. Rebuild femmx with CMake options -DENABLE_CUDA_SOLVER=ON "
         "-DFEMM_CUDA_ROOT=\"<path to CUDA Toolkit>\" (add "
         "-DFEMM_CUDA_CCBIN=\"<path to an nvcc-compatible MSVC toolset bin "
         "dir>\" too if your installed Visual Studio is newer than the CUDA "
