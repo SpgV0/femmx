@@ -114,7 +114,28 @@ if(ENABLE_CUDA_SOLVER)
   target_compile_definitions(fkn PRIVATE FEMM_CUDA_ENABLED)
   target_include_directories(fkn PRIVATE "${FEMM_CUDA_ROOT}/include")
   target_link_directories(fkn PRIVATE "${FEMM_CUDA_ROOT}/lib/x64")
-  target_link_libraries(fkn cusparse cublas cudart)
+  target_link_libraries(fkn cusparse cublas cudart delayimp)
+
+  # Delay-load the CUDA runtime DLLs (needs delayimp.lib above): without
+  # this, every fkn.exe launch loads all ~900MB of them at process
+  # startup via the OS loader resolving the import table, even when
+  # GPUAccel is never turned on for a given problem. Every CUDA API call
+  # only ever happens inside PCGSolveGPU()/PBCGSolveGPU() (spars.cpp/
+  # cspars.cpp's CBigLinProb::PCGSolve/CBigComplexLinProb::PBCGSolveMod),
+  # which are themselves only reached when GPUAccel is set -- so with
+  # delay-loading, a GPUAccel=0 run touches none of these DLLs and
+  # behaves identically (same startup cost, same failure modes) to a
+  # plain (non-CUDA) build, matching what a CUDA build is supposed to
+  # fall back to.
+  file(GLOB FEMM_CUDA_DIRECT_IMPORT_DLLS
+    "${FEMM_CUDA_ROOT}/bin/cudart64_*.dll"
+    "${FEMM_CUDA_ROOT}/bin/cusparse64_*.dll"
+    "${FEMM_CUDA_ROOT}/bin/cublas64_*.dll"
+  )
+  foreach(_dll ${FEMM_CUDA_DIRECT_IMPORT_DLLS})
+    get_filename_component(_dllname "${_dll}" NAME)
+    target_link_options(fkn PRIVATE "/DELAYLOAD:${_dllname}")
+  endforeach()
 else()
   add_executable(fkn WIN32 ${fkn_SOURCES})
 endif()

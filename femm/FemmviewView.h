@@ -144,12 +144,19 @@ class CFemmviewView : public CView {
   BOOL m_bDarkTheme;
   void ApplyTheme(BOOL bDark);
 
-  // Density plot GDI batching -- see PlotFluxDensity/OnDraw.
+  // Density plot GDI batching -- see PlotFluxDensity/OnDraw. Each band's
+  // buffer is flushed (via FlushDensityBand) once it reaches
+  // kMaxDensityBandPts, not just at the end of the full mesh loop --
+  // PolyPolygon() with an unbounded, potentially huge single-call point
+  // count (millions, for a fine mesh) is a known crash/perf cliff on
+  // some GDI drivers.
+  static const int kMaxDensityBandPts = 3000; // 1000 triangles
   CPen m_densityPens[20];
   CBrush m_densityBrushes[20];
   COLORREF m_densityCachedColor[20];
   BOOL m_densityBuilt[20];
   std::vector<POINT> m_densityBandPts[20];
+  void FlushDensityBand(CDC* pDC, int lav);
 
   // Operations
   public:

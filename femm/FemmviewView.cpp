@@ -758,12 +758,15 @@ void CFemmviewView::PlotFluxDensity(CDC* pDC, int elmnum, int flag)
       }
 
       // Deferred: accumulate this sub-triangle's vertices into its
-      // color band's buffer instead of drawing it immediately. OnDraw
-      // flushes each band with one PolyPolygon() call after the full
-      // element loop finishes, instead of one Polygon() call per
-      // sub-triangle here -- for a large mesh with several sub-triangles
-      // per element, that's easily millions of individual GDI calls cut
-      // down to at most 20.
+      // color band's buffer instead of drawing it immediately, and flush
+      // with a single PolyPolygon() call once that buffer reaches
+      // kMaxDensityBandPts (also flushed one final time in OnDraw for
+      // whatever's left over) -- instead of one Polygon() call per
+      // sub-triangle here, which for a large mesh with several
+      // sub-triangles per element is easily millions of individual GDI
+      // calls. Capped rather than accumulating for the whole mesh in one
+      // call: PolyPolygon() with an unbounded point count is a known
+      // crash/perf cliff on some GDI drivers.
       if (DrawIt == TRUE) {
         ps[0].x = (long)c[i][0];
         ps[0].y = (long)c[i][1];
@@ -774,6 +777,8 @@ void CFemmviewView::PlotFluxDensity(CDC* pDC, int elmnum, int flag)
         m_densityBandPts[lav].push_back(ps[0]);
         m_densityBandPts[lav].push_back(ps[1]);
         m_densityBandPts[lav].push_back(ps[2]);
+        if ((int)m_densityBandPts[lav].size() >= kMaxDensityBandPts)
+          FlushDensityBand(pDC, lav);
       }
     }
 
@@ -784,6 +789,25 @@ void CFemmviewView::PlotFluxDensity(CDC* pDC, int elmnum, int flag)
     n--;
 
   } while (n > 2);
+}
+
+// Draws and clears whatever's currently buffered for color band lav, if
+// anything -- see the batching comment in PlotFluxDensity. Called both
+// mid-mesh-loop (once a band hits kMaxDensityBandPts) and once more at
+// the end of OnDraw's element loop to flush any remainder.
+void CFemmviewView::FlushDensityBand(CDC* pDC, int lav)
+{
+  if (m_densityBandPts[lav].empty() || !m_densityBuilt[lav])
+    return;
+
+  CBrush* pOldBrush = pDC->SelectObject(&m_densityBrushes[lav]);
+  CPen* pOldPen = pDC->SelectObject(&m_densityPens[lav]);
+  std::vector<INT> counts(m_densityBandPts[lav].size() / 3, 3);
+  pDC->PolyPolygon(m_densityBandPts[lav].data(), counts.data(), (int)counts.size());
+  pDC->SelectObject(pOldPen);
+  pDC->SelectObject(pOldBrush);
+
+  m_densityBandPts[lav].clear();
 }
 
 ///////////////
@@ -1113,18 +1137,11 @@ void CFemmviewView::OnDraw(CDC* pDC)
       }
     }
 
-    // Flush each color band's accumulated sub-triangles with a single
-    // PolyPolygon() call -- see the comment in PlotFluxDensity.
-    for (k = 0; k < 20; k++) {
-      if (!m_densityBandPts[k].empty() && m_densityBuilt[k]) {
-        CBrush* pOldBrush = pDC->SelectObject(&m_densityBrushes[k]);
-        CPen* pOldPen = pDC->SelectObject(&m_densityPens[k]);
-        std::vector<INT> counts(m_densityBandPts[k].size() / 3, 3);
-        pDC->PolyPolygon(m_densityBandPts[k].data(), counts.data(), (int)counts.size());
-        pDC->SelectObject(pOldPen);
-        pDC->SelectObject(pOldBrush);
-      }
-    }
+    // Flush whatever's left in each color band's buffer (each already
+    // flushed itself in PlotFluxDensity if it hit kMaxDensityBandPts) --
+    // see the comment in PlotFluxDensity.
+    for (k = 0; k < 20; k++)
+      FlushDensityBand(pDC, k);
   }
 
   // Draw grid if it is enabled...
