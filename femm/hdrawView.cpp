@@ -5,6 +5,7 @@
 #include "femm.h"
 #include <afxtempl.h>
 #include <time.h>
+#include <vector>
 #include "hdrawDoc.h"
 #include "hdrawView.h"
 #include "MainFrm.h"
@@ -468,6 +469,71 @@ BOOL ChdrawView::DwgToScreen(double xd, double yd, int* xs, int* ys, RECT* r)
   return TRUE;
 }
 
+// Clips a line segment to a Zm-radius square centered on the origin --
+// the same bound MyLineTo() uses to keep extreme-zoom screen coordinates
+// from overflowing GDI -- without drawing anything or touching MyLineTo's
+// Xm/Ym "current position" state. Used by the batched mesh-edge drawing
+// in OnDraw so Zm/GetClientRect only need to be fetched once for the
+// whole mesh, not once per edge (see the comment there). Math mirrors
+// MyLineTo's clipping branch exactly. Returns FALSE if the segment lies
+// entirely outside the bound (nothing to draw).
+static BOOL ClipMeshSegment(int x0, int y0, int x1, int y1, int Zm, POINT out[2])
+{
+  if ((abs(x0) < Zm) && (abs(y0) < Zm) && (abs(x1) < Zm) && (abs(y1) < Zm)) {
+    out[0].x = x0;
+    out[0].y = y0;
+    out[1].x = x1;
+    out[1].y = y1;
+    return TRUE;
+  }
+
+  CComplex p, q, pc, qc;
+  double a, b, c, u0, u1;
+
+  p = (x0 + I * y0) / ((double)Zm);
+  q = (x1 + I * y1) / ((double)Zm);
+  pc = conj(p);
+  qc = conj(q);
+
+  c = Re(p * pc - 1.);
+  b = Re(-2. * p * pc + pc * q + p * qc);
+  a = Re(p * pc - pc * q - p * qc + q * qc);
+
+  if (fabs(a) == 0)
+    return FALSE;
+
+  b /= a;
+  c /= a;
+  if ((b * b - 4. * c) <= 0)
+    return FALSE;
+
+  u0 = -b / 2. + sqrt(b * b - 4. * c) / 2.;
+  u1 = -b / 2. - sqrt(b * b - 4. * c) / 2.;
+  if (u1 < u0) {
+    c = u0;
+    u0 = u1;
+    u1 = c;
+  }
+  if ((u0 >= 1) || (u1 <= 0))
+    return FALSE;
+
+  if (u0 < 0)
+    u0 = 0;
+  if (u1 > 1)
+    u1 = 1;
+
+  pc = p * (1. - u0) + q * u0;
+  qc = p * (1. - u1) + q * u1;
+  pc *= ((double)Zm);
+  qc *= ((double)Zm);
+
+  out[0].x = (int)Re(pc);
+  out[0].y = (int)Im(pc);
+  out[1].x = (int)Re(qc);
+  out[1].y = (int)Im(qc);
+  return TRUE;
+}
+
 void ChdrawView::OnDraw(CDC* pDC)
 {
   ChdrawDoc* pDoc = GetDocument();
@@ -592,21 +658,58 @@ void ChdrawView::OnDraw(CDC* pDC)
 
   // Draw mesh if it is enabled...
   if (MeshFlag == TRUE) {
+    // Batched, same rationale/technique as the post-processor result
+    // views' mesh drawing (see FemmviewView.cpp's OnDraw): accumulate
+    // edges and flush via a single PolyPolyline() call every
+    // kMaxMeshEdgePts points instead of one MoveTo()+LineTo() GDI call
+    // pair per edge, and fetch the MyLineTo()-equivalent off-screen
+    // clamping bound once via ClipMeshSegment() instead of once per edge.
+    RECT crMesh;
+    GetClientRect(&crMesh);
+    int ZmMesh = __max(__max(crMesh.right, crMesh.bottom), __max(crMesh.left, crMesh.top));
+    ZmMesh = (ZmMesh * 3) / 2;
+    const size_t kMaxMeshEdgePts = 4000; // 2000 edges
+    std::vector<POINT> meshPts;
+    meshPts.reserve(kMaxMeshEdgePts);
+
     pOldPen = pDC->SelectObject(&penMesh);
     for (i = 0; i < pDoc->meshline.GetSize(); i++) {
-      MyMoveTo(pDC, pDoc->meshnode[pDoc->meshline[i].x].xs,
-          pDoc->meshnode[pDoc->meshline[i].x].ys);
-      MyLineTo(pDC, pDoc->meshnode[pDoc->meshline[i].y].xs,
-          pDoc->meshnode[pDoc->meshline[i].y].ys);
+      POINT clipped[2];
+      if (ClipMeshSegment(pDoc->meshnode[pDoc->meshline[i].x].xs, pDoc->meshnode[pDoc->meshline[i].x].ys,
+              pDoc->meshnode[pDoc->meshline[i].y].xs, pDoc->meshnode[pDoc->meshline[i].y].ys, ZmMesh, clipped)) {
+        meshPts.push_back(clipped[0]);
+        meshPts.push_back(clipped[1]);
+        if (meshPts.size() >= kMaxMeshEdgePts) {
+          std::vector<DWORD> counts(meshPts.size() / 2, 2);
+          pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+          meshPts.clear();
+        }
+      }
+    }
+    if (!meshPts.empty()) {
+      std::vector<DWORD> counts(meshPts.size() / 2, 2);
+      pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+      meshPts.clear();
     }
     pDC->SelectObject(pOldPen);
 
     pOldPen = pDC->SelectObject(&penGrey);
     for (i = 0; i < pDoc->greymeshline.GetSize(); i++) {
-      MyMoveTo(pDC, pDoc->meshnode[pDoc->greymeshline[i].x].xs,
-          pDoc->meshnode[pDoc->greymeshline[i].x].ys);
-      MyLineTo(pDC, pDoc->meshnode[pDoc->greymeshline[i].y].xs,
-          pDoc->meshnode[pDoc->greymeshline[i].y].ys);
+      POINT clipped[2];
+      if (ClipMeshSegment(pDoc->meshnode[pDoc->greymeshline[i].x].xs, pDoc->meshnode[pDoc->greymeshline[i].x].ys,
+              pDoc->meshnode[pDoc->greymeshline[i].y].xs, pDoc->meshnode[pDoc->greymeshline[i].y].ys, ZmMesh, clipped)) {
+        meshPts.push_back(clipped[0]);
+        meshPts.push_back(clipped[1]);
+        if (meshPts.size() >= kMaxMeshEdgePts) {
+          std::vector<DWORD> counts(meshPts.size() / 2, 2);
+          pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+          meshPts.clear();
+        }
+      }
+    }
+    if (!meshPts.empty()) {
+      std::vector<DWORD> counts(meshPts.size() / 2, 2);
+      pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
     }
     pDC->SelectObject(pOldPen);
   }
