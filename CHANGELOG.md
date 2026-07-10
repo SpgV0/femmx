@@ -1,7 +1,7 @@
 ﻿10Jul2026 (v1.0.0)
 
-* Established a release workflow: `main` (releases) and `rc` (release
-  candidate, merged into `main` with `--no-ff`) branches alongside the
+* Established a release workflow: `master` (releases) and `rc` (release
+  candidate, merged into `master` with `--no-ff`) branches alongside the
   active `new_features` development branch, and a `vMAJOR.MINOR.PATCH`
   semantic-versioning tagging scheme. Tagged this release `v1.0.0`.
 * Rehosted `SpgV0/femmx` as an actual GitHub fork of
