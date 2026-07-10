@@ -14,9 +14,9 @@ change) at the point of modification.
 
 ## Change Log
 
-See [README.md](README.md) for full technical detail on each change (dated
-entries, most recent first). This section is the condensed, license-required
-record of modifications.
+See [CHANGELOG.md](CHANGELOG.md) for full technical detail on each change
+(dated entries, most recent first). This section is the condensed,
+license-required record of modifications.
 
 - 2026-07-06: Repository cloned from https://github.com/cenit/FEMM
   (commit 7d9e8ed) and re-hosted at https://github.com/SpgV0/femmx.
@@ -116,3 +116,8 @@ record of modifications.
   the above, plus the preexisting Dark Theme and CPU/GPU Load Monitor
   View-menu toggles, which had no manual coverage until now. See
   per-file modification notice on `manual/manual.tex.in`.
+- 2026-07-10: Split `README.md`: its prior changelog content moved
+  verbatim into new `CHANGELOG.md`, and `README.md` rewritten to instead
+  describe the software and document build/install requirements and
+  steps (Visual Studio/MFC, CMake, optional NSIS/CUDA/LaTeX, the
+  `build_plain.bat`/`build_cuda.bat` wrappers, and the installer layout).
