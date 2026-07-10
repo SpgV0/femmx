@@ -1,5 +1,14 @@
 % !TEX program = XeLaTeX
 % !TEX spellcheck = en_US
+%
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% rebranded the title page and the "femm.exe" executable reference to
+% femmx.exe (project rebrand: femm_plus -> femmx).
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% documented the Dark Theme and CPU/GPU Load Monitor View-menu toggles
+% (View Manipulation section) -- both preexisting features this fork
+% had added but never described in the manual body (get_solve_stats()
+% itself was already documented separately in magnlua.tex).
 
 % ------------------------------------------------------------------------
 %  My Format for a Article
@@ -53,7 +62,9 @@
 
 \vspace*{0.5in}
 \begin{center}
-{\LARGE Finite Element Method Magnetics}
+{\LARGE FEMMX}
+
+\vspace*{16pt} {\Large Finite Element Method Magnetics}
 
 \vspace*{16pt} {\Large Version 4.2}
 
@@ -123,7 +134,7 @@ flow problems.
 FEMM is divided into three parts:
 
 \begin{itemize}
-\item Interactive shell ({\tt femm.exe}).  This program is a Multiple
+\item Interactive shell ({\tt femmx.exe}).  This program is a Multiple
 Document Interface pre-processor and a post-processor for the
 various types of problems solved by FEMM. It contains a CAD-like
 interface for laying out the geometry of the problem to be solved
@@ -913,6 +924,21 @@ pushing the left mouse button down on an area of the toolbar that
 is not actually a button, and then dragging the toolbar to its
 desired location.  The toolbar can be docked again by moving it
 back to its original position.
+
+FEMMX adds two further toggles to the {\tt View} menu, in both the
+preprocessor (editor) and postprocessor (results) windows. {\tt Dark
+Theme} swaps the canvas colors -- background, grid, node, line,
+block, mesh, selection, and (in the postprocessor) region, text,
+flux-line, and vector colors -- between the light defaults and a
+dark palette, and best-effort switches the main window's title bar
+to match on Windows 10 1809+/11. {\tt CPU/GPU Load Monitor} opens a
+window that plots a rolling strip chart of CPU utilization, and GPU
+utilization when an NVIDIA GPU and driver are present, for as long as
+it is left open; each solve is marked with a start/end bar on the
+chart and a summary line (duration, CPU/GPU/RAM max and average) in
+the log below it. Its most recent summary is also available to Lua
+scripts via the {\tt get\_solve\_stats()} command (see the Lua
+Scripting chapter's Common Lua Command Set).
 
 \subsection{Grid Manipulation} \label{grid_manipulation}
 

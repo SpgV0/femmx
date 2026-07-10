@@ -128,6 +128,13 @@ BOOL bLinehook;
 BOOL lua_byebye;
 CString luafiles[20];
 CLuaConsoleDlg* LuaConsole = NULL;
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09: the
+// persistent CPU/GPU/RAM load monitor window, owned by CMainFrame (see
+// LoadMonitorDlg.h); set once in CMainFrame::OnCreate, same pattern as
+// LuaConsole above. Used by OnMenuAnalyze() and its heatflow/
+// electrostatics/currentflow equivalents to bracket solves with
+// MarkSolveStart()/MarkSolveEnd().
+CLoadMonitorDlg* LoadMonitorWnd = NULL;
 int luafilepointer; // both used during the CMyCommandLineInfo parsing
 CFemmApp* pApp;
 HANDLE hProc;
@@ -234,6 +241,7 @@ BOOL CFemmApp::InitInstance()
   lua_register(lua, "chdir", lua_setcurrentdirectory);
   lua_register(lua, "smartmesh", lua_smartmesh);
   lua_register(lua, "makeplot", lua_makeplot);
+  lua_register(lua, "get_solve_stats", lua_getsolvestats);
   lua_setlinehook(lua, line_hook);
 
   pApp = this;
@@ -1344,6 +1352,41 @@ int CFemmApp::lua_smartmesh(lua_State* L)
     ((CFemmApp*)AfxGetApp())->session_SmartMesh = (int)lua_todouble(L, 1);
 
   return 0;
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-09: reports
+// the most recently completed solve's CPU/GPU/RAM/duration stats, as
+// tracked by the persistent load monitor (CMainFrame::m_LoadMonitor, see
+// LoadMonitorDlg.h) -- intended for benchmarking scripts that want these
+// numbers without scraping the log listbox in the monitor's dialog box.
+// Returns seven values: exec_time (seconds), cpu_max, cpu_avg, gpu_max,
+// gpu_avg, ram_max, ram_avg (all percentages 0-100). gpu_max/gpu_avg are
+// -1 if no NVIDIA GPU/NVML was available to sample from. Raises a Lua
+// error if no solve has completed yet (e.g. mi/hi/ei/ci_analyze hasn't
+// been called), or if the load monitor is disabled (View menu), since it
+// doesn't sample while off.
+int CFemmApp::lua_getsolvestats(lua_State* L)
+{
+  if (LoadMonitorWnd == NULL || !LoadMonitorWnd->IsEnabled()) {
+    lua_error(L, "get_solve_stats: the load monitor is disabled (see the View menu)");
+    return 0;
+  }
+
+  const CLoadMonitorDlg::SolveStats& stats = LoadMonitorWnd->GetLastSolveStats();
+  if (!stats.bValid) {
+    lua_error(L, "get_solve_stats: no solve has completed yet");
+    return 0;
+  }
+
+  lua_pushnumber(L, stats.durationSec);
+  lua_pushnumber(L, stats.cpuMax);
+  lua_pushnumber(L, stats.cpuAvg);
+  lua_pushnumber(L, stats.bGpuAvailable ? stats.gpuMax : -1);
+  lua_pushnumber(L, stats.bGpuAvailable ? stats.gpuAvg : -1);
+  lua_pushnumber(L, stats.ramMax);
+  lua_pushnumber(L, stats.ramAvg);
+
+  return 7;
 }
 
 int CFemmApp::lua_Complex(lua_State* L)

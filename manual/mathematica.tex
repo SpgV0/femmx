@@ -1,3 +1,6 @@
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% updated the femm.exe executable reference to femmx.exe (project
+% rebrand: femm_plus -> femmx).
 \chapter{Mathematica Interface}
 
 FEMM can interact with Mathematica via Mathematica's MathLink API. Once Mathematica and FEMM are connected, any
@@ -9,7 +12,7 @@ The MathLink connection to FEMM can be initialized in two ways.  The link can ei
 automatically on startup, or during a session via commands in the Lua console.  To establish the connection on
 startup, just use the LinkLaunch function in Mathematica, {\em e.g.}:
 
-\verb+mlink = LinkLaunch["c:\\progra~1\\femm42\\bin\\femm.exe"];+
+\verb+mlink = LinkLaunch["c:\\progra~1\\femm42\\bin\\femmx.exe"];+
 
 To initialize the link, some string must first be sent over the link from the Mathematica side, {\em e.g.}:
 

@@ -118,7 +118,7 @@ BEGIN
             VALUE "FileDescription", "FKN MFC Application\0"
             VALUE "FileVersion", "1, 0, 0, 1\0"
             VALUE "InternalName", "FKN\0"
-            VALUE "LegalCopyright", "Copyright © 1998\0"
+            VALUE "LegalCopyright", "Copyright ï¿½ 1998\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "FKN.EXE\0"
             VALUE "ProductName", "FKN Application\0"

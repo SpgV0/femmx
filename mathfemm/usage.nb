@@ -33,21 +33,21 @@ Cell["Installation and Setup", "Section"],
 
 Cell["\<\
 The MathFEMM package is automatically installed with FEMM 4.2. If you have \
-accepted the default install for FEMM (to c:\\Program Files\\femm42) no \
+accepted the default install for FEMM (to c:\\FEMMX) no \
 further initialization is required. If you have installed FEMM to a different \
 directory, you will need to perform an additional initialization step so that \
 MathFEMM can find the FEMM executable:
 1) Start up Mathematica.
 2) Load the MathFEMM package from the installation directory with the command:
-<<c:\\progra~1\\femm42\\mathfemm\\mathfemm.m
+<<c:\\FEMMX\\mathfemm\\mathfemm.m
 3) Run the SetPathToFEMM command to specify the path to the FEMM executable:
-SetPathToFEMM[\"c:\\\\progra~1\\\\femm42\\\\bin\\\\femm.exe\"]
-where you'd replace the above path with the one to femm.exe in your \
+SetPathToFEMM[\"c:\\\\FEMMX\\\\bin\\\\femmx.exe\"]
+where you'd replace the above path with the one to femmx.exe in your \
 installation.Be sure to use double backslashes in the path specification
 
 USE:To start an MathFEMM session,first load up the MathFEMM package using the \
 command:
-<<c:\\progra~1\\femm42\\mathfemm\\mathfemm.m
+<<c:\\FEMMX\\mathfemm\\mathfemm.m
 You may need to change the path to mathfemm.m in the above call if you chose \
 to install in a directory other than the default one.Then,use the OpenFEMM[] \
 to automatically FEMM process and connect to it. Subsequent MathFEMM commands \

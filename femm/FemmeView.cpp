@@ -1,5 +1,16 @@
 // FemmeView.cpp : implementation file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// DrawPSLG() now honors CFemmeDoc::NoDraw (it previously ignored the
+// flag, unlike OnDraw()); OnCopyObjects()/OnMoveObjects() now suspend
+// redraw for the duration of the batch edit and refresh once at the end,
+// to avoid redundant full-canvas redraws on densely-drawn models.
+// Also added a dark theme toggle: ApplyTheme(), OnViewDarkTheme(),
+// OnUpdateViewDarkTheme() (ID_VIEW_DARKTHEME).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// OnMenuAnalyze() now calls CMainFrame's persistent load monitor's
+// MarkSolveStart()/MarkSolveEnd() around the fkn.exe wait loop (see
+// LoadMonitorDlg.h). The View-menu toggle itself moved to CMainFrame.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -21,6 +32,11 @@
 
 #include <winreg.h>
 #include <process.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -33,6 +49,7 @@ int Xm, Ym;
 extern lua_State* lua;
 extern BOOL bLinehook;
 extern HANDLE hProc;
+extern CLoadMonitorDlg* LoadMonitorWnd;
 
 /////////////////////////////////////////////////////////////////////////////
 // CFemmeView
@@ -89,6 +106,8 @@ ON_COMMAND(ID_FD_SELECTCIRC, OnFDSelectCirc)
 ON_COMMAND(ID_VIEW_SHOWORPHANS, OnViewShowOrphans)
 ON_COMMAND(ID_CREATERADIUS, OnCreateRadius)
 ON_UPDATE_COMMAND_UI(ID_EDIT_EXTERIOR, OnUpdateEditExterior)
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 //}}AFX_MSG_MAP
 // Standard printing commands
 ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
@@ -120,6 +139,7 @@ CFemmeView::CFemmeView()
   NodeColor = dNodeColor;
   BackColor = dBackColor;
   NameColor = dNameColor;
+  m_bDarkTheme = FALSE;
 
   // assume some default behaviors if they can't be
   // loaded from disk
@@ -266,6 +286,10 @@ void CFemmeView::ScreenToDwg(int xs, int ys, double* xd, double* yd, RECT* r)
 
 void CFemmeView::DrawPSLG()
 {
+  CFemmeDoc* pDocCheck = GetDocument();
+  if (pDocCheck->NoDraw == TRUE)
+    return;
+
   RECT r;
   GetClientRect(&r);
   int i, j, k; // usual iterators...
@@ -2575,6 +2599,12 @@ void CFemmeView::OnMenuAnalyze()
   }
   if (CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
           0, NULL, MyPath, &StartupInfo2, &ProcessInfo2)) {
+    // Called unconditionally (not just for bLinehook != FALSE below):
+    // the interactive path has no wait loop here to call MarkSolveEnd()
+    // from, so it relies on MarkSolveStart's optional process handle to
+    // detect completion itself (see LoadMonitorDlg.cpp's OnTimer).
+    if (LoadMonitorWnd != NULL)
+      LoadMonitorWnd->MarkSolveStart("magnetics: " + pn.Mid(pn.ReverseFind('\\') + 1), ProcessInfo2.hProcess);
     if (bLinehook != FALSE) {
       DWORD ExitCode;
       hProc = ProcessInfo2.hProcess;
@@ -2584,6 +2614,8 @@ void CFemmeView::OnMenuAnalyze()
         Sleep(1);
       } while (ExitCode == STILL_ACTIVE);
       hProc = NULL;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveEnd();
 
       if (ExitCode == 1)
         MsgBox("Material properties have not been defined for all regions");
@@ -2690,6 +2722,10 @@ void CFemmeView::OnMoveObjects()
   dlg.m_ncopies = 0;
 
   if (dlg.DoModal() == IDOK) {
+    // Suspend redraw for the duration of the batch edit below; a single
+    // refresh happens once, right before returning, instead of any
+    // incidental full-canvas redraws while the edit is in progress.
+    pDoc->NoDraw = TRUE;
     if (dlg.BtnState == 0) // Rotate
     {
       pDoc->UpdateUndo();
@@ -2700,6 +2736,7 @@ void CFemmeView::OnMoveObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
     if (dlg.BtnState == 1) // Translate
@@ -2710,8 +2747,10 @@ void CFemmeView::OnMoveObjects()
       pDoc->meshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
+    pDoc->NoDraw = FALSE;
   }
 }
 
@@ -2729,6 +2768,10 @@ void CFemmeView::OnCopyObjects()
   dlg.m_ncopies = 1;
 
   if (dlg.DoModal() == IDOK) {
+    // Suspend redraw for the duration of the batch edit below; a single
+    // refresh happens once, right before returning, instead of any
+    // incidental full-canvas redraws while the edit is in progress.
+    pDoc->NoDraw = TRUE;
     if (dlg.BtnState == 0) // Rotate
     {
       pDoc->UpdateUndo();
@@ -2739,6 +2782,7 @@ void CFemmeView::OnCopyObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
     if (dlg.BtnState == 1) // Translate
@@ -2750,8 +2794,10 @@ void CFemmeView::OnCopyObjects()
       pDoc->greymeshline.RemoveAll();
       MeshFlag = FALSE;
       MeshUpToDate = FALSE;
+      pDoc->NoDraw = FALSE;
       InvalidateRect(NULL);
     }
+    pDoc->NoDraw = FALSE;
   }
 }
 
@@ -3454,4 +3500,51 @@ void CFemmeView::OnMakeABC()
     LuaCmd.Format("mi_makeABC(%i,%g,%g,%g,%i)", dlg.abcn, dlg.abcr, dlg.abcx, dlg.abcy, dlg.n);
     lua_dostring(lua, LuaCmd);
   }
+}
+
+// Switches the canvas color palette (and, best-effort, the main frame's
+// title bar) between the light defaults and a dark palette.
+void CFemmeView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+  } else {
+    BackColor = dBackColor;
+    LineColor = dLineColor;
+    NodeColor = dNodeColor;
+    BlockColor = dBlockColor;
+    MeshColor = dMeshColor;
+    GridColor = dGridColor;
+    NameColor = dNameColor;
+    SelColor = dSelColor;
+  }
+
+  // Best-effort: also switch the main frame's title bar between light
+  // and dark (Windows 10 1809+/11). A no-op on older systems.
+  HWND hFrame = AfxGetMainWnd() ? AfxGetMainWnd()->GetSafeHwnd() : NULL;
+  if (hFrame != NULL) {
+    BOOL useDark = bDark;
+    DwmSetWindowAttribute(hFrame, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
+  }
+
+  InvalidateRect(NULL);
+}
+
+void CFemmeView::OnViewDarkTheme()
+{
+  ApplyTheme(!m_bDarkTheme);
+}
+
+void CFemmeView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(m_bDarkTheme);
 }

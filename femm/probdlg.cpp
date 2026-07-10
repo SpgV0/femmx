@@ -1,5 +1,7 @@
 // probdlg.cpp : implementation file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// wired the gpuaccel field to the new IDC_GPUACCEL checkbox.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -26,6 +28,7 @@ probdlg::probdlg(CWnd* pParent /*=NULL*/)
   m_minangle = DEFAULT_MINIMUM_ANGLE;
   m_prevsoln = _T("");
   //}}AFX_DATA_INIT
+  gpuaccel = 0;
 }
 
 void probdlg::DoDataExchange(CDataExchange* pDX)
@@ -45,6 +48,7 @@ void probdlg::DoDataExchange(CDataExchange* pDX)
   DDV_MinMaxDouble(pDX, m_minangle, 1., MINANGLE_MAX);
   DDX_Text(pDX, IDC_EDIT_DEPTH, m_depth);
   //}}AFX_DATA_MAP
+  DDX_Check(pDX, IDC_GPUACCEL, gpuaccel);
   DDX_Control(pDX, IDC_EDIT_FREQ, m_IDC_frequency);
   DDX_Control(pDX, IDC_EDIT_DEPTH, m_IDC_depth);
   DDX_Control(pDX, IDC_PROBNOTE, m_IDC_problem_note);

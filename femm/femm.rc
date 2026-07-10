@@ -1,5 +1,27 @@
 // Microsoft Visual C++ generated resource script.
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added a "Dark Theme" item to the magnetics editor's View menu
+// (IDR_FEMMETYPE), ID_VIEW_DARKTHEME.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added a "Use GPU Acceleration" checkbox to IDD_PROBDLG (Problem
+// Definition dialog), IDC_GPUACCEL; grew the dialog by 16px to fit it.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// rebranded window title and VERSIONINFO strings from femm to FEMMX (the
+// femm.ActiveFEMM COM ProgID and IDR_FEMMETYPE doc-type strings are
+// unchanged by this rename -- see scripts/register_femm_com.ps1).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// replaced res/idr_mainframe.ico (the main application/taskbar icon)
+// with the new FEMMX artwork, regenerated as a multi-resolution icon
+// (16/24/32/48/64/128/256px, up from the original's 16/32px only).
+// res/idr_femmetype.ico (the .fem document-type icon) is unchanged.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a "CPU/GPU Load Monitor" item to the magnetics editor's View
+// menu (IDR_FEMMETYPE), ID_VIEW_LOADMONITOR.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added a "Dark Theme" item to the results viewer's View menu
+// (IDR_FEMMVIEWTYPE, the .ans window), reusing ID_VIEW_DARKTHEME -- see
+// CFemmviewView::ApplyTheme in FemmviewView.cpp.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -413,6 +435,9 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM SEPARATOR
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
+        MENUITEM "CPU/GPU &Load Monitor",       ID_VIEW_LOADMONITOR
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -529,6 +554,8 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Output Window",              ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM SEPARATOR
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -1224,6 +1251,18 @@ END
 // Dialog
 //
 
+IDD_LOADMONITOR DIALOGEX 0, 0, 260, 240
+STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "CPU / GPU / RAM Load"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL         "",IDC_LOADCHART,"Static",SS_OWNERDRAW | WS_BORDER,10,10,240,120
+    LTEXT           "",IDC_LOADLEGEND,10,135,240,10
+    LISTBOX         IDC_LOADLOG,10,148,240,62,LBS_NOSEL | WS_VSCROLL | WS_BORDER | LBS_HASSTRINGS
+    PUSHBUTTON      "Save Chart as PNG...",IDC_SAVEPNG,90,220,110,14
+END
+
 IDD_ABOUTBOX DIALOGEX 0, 0, 201, 93
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "About femm"
@@ -1273,7 +1312,7 @@ BEGIN
     EDITTEXT        IDC_EDIT1,7,7,306,14,ES_AUTOHSCROLL
 END
 
-IDD_PROBDLG DIALOGEX 0, 0, 162, 245
+IDD_PROBDLG DIALOGEX 0, 0, 162, 261
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Problem Definition"
 FONT 8, "Tahoma", 0, 0, 0x0
@@ -1285,12 +1324,12 @@ BEGIN
     EDITTEXT        IDC_PRC,70,65,79,14,ES_AUTOHSCROLL
     EDITTEXT        IDC_MINANG,70,80,79,14,ES_AUTOHSCROLL
     COMBOBOX        IDC_SOLVER,69,108,80,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    EDITTEXT        IDC_PROBNOTE,13,164,130,35,ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_WANTRETURN
-    DEFPUSHBUTTON   "OK",IDOK,47,222,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,97,222,50,14
+    EDITTEXT        IDC_PROBNOTE,13,180,130,35,ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_WANTRETURN
+    DEFPUSHBUTTON   "OK",IDOK,47,238,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,97,238,50,14
     LTEXT           "Frequency (Hz)",IDC_STATIC,10,38,55,8
     LTEXT           "Problem Type",IDC_STATIC,10,8,55,8
-    GROUPBOX        "Comment",IDC_STATIC,7,154,140,50
+    GROUPBOX        "Comment",IDC_STATIC,7,170,140,50
     LTEXT           "Length Units",IDC_STATIC,10,23,55,8
     LTEXT           "Solver Precision",IDC_STATIC,10,68,52,8
     LTEXT           "Depth",IDC_STATIC,10,52,55,8
@@ -1302,6 +1341,7 @@ BEGIN
     LTEXT           "Prev Type",IDC_STATIC,10,138,34,8
     COMBOBOX        IDC_BSMART,69,94,80,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "Smart Mesh",IDC_STATIC,10,97,38,8
+    CONTROL         "Use GPU Acceleration (if available)",IDC_GPUACCEL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,155,140,10
 END
 
 IDD_EDITPREF DIALOG  0, 0, 351, 206
@@ -3175,12 +3215,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "David Meeker"
-            VALUE "FileDescription", "femm MFC Application"
+            VALUE "FileDescription", "FEMMX MFC Application"
             VALUE "FileVersion", "1, 0, 0, 1"
-            VALUE "InternalName", "femm"
+            VALUE "InternalName", "femmx"
             VALUE "LegalCopyright", "Copyright (C) 2006"
-            VALUE "OriginalFilename", "femm.EXE"
-            VALUE "ProductName", "femm Application"
+            VALUE "OriginalFilename", "femmx.EXE"
+            VALUE "ProductName", "FEMMX Application"
             VALUE "ProductVersion", "4, 2, 0, 0"
         END
     END
@@ -5455,7 +5495,7 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDR_MAINFRAME           "femm"
+    IDR_MAINFRAME           "FEMMX"
     IDR_FEMMETYPE           "femme\n\nMagnetics Problem\nFemme Files (*.fem)\n.FEM\nFemme.Document\nFemme Document"
     IDR_BELADRAWTYPE        "beladraw\n\nElectrostatics Problem\nBeladraw Files (*.fee)\n.FEE\nBeladraw.Document\nBeladraw Document"
     IDR_HDRAWTYPE           "hdraw\n\nHeat Flow Problem\nhdraw Files (*.feh)\n.FEH\nhdraw.Document\nhdraw Document"

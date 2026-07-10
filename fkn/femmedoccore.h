@@ -1,5 +1,11 @@
 // femmeDoc.h : interface of the CFemmeDoc class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added GPUAccel, read from the saved [GPUAccel] field and passed through
+// to CBigLinProb::GPUAccel in main.cpp (see fkn/spars_cuda.cu).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// GPUAccel is now also passed through to CBigComplexLinProb::GPUAccel in
+// main.cpp for the harmonic (AC/eddy-current) solve path.
 /////////////////////////////////////////////////////////////////////////////
 #define muo 1.2566370614359173e-6
 #define Golden 0.3819660112501051517954131656
@@ -17,6 +23,7 @@ class CFemmeDocCore {
   double Relax;
   int LengthUnits;
   int ACSolver;
+  int GPUAccel;
   BOOL ProblemType;
   BOOL Coords;
   CString PrevSoln;

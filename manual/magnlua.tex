@@ -1,5 +1,14 @@
 % ------------------------------------------------------------------------
 %  My Format for a Article
+%
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% documented mi_setgpuaccel (Problem Commands) and mi_setredraw (Editing
+% Commands), the two Lua commands added since the femm-4.2-22Oct2023
+% pre-fork baseline (see femm/femmeLua.cpp).
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+% documented get_solve_stats() (Common Lua Command Set) -- reports the
+% last solve's CPU/GPU/RAM/duration stats from the Load window, for
+% benchmarking scripts (see femm/femm.cpp's lua_getsolvestats).
 
 \chapter{Lua Scripting}
 
@@ -34,6 +43,23 @@ associated with any particular problem type.
 \begin{itemize}
 
 \item {\tt clearconsole()} Clears the output window of the Lua console.
+
+\item {\tt get\_solve\_stats()} Returns CPU/GPU/RAM usage and execution
+time for the most recently completed solve (magnetics, heat flow,
+electrostatics, or current flow), as tracked by the CPU/GPU/RAM Load
+window (View menu). Intended for benchmarking scripts. Returns seven
+values, in order: {\tt exec\_time} (seconds), {\tt cpu\_max}, {\tt
+cpu\_avg}, {\tt gpu\_max}, {\tt gpu\_avg}, {\tt ram\_max}, {\tt
+ram\_avg}. All usage figures are percentages from 0 to 100. {\tt
+gpu\_max} and {\tt gpu\_avg} are {\tt -1} if no NVIDIA GPU was
+available to sample. Raises a Lua error if the Load window is
+disabled, or if no {\tt mi\_/hi\_/ei\_/ci\_analyze} has completed yet
+in this session. Example:
+\begin{verbatim}
+mi_analyze(1)
+exec_time,cpu_max,cpu_avg,gpu_max,gpu_avg,ram_max,ram_avg =
+    get_solve_stats()
+\end{verbatim}
 
 \item {\tt newdocument(doctype)} Creates a new preprocessor document
 and opens up a new preprocessor window.  Specify {\tt doctype} to
@@ -246,6 +272,16 @@ visible window, either specify no value for {\tt flag} or specify
 \item{\tt mi\_loadsolution()} loads and displays the solution corresponding to the
 current geometry.
 
+\item{\tt mi\_setgpuaccel(flag)} Sets whether {\tt fkern} should try
+its optional CUDA-accelerated linear solve for this problem. Set {\tt
+flag} to {\tt 1} to request GPU acceleration, or {\tt 0} (the default)
+for the normal CPU solve. If {\tt fkern} was not built with CUDA
+support, or if no usable GPU is found at run time, the solve
+transparently falls back to the CPU solver. This setting is saved with
+the problem file (like the AC solver choice), and can also be set via
+the ``Use GPU Acceleration'' checkbox in the Problem Definition
+dialog.
+
 \item {\tt mi\_setfocus("documentname")} Switches the
 magnetics input file upon which Lua commands are to act. If
 more than one magnetics input file is being edited at a time,
@@ -338,6 +374,15 @@ Sets the current editmode to:
         \end{itemize}
 This command will affect all subsequent uses of the other editing
 commands, if they are used WITHOUT the {\tt editaction} parameter.
+
+\item{\tt mi\_setredraw(flag)} Suspends or resumes the canvas redraw
+while editing. Set {\tt flag} to {\tt 0} to suspend redraw before a
+batch of edit operations ({\em e.g.} many {\tt mi\_copytranslate} or
+{\tt mi\_copyrotate} calls on a densely-drawn model), and back to {\tt
+1} (the default state) afterward to resume it and force a single
+refresh showing everything that changed while it was off. Useful for
+speeding up scripts that perform many repeated copy or move operations
+on a model that already has a lot of geometry drawn.
 \end{itemize}
 
 \subsection{Zoom Commands}

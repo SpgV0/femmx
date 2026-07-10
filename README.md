@@ -1,5 +1,208 @@
 ﻿FEMM 4.2 22Oct2023
 
+07Jul2026 (FEMMX fork)
+
+* Rehosted this repository as a fork, FEMMX, at
+  https://github.com/SpgV0/femmx, cloned from
+  https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
+  license-required modification record.
+* Added test/, with Python scripts that build and solve FEMM
+  models via the pyfemm COM interface: straight_wire_field.py (a
+  current-carrying-wire magnetostatics problem validated against the
+  closed-form Ampere's-law solution), copy_redraw_benchmark.py,
+  enforce_pslg_correctness_test.py, and lua_command_regression_test.py
+  (see next items). Each script writes its generated files under its own
+  test/results/<script_name>/ subfolder.
+* Added mi_setredraw(flag) Lua/scripting command
+  (femm/femmeLua.cpp, femm/FemmeDoc.h) to suspend the magnetics editor's
+  canvas redraw during batch edits, e.g. repeated mi_copytranslate/
+  mi_copyrotate calls. Fixed DrawPSLG() (femm/FemmeView.cpp), which
+  didn't honor the existing NoDraw suppression flag unlike OnDraw(), and
+  wired the Edit > Copy/Move dialogs to use the same suspend/resume
+  pattern.
+* Fixed CFemmeDoc::EnforcePSLG() (femm/MOVECOPY.CPP): called once per
+  Copy operation, it used to rebuild the entire node/segment/arc/block
+  list from scratch via intersection-checking Add* calls, making it
+  O(n^2) in total feature count -- the dominant Copy cost on large
+  drawings. RotateCopy/TranslateCopy only ever append new geometry to
+  the end of each list, so a new EnforcePSLG(tol, nodeStart, lineStart,
+  arcStart, blockStart) overload now only re-validates the newly added
+  tail (still checked against the full existing drawing, so correctness
+  is unchanged -- see test/enforce_pslg_correctness_test.py).
+  Combined with the mi_setredraw fix above, measured 9.4x speedup over
+  30 repeated copy actions against a 1,600-block-label model; see
+  test/results/copy_redraw_benchmark/copy_benchmark.txt.
+* Added test/lua_command_regression_test.py, a regression sweep
+  over FEMM's ~450-function Lua command surface (magnetics, electro-
+  statics, heat flow, and current flow, both pre- and post-processor
+  prefixes), tracking every command call as PASS/FAIL/SKIP so a change
+  to the shared editing code used by every problem type's editor shows
+  up here. Surfaced a few pre-existing, unrelated issues along the way
+  (a savebitmap bug in all four pre-processor editors, a pyfemm-exposed
+  ci_refreshview that isn't actually a registered Lua command, a bug in
+  pyfemm's own AWG/IEC helpers) -- see test/README.md and
+  test/results/lua_command_regression/lua_command_regression.txt
+  for details. Magnetics (the editor this fork modifies) passes cleanly
+  apart from the savebitmap issue above.
+* Experimental, isolated in its own commit for easy revert: added a
+  "Dark Theme" toggle to the magnetics editor's View menu
+  (ID_VIEW_DARKTHEME; femm/femm.rc, femm/resource.h, femm/FemmeView.h,
+  femm/FemmeView.cpp). Swaps the canvas colors (background, grid, node,
+  line, block, mesh, selection, name) between the light defaults and a
+  dark palette, and best-effort switches the main window's title bar via
+  DwmSetWindowAttribute/DWMWA_USE_IMMERSIVE_DARK_MODE (Windows 10
+  1809+/11; a no-op elsewhere). Scope: only the magnetics editor's
+  canvas and title bar are re-themed -- menus, toolbars, and dialogs
+  still use the OS's native (light) common-control rendering, since
+  re-theming those would require owner-drawing every control.
+* Converted the regression scripts under test/ (renamed from
+  test_models, then unittests) into pytest-based unit tests with
+  skip-logic for machines missing prerequisites, and added a GitHub
+  Actions CI workflow (.github/workflows/ccpp.yml) that builds FEMM
+  and the NSIS installer and runs the full suite on windows-latest.
+* Added an optional CUDA-accelerated linear solve for fkn.exe's
+  magnetostatic/DC solver (fkn/spars_cuda.cu/.h): a CSR-based,
+  GPU-resident Jacobi-preconditioned conjugate gradient implementation
+  using cuSPARSE/cuBLAS, mirroring CBigLinProb::PCGSolve step for step.
+  Off by default; opt in per-problem via the "Use GPU Acceleration"
+  checkbox in the Problem Definition dialog (femm/probdlg.cpp) or the
+  mi_setgpuaccel(flag) Lua command (femm/femmeLua.cpp), persisted in the
+  .fem file's [GPUAccel] field. Falls back to the CPU solver at run
+  time if no usable GPU is found, or shows a dialog with setup
+  instructions if fkn.exe was built without CUDA support at all.
+  Building it requires -DENABLE_CUDA_SOLVER=ON and the CUDA Toolkit
+  (see fkn/CMakeLists.txt); a normal build.ps1 build is unaffected.
+  Validated correct (0.0000% relative difference from the CPU solver)
+  and faster (1.3x on a ~70k-node problem, 3.5x on a ~700k-node
+  problem) on real hardware; see test/gpu_solver_test.py.
+* Added a CPU/GPU load monitor window (fkn/LoadMonitorDlg.h/.cpp),
+  shown alongside the existing solver progress dialog whenever fkn.exe
+  is solving. Plots a rolling 60-second strip chart of CPU utilization
+  (via GetSystemTimes) and, when an NVIDIA GPU and driver are present,
+  GPU utilization (via NVML, loaded dynamically so this doesn't require
+  the CUDA Toolkit to build). Includes a "Save as PNG..." button
+  (GDI+). Builds unconditionally, independent of ENABLE_CUDA_SOLVER.
+  The window now also stays open after the solve finishes (for
+  interactive/non-scripted runs only -- scripted mi_analyze() calls,
+  which femmx.exe always waits on synchronously, are detected and exit
+  promptly as before) so the final chart and "Save as PNG" remain
+  usable until the user closes it.
+* Extended the CUDA-accelerated linear solve to fkn.exe's harmonic
+  (AC/eddy-current) solver (fkn/spars_cuda.cu's CudaPBCGSolve,
+  fkn/cspars.cpp's PBCGSolveGPU): the same Jacobi-preconditioner swap as
+  the DC solver above, but for CBigComplexLinProb's complex-symmetric
+  system (cuSPARSE/cuBLAS complex-valued CSR SpMV and dot products).
+  Uses the same GPUAccel opt-in (checkbox/mi_setgpuaccel/.fem field) as
+  the DC case -- one setting now covers both solvers. Profiling showed
+  the linear solve is ~85% of total solve time (assembly and meshing are
+  comparatively negligible), so this was the highest-value remaining
+  optimization target; see test/ac_gpu_solver_test.py. Validated correct
+  (0.0000% relative difference from the CPU solver) and faster (2.2-2.4x
+  on a ~40k-node eddy-current problem) on real hardware.
+* Documented mi_setgpuaccel and mi_setredraw -- the two Lua commands
+  added since the femm-4.2-22Oct2023 pre-fork baseline -- in the
+  manual's Lua Scripting chapter (manual/magnlua.tex, Problem Commands
+  and Editing Commands sections respectively).
+* Rebranded the fork from femm_plus to FEMMX: the main GUI/COM-server
+  executable is now femmx.exe (femm/CMakeLists.txt), with the window
+  title, VERSIONINFO strings, installer (script.nsi), CI workflow, and
+  the Mathematica/Octave interface scripts (mathfemm/mathfemm.m,
+  octavefemm/mfiles/openfemm.m) updated to match. The femm.ActiveFEMM
+  COM ProgID, the solver executables (fkn.exe/csolv.exe/hsolv.exe/
+  belasolv.exe), and the femm/ source directory and file names are all
+  unchanged by this rename -- see scripts/register_femm_com.ps1 for how
+  the ProgID's LocalServer32 registry entry now points at femmx.exe.
+  Also removed the now-superseded spgryparis/femm_mods hosting
+  reference from this file and NOTICE.md, keeping only the original
+  https://github.com/cenit/FEMM upstream reference and the current
+  https://github.com/SpgV0/femmx hosting.
+* Added build_plain.bat and build_cuda.bat, zero-argument wrappers
+  around build.ps1 (via the new build_femmx.ps1) for a local CPU-only
+  or CUDA-enabled dev build. build_cuda.bat auto-detects the CUDA
+  Toolkit root (preferring 12.x over 13.x, which dropped compute
+  capability sm_60) and an nvcc-compatible MSVC toolset (-ccbin),
+  falling back to VS2022's if a newer Visual Studio is installed. Each
+  outputs to bin/plain/ or bin/cuda/ so the two builds don't clobber
+  each other. Fixed two bugs found while building this: build.ps1's
+  folder cleanup never matched build_win_release64_notriangle (the
+  directory -ForceTriangle32bit actually creates), so a cached
+  ENABLE_CUDA_SOLVER=ON could silently leak into the next CPU-only
+  build; and -ccbin alone doesn't override the INCLUDE environment
+  variable VsDevCmd.bat sets for the newest installed Visual Studio, so
+  nvcc kept resolving MSVC STL headers new enough to require CUDA 13.2+
+  even with an older -ccbin (fkn/CMakeLists.txt now adds an explicit
+  -I for -ccbin's own toolset headers, which take precedence).
+* Restructured the installer (script.nsi) to match the original FEMM
+  4.2 installer's C:\femm42 layout: executables now install to
+  $INSTDIR\bin (previously flat in $INSTDIR), and the Mathematica/
+  Octave/Scilab interfaces are packaged too, at $INSTDIR\mathfemm,
+  \mfiles, and \scifemm -- matching what mathfemm.m and octavefemm's
+  openfemm.m already hardcoded. Defaults to a fixed C:\FEMMX install
+  directory (was $APPDATA\FEMMX) to match. The installer now also
+  bundles the CUDA runtime DLLs for a CUDA build (previously left out,
+  so an installed CUDA build silently fell back to CPU), and
+  self-registers the femm.ActiveFEMM COM class on install/uninstall
+  (see scripts/register_femm_com.ps1's docstring for why femmx.exe's
+  own COM self-registration doesn't currently work under this CMake
+  build) -- so pyfemm/Octave/Mathematica/Scilab automation works
+  immediately after a normal install, no separate manual step needed.
+  Fixed a CMake ordering bug found while building this: the installer-
+  build step was running before the install(TARGETS...) steps that
+  copy executables into bin/, so it packaged stale leftovers rather
+  than the current build -- moved into its own subdirectory
+  (installer/CMakeLists.txt), added last, since sibling subdirectories
+  preserve add_subdirectory() call order but a directory's own
+  install() rules do not run after its subdirectories' regardless of
+  source order.
+* scifemm/CMakeLists.txt now actually builds scilink.dll (was building
+  an unused static library, even though scilink.cpp already declared
+  proper dllexports for the three functions scifemm.sci loads via
+  link(..., "scilink.dll", ...)) -- the Scilab interface is now
+  functional. Added Octave wrappers (octavefemm/mfiles/) for three
+  Lua commands that had none: mi_setredraw.m, mi_setgpuaccel.m,
+  get_solve_stats.m.
+* register_femm_com.ps1 now snapshots whatever COM registration
+  existed before it runs (to $env:TEMP, first call of a session only,
+  so switching builds mid-session doesn't lose the true original); new
+  scripts/unregister_femm_com.ps1 restores it afterwards, or removes
+  the registration entirely if there wasn't one. Wired into
+  .github/workflows/ccpp.yml as an always-run cleanup step, so running
+  the regression suite no longer leaves a permanent side effect on the
+  machine's registry.
+* Fixed the CPU/GPU load monitor not updating during an interactive
+  (GUI "Analyze" click, not scripted) solve: MarkSolveStart()/
+  MarkSolveEnd() were only ever called from each analyze entry point's
+  Lua-scripted branch, since the interactive path fires off the solver
+  process and returns immediately with no wait loop to call
+  MarkSolveEnd() from. MarkSolveStart() now optionally takes the
+  child process handle, and CLoadMonitorDlg's existing sample timer
+  polls a duplicate of it to detect completion and end the solve
+  itself (femm/LoadMonitorDlg.h/.cpp, femm/FemmeView.cpp,
+  femm/hdrawView.cpp, femm/cdrawView.cpp, femm/beladrawView.cpp).
+* Reworded the GPU-accelerated-solve failure dialog (fkn/spars.cpp,
+  fkn/cspars.cpp): it said "no usable GPU was found" even when the GPU
+  ran fine but the Jacobi preconditioner (needed for GPU parallelism,
+  weaker than the CPU solver's SSOR on some matrices, e.g. finely-
+  stranded litz windings) simply didn't converge -- now names
+  non-convergence as a distinct third cause, and fkn/spars_cuda.cu logs
+  which of the three actually happened.
+* Added the same dark theme toggle the magnetics editor has to the
+  results/post-processor window (CFemmviewView, the .ans window):
+  "Dark Theme" on its View menu (IDR_FEMMVIEWTYPE), with dark
+  equivalents for the plot-specific colors (region/text/flux-line/
+  vector) the editor doesn't have (femm/FemmviewView.h/.cpp,
+  femm/femm.rc).
+* Batched the density plot's GDI drawing (femm/FemmviewView.cpp):
+  PlotFluxDensity issued one Polygon() call per rendered sub-triangle,
+  easily millions for a fine mesh, since the per-element field math is
+  cheap and GDI call count -- not computation -- is what actually
+  dominates a large density-plot repaint. The existing per-legend-band
+  (0-19) cached pens/brushes are now view members instead of
+  function-local statics, and OnDraw accumulates each band's
+  sub-triangle vertices and flushes them with a single PolyPolygon()
+  call per band (at most 20 GDI calls per repaint) instead of drawing
+  each sub-triangle immediately.
+
 22Oct2023
 
 * Updated radiation boundary condition in thermal problems so that convective

@@ -1,5 +1,10 @@
 // femmeDoc.cpp : implementation of the CFemmeDoc class (continued...)
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added an incremental EnforcePSLG(tol, nodeStart, lineStart, arcStart,
+// blockStart) overload, and RotateCopy/TranslateCopy now use it instead
+// of the full-document EnforcePSLG(), since both only ever append new
+// geometry to the end of each list.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -888,6 +893,14 @@ void CFemmeDoc::RotateCopy(CComplex c, double dt, int ncopies, int EditAction)
   CComplex x, z;
   double t;
 
+  // RotateCopy only ever appends new geometry to the end of each list;
+  // remember where the pre-existing (already PSLG-consistent) geometry
+  // ends so EnforcePSLG only has to re-validate what was actually added.
+  int nodeStart = (int)nodelist.GetSize();
+  int lineStart = (int)linelist.GetSize();
+  int arcStart = (int)arclist.GetSize();
+  int blockStart = (int)blocklist.GetSize();
+
   for (nc = 0; nc < ncopies; nc++) {
     t = ((double)(nc + 1)) * dt;
 
@@ -1098,7 +1111,7 @@ void CFemmeDoc::RotateCopy(CComplex c, double dt, int ncopies, int EditAction)
     }
   }
 
-  EnforcePSLG();
+  EnforcePSLG(0, nodeStart, lineStart, arcStart, blockStart);
   return;
 }
 
@@ -1106,6 +1119,15 @@ void CFemmeDoc::TranslateCopy(double incx, double incy, int ncopies, int EditAct
 {
   int i, j, k, nc;
   double dx, dy;
+
+  // TranslateCopy only ever appends new geometry to the end of each list;
+  // remember where the pre-existing (already PSLG-consistent) geometry
+  // ends so EnforcePSLG only has to re-validate what was actually added.
+  int nodeStart = (int)nodelist.GetSize();
+  int lineStart = (int)linelist.GetSize();
+  int arcStart = (int)arclist.GetSize();
+  int blockStart = (int)blocklist.GetSize();
+
   for (nc = 0; nc < ncopies; nc++) {
     dx = ((double)(nc + 1)) * incx;
     dy = ((double)(nc + 1)) * incy;
@@ -1273,7 +1295,7 @@ void CFemmeDoc::TranslateCopy(double incx, double incy, int ncopies, int EditAct
       }
     }
   }
-  EnforcePSLG();
+  EnforcePSLG(0, nodeStart, lineStart, arcStart, blockStart);
   return;
 }
 
@@ -1363,6 +1385,106 @@ void CFemmeDoc::EnforcePSLG(double tol)
   }
 
   // put in all of the block labels;
+  for (i = 0; i < newblocklist.GetSize(); i++)
+    AddBlockLabel(newblocklist[i], d);
+
+  UnselectAll();
+  return;
+}
+
+// Same intent as EnforcePSLG(tol), but only re-validates and re-inserts
+// the tail of each list (from the given *Start index onward) through the
+// intersection/duplicate-checking Add* functions; entries before those
+// indices are assumed to already form a valid PSLG and are left in place,
+// untouched. Safe to use after an operation (e.g. RotateCopy/
+// TranslateCopy) that only ever appends new geometry to the end of each
+// list: new items are still checked against the *entire* existing
+// drawing (old items + already-reinserted new items), so correctness is
+// unchanged. The saving is that pre-existing items are no longer torn
+// down and redundantly re-validated against themselves and each other,
+// which turns an O(n^2) full-document rebuild (n = total feature count)
+// into work proportional to the number of newly added items.
+void CFemmeDoc::EnforcePSLG(double tol, int nodeStart, int lineStart, int arcStart, int blockStart)
+{
+  CArray<CNode, CNode&> newnodelist;
+  CArray<CSegment, CSegment&> newlinelist;
+  CArray<CArcSegment, CArcSegment&> newarclist;
+  CArray<CBlockLabel, CBlockLabel&> newblocklist;
+  int i;
+  CComplex p0, p1;
+  double d;
+
+  // find out what tolerance is so that there are not nodes right on
+  // top of each other; base it on the full drawing's extent, same as
+  // the full-rebuild EnforcePSLG(tol) does.
+  if (tol == 0) {
+    if (nodelist.GetSize() < 2)
+      d = 1.e-08;
+    else {
+      p0 = nodelist[0].CC();
+      p1 = p0;
+      for (i = 1; i < nodelist.GetSize(); i++) {
+        if (nodelist[i].x < p0.re)
+          p0.re = nodelist[i].x;
+        if (nodelist[i].x > p1.re)
+          p1.re = nodelist[i].x;
+        if (nodelist[i].y < p0.im)
+          p0.im = nodelist[i].y;
+        if (nodelist[i].y > p1.im)
+          p1.im = nodelist[i].y;
+      }
+      d = abs(p1 - p0) * CLOSE_ENOUGH;
+    }
+  } else
+    d = tol;
+
+  // pull out just the newly appended tail of each list; remap line/arc
+  // endpoint indices to be relative to nodeStart, since new lines/arcs
+  // only ever reference newly appended nodes (see RotateCopy/
+  // TranslateCopy), never pre-existing ones.
+  for (i = nodeStart; i < nodelist.GetSize(); i++)
+    newnodelist.Add(nodelist[i]);
+  for (i = lineStart; i < linelist.GetSize(); i++) {
+    CSegment segm = linelist[i];
+    segm.n0 -= nodeStart;
+    segm.n1 -= nodeStart;
+    newlinelist.Add(segm);
+  }
+  for (i = arcStart; i < arclist.GetSize(); i++) {
+    CArcSegment asegm = arclist[i];
+    asegm.n0 -= nodeStart;
+    asegm.n1 -= nodeStart;
+    newarclist.Add(asegm);
+  }
+  for (i = blockStart; i < blocklist.GetSize(); i++)
+    newblocklist.Add(blocklist[i]);
+
+  // drop the tail from the live lists; the untouched prefix (already a
+  // valid PSLG) stays exactly as it was.
+  nodelist.SetSize(nodeStart);
+  linelist.SetSize(lineStart);
+  arclist.SetSize(arcStart);
+  blocklist.SetSize(blockStart);
+
+  // put the new nodes back in, checked against the full existing drawing;
+  for (i = 0; i < newnodelist.GetSize(); i++)
+    AddNode(newnodelist[i], d);
+
+  // put the new lines back in;
+  for (i = 0; i < newlinelist.GetSize(); i++) {
+    p0.Set(newnodelist[newlinelist[i].n0].x, newnodelist[newlinelist[i].n0].y);
+    p1.Set(newnodelist[newlinelist[i].n1].x, newnodelist[newlinelist[i].n1].y);
+    AddSegment(p0, p1, newlinelist[i], d);
+  }
+
+  // put the new arcs back in;
+  for (i = 0; i < newarclist.GetSize(); i++) {
+    p0.Set(newnodelist[newarclist[i].n0].x, newnodelist[newarclist[i].n0].y);
+    p1.Set(newnodelist[newarclist[i].n1].x, newnodelist[newarclist[i].n1].y);
+    AddArcSegment(p0, p1, newarclist[i], d);
+  }
+
+  // put the new block labels back in;
   for (i = 0; i < newblocklist.GetSize(); i++)
     AddBlockLabel(newblocklist[i], d);
 

@@ -6,6 +6,17 @@
 #endif // _MSC_VER > 1000
 // FemmeDoc.h : header file
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added lua_setredraw() to let scripts suspend/resume canvas redraw
+// around batch edit operations (e.g. mi_copytranslate/mi_copyrotate).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added GPUAccel field and lua_setgpuaccel() for the optional
+// CUDA-accelerated linear solve in fkn.exe (see fkn/spars_cuda.cu).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// added, then removed, a ShowLoadMonitor field: the load monitor moved
+// from being a per-problem, fkn.exe-hosted setting to a persistent
+// window owned by CMainFrame (see femm/LoadMonitorDlg.h), so it no
+// longer needs a .fem-file field or a per-document toggle.
 #include "nosebl.h"
 
 #include "lua.h"
@@ -32,6 +43,9 @@ class CFemmeDoc : public CDocument {
   double Depth;
   int LengthUnits;
   int ACSolver;
+  int GPUAccel; // 1 = ask fkn.exe to try its optional CUDA-accelerated
+                // linear solve; 0 (default) = CPU only. No effect unless
+                // fkn.exe was built with ENABLE_CUDA_SOLVER.
   BOOL ProblemType;
   BOOL Coords;
   CString ProblemNote;
@@ -144,6 +158,7 @@ class CFemmeDoc : public CDocument {
   void Undo();
   void EnforcePSLG(); // makes sure that everything is kosher...
   void EnforcePSLG(double tol);
+  void EnforcePSLG(double tol, int nodeStart, int lineStart, int arcStart, int blockStart);
   void FancyEnforcePSLG(double tol);
   BOOL SelectOrphans();
   BOOL dxf_line_hook();
@@ -227,6 +242,8 @@ class CFemmeDoc : public CDocument {
   void CreateBMPFile(HWND hwnd, LPTSTR pszFile, PBITMAPINFO pbi, HBITMAP hBMP, HDC hDC);
   static int lua_saveWMF(lua_State* L);
   static int lua_updatewindow(lua_State* L);
+  static int lua_setredraw(lua_State* L);
+  static int lua_setgpuaccel(lua_State* L);
   static int lua_shownames(lua_State* L);
   static int lua_showgrid(lua_State* L);
   static int lua_hidegrid(lua_State* L);

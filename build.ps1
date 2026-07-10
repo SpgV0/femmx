@@ -1,4 +1,13 @@
 #!/usr/bin/env pwsh
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# -AdditionalBuildSetup was declared (with a -DCMAKE_CUDA_ARCHITECTURES=30
+# example in its own help comment below) but never actually appended into
+# any of the four $cmake_args configure-step strings, so it silently did
+# nothing -- e.g. passing -AdditionalBuildSetup "-DENABLE_CUDA_SOLVER=ON
+# -DFEMM_CUDA_ROOT=..." (see fkn/CMakeLists.txt) had no effect. Fixed by
+# interpolating $AdditionalBuildSetup into each configure invocation,
+# right before the trailing ".." source-dir argument.
 
 param (
   [switch]$DisableInteractive = $false,
@@ -272,6 +281,7 @@ Write-Host "Setting up environment to use CMake generator: $generator"
 if (-Not $DoNotDeleteBuildFolder) {
   Write-Host "Removing build folders" -ForegroundColor Yellow
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64
+  Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64_notriangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32_triangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32
 }
@@ -289,7 +299,7 @@ if ($BuildArch -eq "64") {
     Write-Host "Triangle will be built as a 32 bit executable!" -ForegroundColor Yellow
     New-Item -Path .\build_win_release64_notriangle -ItemType directory -Force | Out-Null
     Set-Location build_win_release64_notriangle
-    $cmake_args = "-A x64 $latexFOUND ${install_prefix} -DSKIP_triangle:BOOL=ON .."
+    $cmake_args = "-A x64 $latexFOUND ${install_prefix} -DSKIP_triangle:BOOL=ON $AdditionalBuildSetup .."
     Write-Host "Configuring CMake project" -ForegroundColor Green
     Write-Host "CMake args: $cmake_args"
     $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args
@@ -312,7 +322,7 @@ if ($BuildArch -eq "64") {
     Set-Location ..
     New-Item -Path .\build_win_release32_triangle -ItemType directory -Force | Out-Null
     Set-Location build_win_release32_triangle
-    $cmake_args = "-A Win32 $latexFOUND ${install_prefix} -DSKIP_belasolv:BOOL=ON -DSKIP_csolv:BOOL=ON -DSKIP_liblua:BOOL=ON -DSKIP_ResizableLib:BOOL=ON -DSKIP_femm:BOOL=ON -DSKIP_femmplot:BOOL=ON   -DSKIP_fkn:BOOL=ON -DSKIP_hsolv:BOOL=ON -DSKIP_scifemm:BOOL=ON .."
+    $cmake_args = "-A Win32 $latexFOUND ${install_prefix} -DSKIP_belasolv:BOOL=ON -DSKIP_csolv:BOOL=ON -DSKIP_liblua:BOOL=ON -DSKIP_ResizableLib:BOOL=ON -DSKIP_femm:BOOL=ON -DSKIP_femmplot:BOOL=ON   -DSKIP_fkn:BOOL=ON -DSKIP_hsolv:BOOL=ON -DSKIP_scifemm:BOOL=ON $AdditionalBuildSetup .."
     Write-Host "Configuring CMake project" -ForegroundColor Green
     Write-Host "CMake args: $cmake_args"
     $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args
@@ -336,7 +346,7 @@ if ($BuildArch -eq "64") {
   else {
     New-Item -Path .\build_win_release64 -ItemType directory -Force | Out-Null
     Set-Location build_win_release64
-    $cmake_args = "-A x64 $latexFOUND ${install_prefix} .."
+    $cmake_args = "-A x64 $latexFOUND ${install_prefix} $AdditionalBuildSetup .."
     Write-Host "Configuring CMake project" -ForegroundColor Green
     Write-Host "CMake args: $cmake_args"
     $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args
@@ -362,7 +372,7 @@ if ($BuildArch -eq "64") {
 if ($BuildArch -eq "32") {
   New-Item -Path .\build_win_release32 -ItemType directory -Force | Out-Null
   Set-Location build_win_release32
-  $cmake_args = "-A Win32 $latexFOUND ${install_prefix} .."
+  $cmake_args = "-A Win32 $latexFOUND ${install_prefix} $AdditionalBuildSetup .."
   Write-Host "Configuring CMake project" -ForegroundColor Green
   Write-Host "CMake args: $cmake_args"
   $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args
@@ -389,6 +399,7 @@ Set-Location ..
 if (-Not $DoNotDeleteBuildFolder) {
   Write-Host "Removing build folders" -ForegroundColor Yellow
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64
+  Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release64_notriangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32_triangle
   Remove-Item -Force -Recurse -ErrorAction SilentlyContinue .\build_win_release32
 }

@@ -1,3 +1,6 @@
+(* Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+   updated the default femm.exe path/usage string to femmx.exe (project
+   rebrand: femm_plus -> femmx). *)
 If[Length[Contexts["MathFEMM`"]] >0,
         Print["MathFEMM is already loaded."];
         Abort[]
@@ -362,17 +365,17 @@ various properties that can be modified are listed below:\n
 
 CIMoveRotate::usage =
 "CIMoveRotate[bx,by,shiftangle,(editaction)]\n
-bx, by – base point for rotation\n
-shiftangle – angle in degrees by which the selected objects are
+bx, by ï¿½ base point for rotation\n
+shiftangle ï¿½ angle in degrees by which the selected objects are
 rotated.\n
-editaction - 0  –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction - 0  ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 CIMoveRotate[{bx,by},shiftangle,(editaction)]"
 
 CIMoveTranslate::usage =
 "CIMoveTranslate[dx,dy,(editaction)]\n
-dx,dy – distance by which the selected objects are shifted.\n
-editaction - 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+dx,dy ï¿½ distance by which the selected objects are shifted.\n
+editaction - 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 CIMoveTranslate[{dx,dy},(editaction)]"
 
@@ -407,10 +410,10 @@ CISaveMetafile::usage = "CISaveMetafile[\"filename\"] saves an extended metafile
 specified by \"filename\", subject to the printf-type formatting explained previously for the CISaveAs command."
 
 CIScale::usage = "CIScale[bx,by,scalefactor,(editaction)]\n
-bx, by – base point for scaling\n
-scalefactor – a multiplier that determines how much the selected objects are
+bx, by ï¿½ base point for scaling\n
+scalefactor ï¿½ a multiplier that determines how much the selected objects are
 scaled\n
-editaction 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent for is:
 CIScale[{bx,by},scalefactor,(editaction)]"
 
@@ -453,7 +456,7 @@ groupno: make selected members of specified group number"
 
 CISetEditMode::usage =
 "CISetEditMode[\"editmode\"] sets the current editmode to:\n
-\"nodes\" – nodes\n
+\"nodes\" ï¿½ nodes\n
 \"segments\" - line segments\n
 \"arcsegments\" - arc segments\n
 \"blocks\" - block labels\n
@@ -465,7 +468,7 @@ CISetFocus::usage = "CISetFocus[\"documentname\"] switches the current input fil
 which scripting commands are to act. If more than one current input file is being edited
 at a time, this command can be used to switch between files so that the mutiple files can be
 operated upon programmatically . \"documentname\" should contain the name of the desired document
-as it appears on the window’s title bar."
+as it appears on the windowï¿½s title bar."
 
 CISetGrid::usage = "CISetGrid[density,\"type\"] changes the grid spacing. The density parameter specifies
 the space between grid points, and the \"type\" parameter is set to \"cart\" for Cartesian coordinates
@@ -473,7 +476,7 @@ or \"polar\" for polar coordinates."
 
 CISetNodeProp::usage = "CISetNodeProp[\"propname\",groupno,\"inconductor\"] sets the selected nodes to have
 the nodal property \"propname\" and group number groupno. The \"inconductor\" string
-specifies which conductor the node belongs to. If the node doesn’t belong to a named conductor,
+specifies which conductor the node belongs to. If the node doesnï¿½t belong to a named conductor,
 this parameter can be set to \"<None>\"."
 
 CISetSegmentProp::usage =
@@ -1044,17 +1047,17 @@ various properties that can be modified are listed below:\n
 
 HIMoveRotate::usage =
 "HIMoveRotate[bx,by,shiftangle,(editaction)]\n
-bx, by – base point for rotation\n
-shiftangle – angle in degrees by which the selected objects are
+bx, by ï¿½ base point for rotation\n
+shiftangle ï¿½ angle in degrees by which the selected objects are
 rotated.\n
-editaction - 0  –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction - 0  ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 HIMoveRotate[{bx,by},shiftangle,(editaction)]"
 
 HIMoveTranslate::usage =
 "HIMoveTranslate[dx,dy,(editaction)]\n
-dx,dy – distance by which the selected objects are shifted.\n
-editaction - 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+dx,dy ï¿½ distance by which the selected objects are shifted.\n
+editaction - 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 HIMoveTranslate[{dx,dy},(editaction)]"
 
@@ -1091,10 +1094,10 @@ HISaveMetafile::usage = "HISaveMetafile[\"filename\"] saves an extended metafile
 specified by \"filename\", subject to the printf-type formatting explained previously for the HISaveAs command."
 
 HIScale::usage = "HIScale[bx,by,scalefactor,(editaction)]\n
-bx, by – base point for scaling\n
-scalefactor – a multiplier that determines how much the selected objects are
+bx, by ï¿½ base point for scaling\n
+scalefactor ï¿½ a multiplier that determines how much the selected objects are
 scaled\n
-editaction 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent for is:
 HIScale[{bx,by},scalefactor,(editaction)]"
 
@@ -1137,7 +1140,7 @@ groupno: make selected members of specified group number"
 
 HISetEditMode::usage =
 "HISetEditMode[\"editmode\"] sets the current editmode to:\n
-\"nodes\" – nodes\n
+\"nodes\" ï¿½ nodes\n
 \"segments\" - line segments\n
 \"arcsegments\" - arc segments\n
 \"blocks\" - block labels\n
@@ -1149,7 +1152,7 @@ HISetFocus::usage = "HISetFocus[\"documentname\"] switches the heat flow input f
 which scripting commands are to act. If more than one heat flow input file is being edited
 at a time, this command can be used to switch between files so that the mutiple files can be
 operated upon programmatically . \"documentname\" should contain the name of the desired document
-as it appears on the window’s title bar."
+as it appears on the windowï¿½s title bar."
 
 HISetGrid::usage = "HISetGrid[density,\"type\"] changes the grid spacing. The density parameter specifies
 the space between grid points, and the \"type\" parameter is set to \"cart\" for Cartesian coordinates
@@ -1157,7 +1160,7 @@ or \"polar\" for polar coordinates."
 
 HISetNodeProp::usage = "HISetNodeProp[\"propname\",groupno,\"inconductor\"] sets the selected nodes to have
 the nodal property \"propname\" and group number groupno. The \"inconductor\" string
-specifies which conductor the node belongs to. If the node doesn’t belong to a named conductor,
+specifies which conductor the node belongs to. If the node doesnï¿½t belong to a named conductor,
 this parameter can be set to \"<None>\"."
 
 HISetSegmentProp::usage =
@@ -1331,8 +1334,8 @@ output window"
 HOLineIntegral::usage =
 "HOLineIntegral[type] calculate the line integral for the defined
 contour. Valid type selections include:\n
-0 - Temperature Difference (G·t) \n
-1 - Heat Flux (F·n) \n
+0 - Temperature Difference (Gï¿½t) \n
+1 - Heat Flux (Fï¿½n) \n
 2 - Contour length \n
 3 - Average temperature \n
 This integral returns either one value or a list of two values,
@@ -1675,17 +1678,17 @@ various properties that can be modified are listed below:\n
 
 EIMoveRotate::usage =
 "EIMoveRotate[bx,by,shiftangle,(editaction)]\n
-bx, by – base point for rotation\n
-shiftangle – angle in degrees by which the selected objects are
+bx, by ï¿½ base point for rotation\n
+shiftangle ï¿½ angle in degrees by which the selected objects are
 rotated.\n
-editaction - 0  –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction - 0  ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 EIMoveRotate[{bx,by},shiftangle,(editaction)]"
 
 EIMoveTranslate::usage =
 "EIMoveTranslate[dx,dy,(editaction)]\n
-dx,dy – distance by which the selected objects are shifted.\n
-editaction - 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+dx,dy ï¿½ distance by which the selected objects are shifted.\n
+editaction - 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 EIMoveTranslate[{dx,dy},(editaction)]"
 
@@ -1719,10 +1722,10 @@ EISaveMetafile::usage = "EISaveMetafile[\"filename\"] saves an extended metafile
 specified by \"filename\", subject to the printf-type formatting explained previously for the EISaveAs command."
 
 EIScale::usage = "EIScale[bx,by,scalefactor,(editaction)]\n
-bx, by – base point for scaling\n
-scalefactor – a multiplier that determines how much the selected objects are
+bx, by ï¿½ base point for scaling\n
+scalefactor ï¿½ a multiplier that determines how much the selected objects are
 scaled\n
-editaction 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent for is:
 EIScale[{bx,by},scalefactor,(editaction)]"
 
@@ -1765,7 +1768,7 @@ groupno: make selected members of specified group number"
 
 EISetEditMode::usage =
 "EISetEditMode[\"editmode\"] sets the current editmode to:\n
-\"nodes\" – nodes\n
+\"nodes\" ï¿½ nodes\n
 \"segments\" - line segments\n
 \"arcsegments\" - arc segments\n
 \"blocks\" - block labels\n
@@ -1777,7 +1780,7 @@ EISetFocus::usage = "EISetFocus[\"documentname\"] switches the electrostatics in
 which scripting commands are to act. If more than one electrostatics input file is being edited
 at a time, this command can be used to switch between files so that the mutiple files can be
 operated upon programmatically . \"documentname\" should contain the name of the desired document
-as it appears on the window’s title bar."
+as it appears on the windowï¿½s title bar."
 
 EISetGrid::usage = "EISetGrid[density,\"type\"] changes the grid spacing. The density parameter specifies
 the space between grid points, and the \"type\" parameter is set to \"cart\" for Cartesian coordinates
@@ -1785,7 +1788,7 @@ or \"polar\" for polar coordinates."
 
 EISetNodeProp::usage = "EISetNodeProp[\"propname\",groupno,\"inconductor\"] sets the selected nodes to have
 the nodal property \"propname\" and group number groupno. The \"inconductor\" string
-specifies which conductor the node belongs to. If the node doesn’t belong to a named conductor,
+specifies which conductor the node belongs to. If the node doesnï¿½t belong to a named conductor,
 this parameter can be set to \"<None>\"."
 
 EISetSegmentProp::usage =
@@ -1952,8 +1955,8 @@ output window"
 EOLineIntegral::usage =
 "EOLineIntegral[type] calculate the line integral for the defined
 contour. Valid type selections include:\n
-0 - E ·t \n
-1 - D·n \n
+0 - E ï¿½t \n
+1 - Dï¿½n \n
 2 - Contour length \n
 3 - Force from stress tensor \n
 4 - Torque from stress tensor \n
@@ -2084,18 +2087,18 @@ MIAddBlockLabel[{x,y}]"
 MIAddBoundProp::usage =
 "MIAddBoundProp[\"propname\",A0,A1,A2,Phi,Mu,Sig,c0,c1,BdryFormat,ia,oa]
 adds a new boundary property with name \"propname\" \n
-– For a \"Prescribed A\" type boundary condition, set the A0, A1, A2
+ï¿½ For a \"Prescribed A\" type boundary condition, set the A0, A1, A2
  and Phi parameters as required. Set all other parameters to zero.\n
-– For a \"Small Skin Depth\" type boundary condtion, set the Mu to
+ï¿½ For a \"Small Skin Depth\" type boundary condtion, set the Mu to
 the desired relative permeability and Sig to the desired conductivity
 in MS/m. Set BdryFormat to 1 and all other parameters to zero. \n
-– To obtain a \"Mixed\" type boundary condition, set C1 and C0 as
+ï¿½ To obtain a \"Mixed\" type boundary condition, set C1 and C0 as
 required and BdryFormat to 2. Set all other parameters to zero. \n
-– For a \"Strategic dual image\" boundary, set BdryFormat to 3 and set all
+ï¿½ For a \"Strategic dual image\" boundary, set BdryFormat to 3 and set all
 other parameters to zero.\n
-– For a \"Periodic\" boundary condition, set BdryFormat to 4 and set all
+ï¿½ For a \"Periodic\" boundary condition, set BdryFormat to 4 and set all
 other parameters to zero.\n
-– For an \"Anti-Perodic\" boundary condition, set BdryFormat to 5 set all
+ï¿½ For an \"Anti-Perodic\" boundary condition, set BdryFormat to 5 set all
 other parameters to zero.
 - For a \"Periodic Air Gap\", set BdryFormat to 6. Parameters ia and oa 
 specify the inner and outer boundary angle, respectively.
@@ -2323,7 +2326,7 @@ below:\n
 
 MIModifyMaterial::usage =
 "MIModifyMaterial[\"BlockName\",propnum,value] allows for modification
-of a material’s properties without redefining the entire material.
+of a materialï¿½s properties without redefining the entire material.
 The material to be modified is specified by \"BlockName\".
 The next parameter is the number of the property to be set. The last number is the value to
 be applied to the specified property. The various properties that can be modified are listed
@@ -2354,17 +2357,17 @@ It is OK if either A or J are complex-valued."
 
 MIMoveRotate::usage =
 "MIMoveRotate[bx,by,shiftangle,(editaction)]\n
-bx, by – base point for rotation\n
-shiftangle – angle in degrees by which the selected objects are
+bx, by ï¿½ base point for rotation\n
+shiftangle ï¿½ angle in degrees by which the selected objects are
 rotated.\n
-editaction - 0  –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction - 0  ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 MIMoveRotate[{bx,by},shiftangle,(editaction)]"
 
 MIMoveTranslate::usage =
 "MIMoveTranslate[dx,dy,(editaction)]\n
-dx,dy – distance by which the selected objects are shifted.\n
-editaction - 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+dx,dy ï¿½ distance by which the selected objects are shifted.\n
+editaction - 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent form is:\n
 MIMoveTranslate[{dx,dy},(editaction)]"
 
@@ -2404,10 +2407,10 @@ MISaveMetafile::usage = "MISaveMetafile[\"filename\"] saves an extended metafile
 specified by \"filename\", subject to the printf-type formatting explained previously for the MISaveAs command."
 
 MIScale::usage = "MIScale[bx,by,scalefactor,(editaction)]\n
-bx, by – base point for scaling\n
-scalefactor – a multiplier that determines how much the selected objects are
+bx, by ï¿½ base point for scaling\n
+scalefactor ï¿½ a multiplier that determines how much the selected objects are
 scaled\n
-editaction 0 –nodes, 1 – lines (segments), 2 –block labels, 3 – arc segments, 4- group\n
+editaction 0 ï¿½nodes, 1 ï¿½ lines (segments), 2 ï¿½block labels, 3 ï¿½ arc segments, 4- group\n
 An equivalent for is:
 MIScale[{bx,by},scalefactor,(editaction)]"
 
@@ -2429,26 +2432,26 @@ MISelectSegment[{x,y}]"
 MISetArcSegmentProp::usage =
 "MISetArcSegmentProp[maxsegdeg,\"propname\",hide,groupno] sets the selected arc
 segments to:\n
-– Meshed with elements that span at most maxsegdeg degrees per
+ï¿½ Meshed with elements that span at most maxsegdeg degrees per
 element\n
-– Boundary property \"propname\"\n
-– hide: 0 = not hidden in post-processor, 1 == hidden in post
+ï¿½ Boundary property \"propname\"\n
+ï¿½ hide: 0 = not hidden in post-processor, 1 == hidden in post
 processor\n
-– A member of group number groupno"
+ï¿½ A member of group number groupno"
 
 MISetBlockProp::usage =
 "MISetBlockProp[\"blockname\",automesh,meshsize,\"incircuit\", magdirection,group,turns]\n
 sets the selected block labels to have the properties:\n
-– Block property \"blockname\".\n
-– automesh: 0 = mesher defers to mesh size constraint defined in meshsize, 1 = mesher
+ï¿½ Block property \"blockname\".\n
+ï¿½ automesh: 0 = mesher defers to mesh size constraint defined in meshsize, 1 = mesher
 automatically chooses the mesh density.\n
-– meshsize: size constraint on the mesh in the block marked by this
+ï¿½ meshsize: size constraint on the mesh in the block marked by this
 label.\n
-– Block is a member of the circuit named \"incircuit\" \n
-– The magnetization is directed along an angle in measured in degrees denoted by the
+ï¿½ Block is a member of the circuit named \"incircuit\" \n
+ï¿½ The magnetization is directed along an angle in measured in degrees denoted by the
 parameter magdirection\n
-– A member of group number group\n
-– The number of turns associated with this label is denoted by
+ï¿½ A member of group number group\n
+ï¿½ The number of turns associated with this label is denoted by
 turns."
 
 MISetCurrent::usage = "MISetCurrent[\"circname\",i] sets the current of the circuit named \"circname\" to
@@ -2456,7 +2459,7 @@ the value specified by i.  It is OK for the current to be complex-valued."
 
 MISetEditMode::usage =
 "MISetEditMode[\"editmode\"] sets the current editmode to:\n
-\"nodes\" – nodes\n
+\"nodes\" ï¿½ nodes\n
 \"segments\" - line segments\n
 \"arcsegments\" - arc segments\n
 \"blocks\" - block labels\n
@@ -2468,7 +2471,7 @@ MISetFocus::usage = "MISetFocus[\"documentname\"] switches the electrostatics in
 which scripting commands are to act. If more than one electrostatics input file is being edited
 at a time, this command can be used to switch between files so that the mutiple files can be
 operated upon programmatically . \"documentname\" should contain the name of the desired document
-as it appears on the window’s title bar."
+as it appears on the windowï¿½s title bar."
 
 MISetGrid::usage = "MISetGrid[density,\"type\"] changes the grid spacing. The density parameter specifies
 the space between grid points, and the \"type\" parameter is set to \"cart\" for Cartesian coordinates
@@ -2480,14 +2483,14 @@ have the nodal property \"propname\" and group number groupno."
 MISetSegmentProp::usage =
 "MISetSegmentProp[\"propname\",elementsize,automesh,hide,group] sets the
 selected segments to have:\n
-– Boundary property \"propname\" \n
-– Local element size along segment no greater than elementsize \n
-– automesh: 0 = mesher defers to the element constraint defined by elementsize, 1 =
+ï¿½ Boundary property \"propname\" \n
+ï¿½ Local element size along segment no greater than elementsize \n
+ï¿½ automesh: 0 = mesher defers to the element constraint defined by elementsize, 1 =
 mesher automatically chooses mesh size along the selected
 segments \n
-– hide: 0 = not hidden in post-processor, 1 == hidden in post
+ï¿½ hide: 0 = not hidden in post-processor, 1 == hidden in post
 processor\n
-– A member of group number group"
+ï¿½ A member of group number group"
 
 MIShowGrid::usage = "MIShowGrid[] displays the grid points"
 
@@ -2552,7 +2555,7 @@ MOBlockIntegral::usage =
 "MOBlockIntegral[type] calculates a block integral over the selected
 blocks.  There is a single (possibly complex) return value. Valid type
 specifications are:\n
-0 - A·J \n
+0 - Aï¿½J \n
 1 - A \n
 2 - Magnetic field energy \n
 3 - Hysteresis and/or lamination losses \n
@@ -2606,7 +2609,7 @@ for the circuit property named \"circuit\". A list of three values is
 returned by the function. In order, the elements of this list are:\n
 current -  the current carried by the circuit.\n
 volts - the voltage drop across the circuit in the circuit.\n
-flux - the circuit’s flux linkage\n
+flux - the circuitï¿½s flux linkage\n
 Any of these entries could possibly be complex-valued."
 
 MOGetConductivity::usage =
@@ -2720,11 +2723,11 @@ name, rather than display it to make a graphical plot. Valid entries for
 PlotType are: \n
 0 - Potential \n
 1 - |B| \n
-2 B·n \n
-3 - B·t \n
+2 Bï¿½n \n
+3 - Bï¿½t \n
 4 - |H| \n
-5 - H ·n \n
-6 - H ·t \n
+5 - H ï¿½n \n
+6 - H ï¿½t \n
 7 - Jeddy \n
 8 - Jsource+Jeddy"
 
@@ -2896,7 +2899,7 @@ of a list, but the number of elements in the list is variable.  The items in the
 either numbers or strings.  This function is the same as MLGet[], only the results are not passed
 through Chop[]"
 
-SetPathToFEMM::usage = "SetPathToFEMM[\"path\"] is used by the package to find the femm.exe, the FEMM executable."
+SetPathToFEMM::usage = "SetPathToFEMM[\"path\"] is used by the package to find the femmx.exe, the FEMMX executable."
 
 GetPackageDirectory::usage = "GetPackageDirectory[] displays the directory in which the MathFEMM package resides."
 
@@ -3047,7 +3050,7 @@ PackDir = DirectoryName[StringReplace[$Input, "/" -> "\\"]];
 
 Print["MathFEMM loaded at " <> DateString[]];
 
-FEMMPath = "c:\\femm42\\bin\\femm.exe";
+FEMMPath = "c:\\FEMMX\\bin\\femmx.exe";
 
 SetPathToFEMM[path_]:=Module[{},
         Export[ToFileName[PackDir,"path.txt"], path];

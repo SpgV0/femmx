@@ -1,10 +1,17 @@
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+// PBCGSolveGPU() (CSR conversion + dispatch to the optional CUDA complex
+// solver) added below PBCGSolve; PBCGSolveMod now tries the GPU path first
+// when CBigComplexLinProb::GPUAccel is set, falling back to the existing
+// CPU PBCGSolve on any failure. See fkn/spars_cuda.cu's CudaPBCGSolve.
 #include <stdafx.h>
 #include <math.h>
 #include <stdio.h>
+#include <vector>
 #include "fkn.h"
 #include "fknDlg.h"
 #include "complex.h"
 #include "spars.h"
+#include "spars_cuda.h"
 
 #define MAXITER 1000000
 #define KLUDGE
@@ -20,6 +27,7 @@ CComplexEntry::CComplexEntry()
 CBigComplexLinProb::CBigComplexLinProb()
 {
   n = 0;
+  GPUAccel = 0;
 }
 
 CBigComplexLinProb::~CBigComplexLinProb()
@@ -1008,6 +1016,116 @@ int CBigComplexLinProb::PBCGSolveMod(int flag)
       return 0;
   }
 
+  if (GPUAccel) {
+#ifndef FEMM_CUDA_ENABLED
+    MsgBox(
+        "GPU acceleration was requested for this problem, but this copy of "
+        "fkn.exe was built without CUDA support.\n\n"
+        "To use GPU acceleration:\n"
+        "1. Install the NVIDIA CUDA Toolkit (a version supported by your GPU "
+        "driver -- run \"nvidia-smi\" to check the maximum CUDA version it "
+        "supports).\n"
+        "2. Rebuild femmx with CMake options -DENABLE_CUDA_SOLVER=ON "
+        "-DFEMM_CUDA_ROOT=\"<path to CUDA Toolkit>\" (add "
+        "-DFEMM_CUDA_CCBIN=\"<path to an nvcc-compatible MSVC toolset bin "
+        "dir>\" too if your installed Visual Studio is newer than the CUDA "
+        "Toolkit supports -- this is common; see fkn/CMakeLists.txt).\n"
+        "3. See fkn/spars_cuda.cu and fkn/CMakeLists.txt for details.\n\n"
+        "Continuing with the CPU solver for this run.");
+#else
+    if (TheView != NULL)
+      TheView->SetDlgItemText(IDC_FRAME1, "BiConjugate Gradient Solver (GPU)");
+    if (PBCGSolveGPU())
+      return 1;
+    MsgBox(
+        "GPU-accelerated solve did not produce a result (see the "
+        "console/stderr output for the exact reason).\n\n"
+        "This usually means one of:\n"
+        "- No CUDA-capable NVIDIA GPU is present on this machine, or\n"
+        "- The installed NVIDIA driver is older than this build's CUDA "
+        "Toolkit requires -- run \"nvidia-smi\" to check the maximum CUDA "
+        "version your driver supports, then either update the driver or "
+        "rebuild fkn.exe with an older -DFEMM_CUDA_ROOT to match it, or\n"
+        "- The GPU solve ran but did not converge: the Jacobi preconditioner "
+        "used for GPU parallelism is weaker than the CPU's SSOR, and some "
+        "matrices (e.g. finely-stranded litz windings) need more iterations "
+        "than it can provide. This isn't a GPU/driver problem -- try the "
+        "CPU solver for this specific problem instead.\n\n"
+        "Continuing with the CPU solver for this run.");
+#endif
+    // GPU path unavailable, not built with CUDA support, or failed to
+    // converge/errored out -- fall through to the CPU solve below rather
+    // than failing the whole analysis.
+    fprintf(stderr, "GPU-accelerated solve unavailable or failed; falling back to CPU.\n");
+  }
+
   // call the complex-symmetric solver
   return PBCGSolve(2);
+}
+
+// Converts the upper-triangle-only linked-list matrix storage (M[]) into a
+// full symmetric CSR matrix of cuDoubleComplex values and dispatches to the
+// CUDA solver. Mirrors CBigLinProb::PCGSolveGPU (spars.cpp) exactly, except
+// for complex values and the lack of a "start from zero" branch: V always
+// holds a meaningful initial guess by the time PBCGSolveMod calls this (see
+// spars_cuda.h). Returns false (never throws/errors out loud) if this build
+// wasn't compiled with CUDA support, or if the GPU solve itself fails for
+// any reason -- either way the caller (PBCGSolveMod) falls back to the CPU
+// PBCGSolve.
+bool CBigComplexLinProb::PBCGSolveGPU()
+{
+#ifndef FEMM_CUDA_ENABLED
+  return false;
+#else
+  int i;
+  CComplexEntry* e;
+
+  std::vector<int> rowCount(n, 0);
+  int nnz = 0;
+  for (i = 0; i < n; i++) {
+    for (e = M[i]; e != NULL; e = e->next) {
+      rowCount[i]++;
+      nnz++;
+      if (e->c != i) {
+        rowCount[e->c]++;
+        nnz++;
+      }
+    }
+  }
+
+  std::vector<int> rowPtr(n + 1, 0);
+  for (i = 0; i < n; i++)
+    rowPtr[i + 1] = rowPtr[i] + rowCount[i];
+
+  std::vector<int> colInd(nnz);
+  std::vector<cuDoubleComplex> values(nnz);
+  std::vector<cuDoubleComplex> diag(n);
+  std::vector<int> cursor(rowPtr.begin(), rowPtr.end() - 1);
+
+  for (i = 0; i < n; i++) {
+    for (e = M[i]; e != NULL; e = e->next) {
+      colInd[cursor[i]] = e->c;
+      values[cursor[i]] = make_cuDoubleComplex(e->x.re, e->x.im);
+      cursor[i]++;
+      if (e->c != i) {
+        colInd[cursor[e->c]] = i;
+        values[cursor[e->c]] = make_cuDoubleComplex(e->x.re, e->x.im);
+        cursor[e->c]++;
+      }
+    }
+    diag[i] = make_cuDoubleComplex(M[i]->x.re, M[i]->x.im); // M[i] is always the diagonal entry (see Create())
+  }
+
+  // CComplex (complex.h) and cuDoubleComplex are both plain {double, double}
+  // pairs with no vtable -- safe to reinterpret the contiguous b/V arrays
+  // directly rather than copying through an intermediate buffer.
+  int iters = 0;
+  int ok = CudaPBCGSolve(n, rowPtr.data(), colInd.data(), values.data(), nnz,
+      diag.data(),
+      reinterpret_cast<const cuDoubleComplex*>(b),
+      reinterpret_cast<cuDoubleComplex*>(V),
+      Precision, /*maxiter=*/100000, &iters);
+
+  return ok != 0;
+#endif
 }

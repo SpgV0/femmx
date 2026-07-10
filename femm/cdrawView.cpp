@@ -36,6 +36,7 @@ extern int Xm, Ym;
 extern lua_State* lua;
 extern BOOL bLinehook;
 extern HANDLE hProc;
+extern CLoadMonitorDlg* LoadMonitorWnd;
 
 /////////////////////////////////////////////////////////////////////////////
 // CcdrawView
@@ -2503,6 +2504,12 @@ void CcdrawView::OnMenuAnalyze()
   }
   if (CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
           0, NULL, MyPath, &StartupInfo2, &ProcessInfo2)) {
+    // Called unconditionally (not just for bLinehook != FALSE below):
+    // the interactive path has no wait loop here to call MarkSolveEnd()
+    // from, so it relies on MarkSolveStart's optional process handle to
+    // detect completion itself (see LoadMonitorDlg.cpp's OnTimer).
+    if (LoadMonitorWnd != NULL)
+      LoadMonitorWnd->MarkSolveStart("electrostatics: " + pn.Mid(pn.ReverseFind('\\') + 1), ProcessInfo2.hProcess);
     if (bLinehook != FALSE) {
       DWORD ExitCode;
       hProc = ProcessInfo2.hProcess;
@@ -2512,6 +2519,8 @@ void CcdrawView::OnMenuAnalyze()
         Sleep(1);
       } while (ExitCode == STILL_ACTIVE);
       hProc = NULL;
+      if (LoadMonitorWnd != NULL)
+        LoadMonitorWnd->MarkSolveEnd();
 
       if (ExitCode == 1)
         MsgBox("Material properties have not been defined for all regions");

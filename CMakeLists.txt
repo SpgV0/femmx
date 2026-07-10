@@ -1,6 +1,23 @@
 cmake_minimum_required(VERSION 3.10)
 project(FEMM C CXX)
 
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# added the automatic NSIS installer build (installer/CMakeLists.txt), so
+# `cmake --build . --target install` (what build.ps1 always runs) also
+# produces bin/FEMMX_installer.exe whenever makensis is available -- no
+# separate manual step needed.
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
+# moved the NSIS install(CODE) block out into installer/CMakeLists.txt,
+# added via add_subdirectory(installer) as the LAST add_subdirectory()
+# call below. It used to live directly in this file, after all the
+# add_subdirectory() calls -- which looked like it should make it run
+# last, but doesn't: CMake orders a directory's own install() rules
+# before any add_subdirectory()-included ones regardless of source
+# order, so it was actually packaging whatever was already sitting in
+# INSTALL_BIN_DIR from an earlier build, not this build's fresh output.
+# Sibling subdirectories DO preserve call order relative to each other,
+# which is what actually fixes it.
+
 option(BUILD_MANUAL "Build the manual" OFF)
 option(SKIP_belasolv "Skip building belasolv" OFF)
 option(SKIP_csolv "Skip building csolv" OFF)
@@ -53,3 +70,6 @@ if(NOT SKIP_triangle)
     add_subdirectory(triangle)
   endif()
 endif()
+
+# Must stay the LAST add_subdirectory() call -- see installer/CMakeLists.txt.
+add_subdirectory(installer)

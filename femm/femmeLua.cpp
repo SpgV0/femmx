@@ -1,5 +1,12 @@
 // femmeDoc.cpp : implementation of the CFemmeDoc class
 //
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-07:
+// added mi_setredraw Lua command (lua_setredraw) so scripts can suspend
+// canvas redraw during batch edits (e.g. many mi_copytranslate/
+// mi_copyrotate calls) and force a single refresh when re-enabled.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-08:
+// added mi_setgpuaccel Lua command (lua_setgpuaccel) to opt a problem
+// into fkn.exe's optional CUDA-accelerated linear solve.
 
 #include "stdafx.h"
 #include "femm.h"
@@ -89,6 +96,8 @@ void CFemmeDoc::initalise_lua()
   lua_register(lua, "mi_addbhpoint", lua_addbhpoint);
   lua_register(lua, "mi_clearbhpoints", lua_clearbhpoints);
   lua_register(lua, "mi_refreshview", lua_updatewindow);
+  lua_register(lua, "mi_setredraw", lua_setredraw);
+  lua_register(lua, "mi_setgpuaccel", lua_setgpuaccel);
   lua_register(lua, "mi_shownames", lua_shownames);
   lua_register(lua, "mi_showgrid", lua_showgrid);
   lua_register(lua, "mi_hidegrid", lua_hidegrid);
@@ -2159,6 +2168,54 @@ int CFemmeDoc::lua_updatewindow(lua_State* L)
 
   // force redraw
   theView->OnDraw(pDC);
+
+  return 0;
+}
+
+// mi_setredraw(flag): flag=0 suspends canvas redraw for subsequent edit
+// operations (e.g. a batch of mi_copytranslate/mi_copyrotate calls on a
+// densely-drawn model); flag=1 (default state) resumes it and forces a
+// single refresh to show everything that changed while it was off.
+int CFemmeDoc::lua_setredraw(lua_State* L)
+{
+  CatchNullDocument();
+  CFemmeDoc* thisDoc;
+  CFemmeView* theView;
+  thisDoc = (CFemmeDoc*)pFemmeDoc;
+  POSITION pos;
+  pos = thisDoc->GetFirstViewPosition();
+  theView = (CFemmeView*)thisDoc->GetNextView(pos);
+
+  int n = lua_gettop(L);
+  BOOL enable = TRUE;
+  if (n > 0)
+    enable = (lua_todouble(L, 1) != 0);
+
+  thisDoc->NoDraw = !enable;
+  if (enable)
+    theView->InvalidateRect(NULL);
+
+  return 0;
+}
+
+// mi_setgpuaccel(flag): flag=1 asks fkn.exe to try its optional CUDA-
+// accelerated linear solve for this problem (see fkn/spars_cuda.cu); it
+// transparently falls back to the normal CPU solve if fkn.exe wasn't
+// built with CUDA support, or if the GPU solve fails for any reason.
+// flag=0 (default) is CPU-only. Persisted in the .fem file as
+// [GPUAccel], same mechanism as the existing AC solver choice.
+int CFemmeDoc::lua_setgpuaccel(lua_State* L)
+{
+  CatchNullDocument();
+  CFemmeDoc* thisDoc;
+  thisDoc = (CFemmeDoc*)pFemmeDoc;
+
+  int n = lua_gettop(L);
+  BOOL enable = TRUE;
+  if (n > 0)
+    enable = (lua_todouble(L, 1) != 0);
+
+  thisDoc->GPUAccel = enable ? 1 : 0;
 
   return 0;
 }
