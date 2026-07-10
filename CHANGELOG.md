@@ -1,19 +1,5 @@
 ﻿10Jul2026 (v1.0.0)
 
-* Established a release workflow: `master` (releases) and `rc` (release
-  candidate, merged into `master` with `--no-ff`) branches alongside the
-  active `new_features` development branch, and a `vMAJOR.MINOR.PATCH`
-  semantic-versioning tagging scheme. Tagged this release `v1.0.0`.
-* Rehosted `SpgV0/femmx` as an actual GitHub fork of
-  https://github.com/cenit/FEMM (it was previously an independent
-  repository with matching history, not a GitHub-recognized fork), so the
-  "forked from" network relationship is now visible upstream.
-* Split this file out of README.md: the prior changelog content moved
-  here verbatim, and README.md was rewritten to instead describe the
-  software and document build/install requirements and steps.
-
-07Jul2026 (FEMMX fork)
-
 * Rehosted this repository as a fork, FEMMX, at
   https://github.com/SpgV0/femmx, cloned from
   https://github.com/cenit/FEMM commit 7d9e8ed. See NOTICE.md for the
