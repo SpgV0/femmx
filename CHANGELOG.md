@@ -1,4 +1,36 @@
-﻿17Jul2026 (v1.1.0)
+﻿17Jul2026 (v1.1.1)
+
+* Fixed .ans load taking minutes on large solved models (e.g. a
+  transformer model with an 8.7M-node/element mesh: 384.5s -> 10.4s to
+  open, 37x). Three compounding issues:
+  - build.ps1 referenced a $DoNotUseNinja switch that was never actually
+    declared as a parameter, so the branch that set "--config Release"
+    for cmake's build step could never run. No -G was ever passed
+    either, so cmake always fell back to its own default (a multi-config
+    Visual Studio generator), and building that with no --config
+    defaults to Debug. Every build produced by this script -- dev
+    builds, the packaged installer, and CI -- has therefore always been
+    an unoptimized Debug build of every target, despite the
+    build_win_release* folder names. $selectConfig is now set
+    unconditionally.
+  - CFemmviewDoc::OnOpenDocument (femm/FemmviewDoc.cpp, and the
+    belaview/cview/hview equivalents) parsed each mesh node/element line
+    with sscanf, far slower than manual parsing for a file with millions
+    of such lines. Replaced with strtod/strtol walking a pointer along
+    the line.
+  - The "multiply defined block labels" correctness check called
+    InTriangle() once per block label to find which mesh element
+    contains that label's point. InTriangle() searches outward from
+    wherever the previous call left off -- fast for spatially coherent
+    queries, but block labels here are scattered all over the model, so
+    each call degraded towards an O(elements) scan, making the whole
+    check O(labels x elements); this one loop alone accounted for 93% of
+    the load time above. Elements are now binned into a uniform grid
+    once, and each query searches outward cell-by-cell from its own
+    position instead -- same "will eventually find it" guarantee, O(1)
+    average instead of O(elements) per query.
+
+17Jul2026 (v1.1.0)
 
 * Batched the pre-/post-processor mesh-line drawing (femm/FemmeView.cpp,
   femm/FemmviewView.cpp, femm/beladrawView.cpp, femm/belaviewView.cpp,
