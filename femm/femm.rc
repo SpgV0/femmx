@@ -22,6 +22,13 @@
 // added a "Dark Theme" item to the results viewer's View menu
 // (IDR_FEMMVIEWTYPE, the .ans window), reusing ID_VIEW_DARKTHEME -- see
 // CFemmviewView::ApplyTheme in FemmviewView.cpp.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// versioned the main window title (IDR_MAINFRAME) as "FEMMX v1.1.0",
+// updated VERSIONINFO's FILEVERSION/PRODUCTVERSION (previously stale
+// leftovers from the pre-fork femm 4.2 baseline) to match, and rebranded
+// IDD_ABOUTBOX (still said "About femm" / "femm 4.2" post-fork) to
+// "About FEMMX" / "FEMMX v1.1.0". Keep in sync with script.nsi's
+// PROJECT_VERSION and the git tag created for each release (CHANGELOG.md).
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -1265,10 +1272,10 @@ END
 
 IDD_ABOUTBOX DIALOGEX 0, 0, 201, 93
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "About femm"
+CAPTION "About FEMMX"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "femm 4.2",IDC_STATIC,55,10,119,10,SS_NOPREFIX
+    LTEXT           "FEMMX v1.1.0",IDC_STATIC,55,10,119,10,SS_NOPREFIX
     LTEXT           "Copyright (C) 1998-2022",IDC_STATIC,55,60,119,8
     DEFPUSHBUTTON   "OK",IDOK,144,70,50,14,WS_GROUP
     LTEXT           "David Meeker",IDC_STATIC,55,40,119,8
@@ -3198,8 +3205,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,1
- PRODUCTVERSION 4,2,0,0
+ FILEVERSION 1,1,0,0
+ PRODUCTVERSION 1,1,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -3216,12 +3223,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "David Meeker"
             VALUE "FileDescription", "FEMMX MFC Application"
-            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "FileVersion", "1, 1, 0, 0"
             VALUE "InternalName", "femmx"
             VALUE "LegalCopyright", "Copyright (C) 2006"
             VALUE "OriginalFilename", "femmx.EXE"
             VALUE "ProductName", "FEMMX Application"
-            VALUE "ProductVersion", "4, 2, 0, 0"
+            VALUE "ProductVersion", "1, 1, 0, 0"
         END
     END
     BLOCK "VarFileInfo"
@@ -5495,7 +5502,7 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDR_MAINFRAME           "FEMMX"
+    IDR_MAINFRAME           "FEMMX v1.1.0"
     IDR_FEMMETYPE           "femme\n\nMagnetics Problem\nFemme Files (*.fem)\n.FEM\nFemme.Document\nFemme Document"
     IDR_BELADRAWTYPE        "beladraw\n\nElectrostatics Problem\nBeladraw Files (*.fee)\n.FEE\nBeladraw.Document\nBeladraw Document"
     IDR_HDRAWTYPE           "hdraw\n\nHeat Flow Problem\nhdraw Files (*.feh)\n.FEH\nhdraw.Document\nhdraw Document"

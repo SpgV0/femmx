@@ -10,6 +10,10 @@
 # whenever makensis is found, so a manual second invocation here would
 # just duplicate that (see CMakeLists.txt). Updated the final artifact
 # path to bin/FEMMX_installer.exe, its new location (see script.nsi).
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+# the installer filename is now versioned (bin/FEMMX_v<version>_
+# installer.exe, see script.nsi's PROJECT_VERSION) -- switched the
+# artifact upload paths to a glob so this doesn't go stale each release.
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 # added the win-cuda job, a CUDA-enabled build (fkn.exe built with
 # -DENABLE_CUDA_SOLVER=ON, see fkn/CMakeLists.txt) run alongside the
@@ -100,7 +104,7 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: FEMMX-windows
-        path: ${{ github.workspace }}/bin/FEMMX_installer.exe
+        path: ${{ github.workspace }}/bin/FEMMX_v*_installer.exe
 
   win-cuda:
     runs-on: windows-2022
@@ -159,4 +163,4 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: FEMMX-windows-cuda
-        path: ${{ github.workspace }}/bin/FEMMX_installer.exe
+        path: ${{ github.workspace }}/bin/FEMMX_v*_installer.exe

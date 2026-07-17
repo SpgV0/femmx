@@ -6,9 +6,10 @@
 # for anything missing or ambiguous.
 #
 # Wraps build.ps1 with the flags needed for a local dev build that
-# produces both femmx.exe and the NSIS installer (bin\FEMMX_installer.exe,
-# built automatically by the root CMakeLists.txt's install step whenever
-# makensis is found -- see script.nsi). With -Cuda, also enables the
+# produces both femmx.exe and the NSIS installer (bin\FEMMX_v<version>_
+# installer.exe, built automatically by the root CMakeLists.txt's install
+# step whenever makensis is found -- see script.nsi's PROJECT_VERSION).
+# With -Cuda, also enables the
 # CUDA-accelerated solver (-DENABLE_CUDA_SOLVER=ON, see fkn/CMakeLists.txt).
 #
 # IMPORTANT: the call to build.ps1 below is deliberately NOT wrapped in
@@ -181,5 +182,10 @@ Pop-Location
 Write-Host ""
 Write-Host "Build complete." -ForegroundColor Green
 Write-Host "  femmx.exe:            bin\$variant\femmx.exe"
-Write-Host "  Installer (if built): bin\$variant\FEMMX_installer.exe"
+$installer = Get-ChildItem "bin\$variant\FEMMX_v*_installer.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($installer) {
+    Write-Host "  Installer:            bin\$variant\$($installer.Name)"
+} else {
+    Write-Host "  Installer:            not built (makensis not found, or partial build)"
+}
 exit 0
