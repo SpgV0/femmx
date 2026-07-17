@@ -46,8 +46,8 @@ native code; there is no cross-platform build). You'll need:
 Optional, depending on what you want to build:
 
 * [NSIS](https://nsis.sourceforge.io/) (`makensis` on `PATH`) -- to build the
-  installer (`FEMMX_installer.exe`). If not found, the executables still
-  build fine; only installer packaging is skipped.
+  installer (`FEMMX_v<version>_installer.exe`). If not found, the
+  executables still build fine; only installer packaging is skipped.
 * [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit), **12.x**
   (13.x dropped compute capability `sm_60`, one of this project's default
   target architectures) -- to build `fkn.exe`'s optional GPU-accelerated
@@ -86,8 +86,8 @@ variable to force a specific MSVC toolset.
 Either way, once the build finishes you'll have:
 
 * `bin\<plain|cuda>\femmx.exe` -- the main application
-* `bin\<plain|cuda>\FEMMX_installer.exe` -- the NSIS installer (if NSIS was
-  found)
+* `bin\<plain|cuda>\FEMMX_v<version>_installer.exe` -- the NSIS installer
+  (if NSIS was found)
 
 Both scripts are thin wrappers (`build_femmx.ps1`) around the underlying
 `build.ps1`, which can also be invoked directly for more control, e.g.:
@@ -118,9 +118,9 @@ directly to `cmake` if configuring by hand:
 
 ## Installing
 
-Run the installer produced by the build (`bin\plain\FEMMX_installer.exe` or
-`bin\cuda\FEMMX_installer.exe`). It installs to a fixed `C:\FEMMX`, laid out
-like the original FEMM 4.2 installer:
+Run the installer produced by the build (`bin\plain\FEMMX_v<version>_
+installer.exe` or `bin\cuda\FEMMX_v<version>_installer.exe`). It installs to
+a fixed `C:\FEMMX`, laid out like the original FEMM 4.2 installer:
 
 ```
 C:\FEMMX\

@@ -1,4 +1,39 @@
-﻿10Jul2026 (v1.0.0)
+﻿17Jul2026 (v1.1.0)
+
+* Batched the pre-/post-processor mesh-line drawing (femm/FemmeView.cpp,
+  femm/FemmviewView.cpp, femm/beladrawView.cpp, femm/belaviewView.cpp,
+  femm/cdrawView.cpp, femm/cviewView.cpp, femm/hdrawView.cpp,
+  femm/hviewView.cpp): one MoveTo()+LineTo() GDI call pair per mesh edge
+  (plus a GetClientRect() per edge for off-screen clamping) made large-mesh
+  visualization slow -- hundreds of thousands of individual GDI/Win32 calls
+  per repaint. Edges are now accumulated into a capped buffer and flushed
+  via PolyPolyline(), mirroring the density-plot PolyPolygon batching
+  already in place.
+* Fixed pan/zoom input feeling delayed while a large mesh redraws: the
+  pre-processor geometry/mesh views had no message-pumping during OnDraw at
+  all, so a slow redraw fully blocked input until it finished; the
+  post-processor result views had a Pump() helper meant to keep the UI
+  responsive, but it dispatched the pending pan/zoom keystroke mid-draw
+  while the current redraw kept rendering with now-stale cached
+  coordinates, and also risked a reentrant OnDraw call by dispatching
+  WM_PAINT itself. Pump() (added to the 4 pre-processor views, fixed in the
+  4 post-processor views) now detects pending navigation input before
+  dispatching anything and reports it back as a cancellation signal, no
+  longer dispatches WM_PAINT, and every OnDraw drawing stage checks that
+  signal and bails out immediately so a stale frame ends fast and the newer
+  input is processed right away.
+* Added build_all.bat, a zero-argument wrapper that runs build_plain.bat
+  and build_cuda.bat back to back for a local CPU-only + CUDA build in one
+  step.
+* Versioned the application: the main window title (IDR_MAINFRAME) now
+  reads "FEMMX v1.1.0", VERSIONINFO's FILEVERSION/PRODUCTVERSION (femm.rc)
+  are updated to match (previously stale leftovers from the pre-fork femm
+  4.2 baseline), and the installer (script.nsi) now builds as
+  FEMMX_v1.1.0_installer.exe and records DisplayVersion in the uninstall
+  registry key. Also rebranded IDD_ABOUTBOX, which still read "About femm"
+  / "femm 4.2" after the FEMMX rename, to "About FEMMX" / "FEMMX v1.1.0".
+
+10Jul2026 (v1.0.0)
 
 * Rehosted this repository as a fork, FEMMX, at
   https://github.com/SpgV0/femmx, cloned from

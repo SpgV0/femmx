@@ -4,8 +4,9 @@ project(FEMM C CXX)
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 # added the automatic NSIS installer build (installer/CMakeLists.txt), so
 # `cmake --build . --target install` (what build.ps1 always runs) also
-# produces bin/FEMMX_installer.exe whenever makensis is available -- no
-# separate manual step needed.
+# produces bin/FEMMX_v<version>_installer.exe (see script.nsi's
+# PROJECT_VERSION) whenever makensis is available -- no separate manual
+# step needed.
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-09:
 # moved the NSIS install(CODE) block out into installer/CMakeLists.txt,
 # added via add_subdirectory(installer) as the LAST add_subdirectory()
