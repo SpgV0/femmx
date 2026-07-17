@@ -29,7 +29,7 @@ Unicode True
 ; Single source of truth for the installer's own display/file version --
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
-!define PROJECT_VERSION "1.1.0"
+!define PROJECT_VERSION "1.1.1"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
