@@ -22,6 +22,11 @@
 ; added PROJECT_VERSION, folded into the installer's OutFile name (e.g.
 ; FEMMX_v1.1.0_installer.exe) and written as the uninstall registry key's
 ; DisplayVersion, so it shows up in Windows' "Apps & Features" list.
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+; stepped to v1.2.0 (dark theme extended to the whole application, manual
+; branding/version update + versioned-PDF CI artifact, load monitor
+; window widened to 1000s, and a redraw-corruption fix for pan/zoom
+; during large-mesh drawing -- see CHANGELOG.md).
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -29,7 +34,7 @@ Unicode True
 ; Single source of truth for the installer's own display/file version --
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
-!define PROJECT_VERSION "1.1.1"
+!define PROJECT_VERSION "1.2.0"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 

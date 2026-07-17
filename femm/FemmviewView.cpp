@@ -12,6 +12,7 @@
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
+#include "DarkMode.h"
 #include "femm.h"
 #include "problem.h"
 #include "xyplot.h"
@@ -933,13 +934,26 @@ BOOL CFemmviewView::Pump()
       || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
       || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
 
-  // Still dispatch queued input/sent-message traffic so the app doesn't
-  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
-  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
-  // call is still on the stack, racing this same view's member state
-  // (ox/oy/mag, cached screen coordinates, m_densityBandPts, ...) between
-  // the two nested frames.
-  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // this used to also dispatch PM_QS_INPUT here -- deliberately leaving
+  // out only PM_QS_PAINT (see the original comment/commit ff79e58 this
+  // replaces). That still reentrantly dispatched the very pan/zoom/click
+  // input bCancel above just detected, calling OnPanRight()/OnZoomOut()/
+  // etc mid-loop: those mutate this same view's ox/oy/mag while the
+  // caller is still iterating using screen coordinates cached at the top
+  // of *this* OnDraw call for the OLD ox/oy/mag, and density-plot drawing
+  // additionally clears/refills the shared m_densityBandPts buffers --
+  // exactly the "now-stale cached coordinates" hazard ff79e58 set out to
+  // fix, just still present for PM_QS_INPUT instead of PM_QS_PAINT. Only
+  // sent-message traffic (cross-thread ::SendMessage, e.g. from COM
+  // automation) needs servicing here so the app doesn't look hung to
+  // whoever's waiting on one; peeking (not dispatching) input is enough
+  // for bCancel above to unwind the caller's loop, and leaving that input
+  // queued means the normal message loop dispatches it non-reentrantly
+  // once OnDraw actually returns, whose own InvalidateRect() schedules a
+  // fresh, correct redraw -- matching what the comment below already
+  // claimed happens, but previously didn't for input specifically.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
@@ -1705,6 +1719,28 @@ void CFemmviewView::OnDraw(CDC* pDC)
 
   pDC->SelectObject(pOldFont);
   fntArial.DeleteObject();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // ff79e58's bCanceled-abort design assumed whatever pending message
+  // Pump() saw would itself cause a fresh, complete repaint once
+  // dispatched -- true for a genuinely new WM_KEYDOWN/WM_MOUSEWHEEL/etc,
+  // but Pump() peeks the whole WM_KEYFIRST..WM_KEYLAST range, which also
+  // matches WM_KEYUP (always queued right behind the WM_KEYDOWN that
+  // just triggered *this* redraw) and WM_MOUSEWHEEL (which nothing in
+  // this view even handles) -- messages that do nothing when finally
+  // dispatched. Cancelling for one of those abandons the redraw with no
+  // replacement ever coming: confirmed via debug tracing this session
+  // (a single keypress reliably left the density plot ~99.99% blank,
+  // stuck that way indefinitely, since Pump()'s own periodic-check
+  // counter carries over between OnDraw calls and can trip almost
+  // immediately on the very next call). Unconditionally requesting one
+  // more repaint here whenever this one was cut short is what actually
+  // guarantees eventual completion, regardless of which message Pump()
+  // happened to see -- if something is still genuinely pending, that
+  // next attempt cancels early too and asks again, converging once
+  // input actually goes quiet.
+  if (bCanceled)
+    InvalidateRect(NULL);
 
   bOnDraw = FALSE;
 }
@@ -4868,25 +4904,22 @@ void CFemmviewView::ApplyTheme(BOOL bDark)
     ImagVectorColor = dImagVectorColor;
   }
 
-  // Best-effort: also switch the main frame's title bar between light
-  // and dark (Windows 10 1809+/11). A no-op on older systems.
-  HWND hFrame = AfxGetMainWnd() ? AfxGetMainWnd()->GetSafeHwnd() : NULL;
-  if (hFrame != NULL) {
-    BOOL useDark = bDark;
-    DwmSetWindowAttribute(hFrame, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
-  }
+  // Everything besides this canvas's own GDI colors above (title bars,
+  // menus, toolbars, dialogs, every native control) is driven by the
+  // single app-wide flag -- see DarkMode.h.
+  DarkMode::SetEnabled(bDark);
 
   RedrawView();
 }
 
 void CFemmviewView::OnViewDarkTheme()
 {
-  ApplyTheme(!m_bDarkTheme);
+  ApplyTheme(!DarkMode::IsEnabled());
 }
 
 void CFemmviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
 {
-  pCmdUI->SetCheck(m_bDarkTheme);
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 void CFemmviewView::OnVplot()

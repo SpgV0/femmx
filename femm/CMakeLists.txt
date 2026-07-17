@@ -86,6 +86,7 @@ set(femm_SOURCES
   cv_XYPlotDlg.h
   CVIEWDOC.H
   cviewView.h
+  DarkMode.h
   DXFImport.h
   EnterPt.h
   ExteriorProps.h
@@ -266,6 +267,7 @@ set(femm_SOURCES
   CVIEWDOC.CPP
   CVIEWLUA.CPP
   cviewView.cpp
+  DarkMode.cpp
   DXFImport.cpp
   EnterPt.cpp
   ExteriorProps.cpp

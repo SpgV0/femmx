@@ -121,3 +121,24 @@ license-required record of modifications.
   describe the software and document build/install requirements and
   steps (Visual Studio/MFC, CMake, optional NSIS/CUDA/LaTeX, the
   `build_plain.bat`/`build_cuda.bat` wrappers, and the installer layout).
+- 2026-07-17: Extended the Dark Theme toggle (previously magnetics-only)
+  to every window and every problem type: new `femm/DarkMode.h`/
+  `femm/DarkMode.cpp` (app-wide subsystem covering the main frame, every
+  MDI child, and every dialog's native controls, not just each editor's
+  own canvas), and `femm/beladrawView.h`/`.cpp`, `femm/belaviewView.h`/
+  `.cpp`, `femm/cdrawView.h`/`.cpp`, `femm/cviewView.h`/`.cpp`,
+  `femm/hdrawView.h`/`.cpp`, `femm/hviewView.h`/`.cpp` (each gained its
+  own canvas-color `ApplyTheme()`, mirroring the existing
+  `CFemmeView`/`CFemmviewView` pattern), plus `femm/femm.cpp`,
+  `femm/FemmeView.cpp`, `femm/FemmviewView.cpp`, `femm/femm.rc` (menu
+  items for the 6 problem types that didn't have one yet), and
+  `femm/CMakeLists.txt`. See per-file modification notices.
+- 2026-07-17: `manual/manual.tex.in`: title page now shows FEMMX's own
+  version (previously a stale "4.2" left over from the pre-fork
+  baseline) alongside an explicit "fork of FEMM 4.2 (femm.info)" line
+  and this repository's URL, and relabels the existing David Meeker
+  credit as the original FEMM author rather than this fork's. Added a
+  best-effort manual-PDF build/versioning/upload sequence to
+  `.github/workflows/ccpp.yml` (`FEMMX_v<version>_manual.pdf`,
+  `continue-on-error: true` throughout so a LaTeX toolchain hiccup can't
+  fail the build/tests/installer). See per-file modification notices.

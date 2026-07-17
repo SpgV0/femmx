@@ -21,6 +21,7 @@
 #include "cd_libdlg.h"
 #include "PromptBox.h"
 #include "MakeABCDlg.h"
+#include "DarkMode.h"
 
 #include <winreg.h>
 
@@ -100,6 +101,8 @@ ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
 ON_COMMAND(ID_EDIT_CREATEOPENBOUNDARY, &CcdrawView::OnMakeABC)
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
@@ -118,6 +121,7 @@ CcdrawView::CcdrawView()
   NodeColor = RGB(0, 0, 0);
   BackColor = RGB(255, 255, 255);
   NameColor = RGB(0, 0, 0);
+  m_bDarkTheme = FALSE;
 
   // assume some default behaviors if they can't be
   // loaded from disk
@@ -253,6 +257,42 @@ BOOL CcdrawView::PreCreateWindow(CREATESTRUCT& cs)
   // TODO: Modify the Window class or styles here by modifying
   //  the CREATESTRUCT cs
   return CView::PreCreateWindow(cs);
+}
+
+void CcdrawView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+  } else {
+    BackColor = RGB(255, 255, 255);
+    LineColor = RGB(0, 0, 255);
+    NodeColor = RGB(0, 0, 0);
+    BlockColor = RGB(0, 125, 0);
+    MeshColor = RGB(213, 228, 20);
+    GridColor = RGB(0, 0, 255);
+    NameColor = RGB(0, 0, 0);
+    SelColor = RGB(255, 0, 0);
+  }
+  DarkMode::SetEnabled(bDark);
+  InvalidateRect(NULL);
+}
+
+void CcdrawView::OnViewDarkTheme()
+{
+  ApplyTheme(!DarkMode::IsEnabled());
+}
+
+void CcdrawView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -561,13 +601,24 @@ BOOL CcdrawView::Pump()
       || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
       || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
 
-  // Still dispatch queued input/sent-message traffic so the app doesn't
-  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
-  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
-  // call is still on the stack, racing this same view's member state
-  // (ox/oy/mag, cached screen coordinates, ...) between the two nested
-  // frames.
-  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // this used to also dispatch PM_QS_INPUT here -- deliberately leaving
+  // out only PM_QS_PAINT (see the original comment/commit ff79e58 this
+  // replaces). That still reentrantly dispatched the very pan/zoom/click
+  // input bCancel above just detected, calling OnPanRight()/OnZoomOut()/
+  // etc mid-loop: those mutate this same view's ox/oy/mag while the
+  // caller is still iterating using screen coordinates cached at the top
+  // of *this* OnDraw call for the OLD ox/oy/mag -- exactly the
+  // "now-stale cached coordinates" hazard ff79e58 set out to fix, just
+  // still present for PM_QS_INPUT instead of PM_QS_PAINT. Only
+  // sent-message traffic (cross-thread ::SendMessage, e.g. from COM
+  // automation) needs servicing here so the app doesn't look hung to
+  // whoever's waiting on one; peeking (not dispatching) input is enough
+  // for bCancel above to unwind the caller's loop, and leaving that
+  // input queued means the normal message loop dispatches it
+  // non-reentrantly once OnDraw actually returns, whose own
+  // InvalidateRect() schedules a fresh, correct redraw.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
@@ -862,6 +913,24 @@ void CcdrawView::OnDraw(CDC* pDC)
 
   pDC->SelectObject(pOldFont);
   fntArial.DeleteObject();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // ff79e58's bCanceled-abort design assumed whatever pending message
+  // Pump() saw would itself cause a fresh, complete repaint once
+  // dispatched -- true for a genuinely new WM_KEYDOWN/WM_MOUSEWHEEL/etc,
+  // but Pump() peeks the whole WM_KEYFIRST..WM_KEYLAST range, which also
+  // matches WM_KEYUP (always queued right behind the WM_KEYDOWN that
+  // just triggered *this* redraw) -- a message that does nothing when
+  // finally dispatched. Cancelling for one of those abandons the redraw
+  // with no replacement ever coming (confirmed via debug tracing this
+  // session on the post-processor's density plot -- same Pump()/
+  // bCanceled pattern as here). Unconditionally requesting one more
+  // repaint whenever this one was cut short is what actually guarantees
+  // eventual completion, regardless of which message Pump() happened to
+  // see -- if something is still genuinely pending, that next attempt
+  // cancels early too and asks again, converging once input goes quiet.
+  if (bCanceled)
+    InvalidateRect(NULL);
 }
 
 void CcdrawView::OnInitialUpdate()

@@ -48,6 +48,13 @@ class CbeladrawView : public CView {
   COLORREF NodeColor;
   COLORREF NameColor;
 
+  // Dark Theme toggle (View menu) -- swaps the canvas colors above
+  // between the light defaults and a dark palette; everything else
+  // (title bars, menus, toolbars, dialogs, every native control) is
+  // driven by the app-wide DarkMode::SetEnabled() -- see DarkMode.h.
+  BOOL m_bDarkTheme;
+  void ApplyTheme(BOOL bDark);
+
   // default view properties
   int d_action; //=0;
   double d_mag; //=100.;
@@ -151,6 +158,8 @@ class CbeladrawView : public CView {
   afx_msg void OnCreateRadius();
   afx_msg void OnUpdateEditExterior(CCmdUI* pCmdUI);
   afx_msg void OnMakeABC();
+  afx_msg void OnViewDarkTheme();
+  afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

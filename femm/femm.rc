@@ -29,6 +29,30 @@
 // IDD_ABOUTBOX (still said "About femm" / "femm 4.2" post-fork) to
 // "About FEMMX" / "FEMMX v1.1.0". Keep in sync with script.nsi's
 // PROJECT_VERSION and the git tag created for each release (CHANGELOG.md).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// dropped WS_VISIBLE from IDD_LOADMONITOR's style -- CDialog::Create()
+// shows a WS_VISIBLE template's window immediately regardless of the
+// CLoadMonitorDlg::Enable() state it's about to be given, so with the
+// load monitor now disabled by default (CMainFrame::OnCreate), the
+// window was appearing at startup anyway before Enable(FALSE) (a no-op,
+// since m_bEnabled already defaults to FALSE) had any window to hide.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// the IDD_ABOUTBOX rebrand above only changed the dialog's own content --
+// missed that all 6 problem types' Help menus (pre- and post-processor)
+// separately hardcode the menu item text too; changed all 10 "&About
+// femm..." occurrences to "&About FEMMX...".
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// added a "Dark Theme" item to the View menu of the 6 problem types that
+// were missing it (IDR_BELADRAWTYPE/HDRAWTYPE/CDRAWTYPE pre-processors,
+// IDR_BELAVIEWTYPE/HVIEWTYPE/CVIEWTYPE post-processors), reusing
+// ID_VIEW_DARKTHEME -- previously only IDR_FEMMETYPE/IDR_FEMMVIEWTYPE
+// (magnetics) had this. Each view's own ApplyTheme() now swaps its canvas
+// colors the same way CFemmeView/CFemmviewView already did.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// versioned the application as FEMMX v1.2.0 (IDR_MAINFRAME, IDD_ABOUTBOX,
+// VERSIONINFO's FILEVERSION/PRODUCTVERSION) -- keep in sync with
+// script.nsi's PROJECT_VERSION and the git tag created for this release
+// (see CHANGELOG.md).
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -379,7 +403,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -495,7 +519,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -583,7 +607,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -646,6 +670,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -696,7 +721,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -761,6 +786,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -781,7 +807,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -829,7 +855,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -892,6 +918,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -942,7 +969,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1007,6 +1034,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -1027,7 +1055,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1090,6 +1118,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -1140,7 +1169,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1205,6 +1234,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -1225,7 +1255,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1259,7 +1289,7 @@ END
 //
 
 IDD_LOADMONITOR DIALOGEX 0, 0, 260, 240
-STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "CPU / GPU / RAM Load"
 FONT 8, "MS Sans Serif"
@@ -1275,7 +1305,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "About FEMMX"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "FEMMX v1.1.1",IDC_STATIC,55,10,119,10,SS_NOPREFIX
+    LTEXT           "FEMMX v1.2.0",IDC_STATIC,55,10,119,10,SS_NOPREFIX
     LTEXT           "Copyright (C) 1998-2022",IDC_STATIC,55,60,119,8
     DEFPUSHBUTTON   "OK",IDOK,144,70,50,14,WS_GROUP
     LTEXT           "David Meeker",IDC_STATIC,55,40,119,8
@@ -3205,8 +3235,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,1,0
- PRODUCTVERSION 1,1,1,0
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -3223,12 +3253,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "David Meeker"
             VALUE "FileDescription", "FEMMX MFC Application"
-            VALUE "FileVersion", "1, 1, 1, 0"
+            VALUE "FileVersion", "1, 2, 0, 0"
             VALUE "InternalName", "femmx"
             VALUE "LegalCopyright", "Copyright (C) 2006"
             VALUE "OriginalFilename", "femmx.EXE"
             VALUE "ProductName", "FEMMX Application"
-            VALUE "ProductVersion", "1, 1, 1, 0"
+            VALUE "ProductVersion", "1, 2, 0, 0"
         END
     END
     BLOCK "VarFileInfo"
@@ -5502,7 +5532,7 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDR_MAINFRAME           "FEMMX v1.1.1"
+    IDR_MAINFRAME           "FEMMX v1.2.0"
     IDR_FEMMETYPE           "femme\n\nMagnetics Problem\nFemme Files (*.fem)\n.FEM\nFemme.Document\nFemme Document"
     IDR_BELADRAWTYPE        "beladraw\n\nElectrostatics Problem\nBeladraw Files (*.fee)\n.FEE\nBeladraw.Document\nBeladraw Document"
     IDR_HDRAWTYPE           "hdraw\n\nHeat Flow Problem\nhdraw Files (*.feh)\n.FEH\nhdraw.Document\nhdraw Document"
