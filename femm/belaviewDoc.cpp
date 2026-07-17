@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include <afx.h>
 #include <afxtempl.h>
+#include <vector>
 #include "bv_problem.h"
 #include "femm.h"
 #include "xyplot.h"
@@ -640,11 +641,21 @@ BOOL CbelaviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   }
 
   // read in meshnodes;
+  // Solved models can have millions of mesh nodes/elements (each on its
+  // own line here) -- sscanf's format-string interpretation makes it far
+  // slower than manual strtod/strtol field extraction for a file this
+  // size, and this loop dominates .ans load time. char* p walks along s
+  // exactly like sscanf did (strtod/strtol skip leading whitespace/tabs
+  // just like %lf/%i do), just without sscanf's per-call overhead.
   fscanf(fp, "%i\n", &k);
   meshnode.SetSize(k);
   for (i = 0; i < k; i++) {
     fgets(s, 1024, fp);
-    sscanf(s, "%lf	%lf	%lf	%i", &mnode.x, &mnode.y, &mnode.V, &mnode.Q);
+    char* p = s;
+    mnode.x = strtod(p, &p);
+    mnode.y = strtod(p, &p);
+    mnode.V = strtod(p, &p);
+    mnode.Q = (int)strtol(p, &p, 10);
     meshnode.SetAt(i, mnode);
   }
 
@@ -653,7 +664,11 @@ BOOL CbelaviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   meshelem.SetSize(k);
   for (i = 0; i < k; i++) {
     fgets(s, 1024, fp);
-    sscanf(s, "%i	%i	%i	%i", &elm.p[0], &elm.p[1], &elm.p[2], &elm.lbl);
+    char* p = s;
+    elm.p[0] = (int)strtol(p, &p, 10);
+    elm.p[1] = (int)strtol(p, &p, 10);
+    elm.p[2] = (int)strtol(p, &p, 10);
+    elm.lbl = (int)strtol(p, &p, 10);
     elm.blk = blocklist[elm.lbl].BlockType;
     meshelem.SetAt(i, elm);
   }
@@ -814,18 +829,103 @@ BOOL CbelaviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   // Check to see if any regions are multiply defined
   // (i.e. tagged by more than one block label). If so,
   // display an error message and mark the problem blocks.
-  for (k = 0, bMultiplyDefinedLabels = FALSE; k < blocklist.GetSize(); k++) {
-    if ((i = InTriangle(blocklist[k].x, blocklist[k].y)) >= 0) {
-      if (meshelem[i].lbl != k) {
-        blocklist[meshelem[i].lbl].IsSelected = TRUE;
-        if (!bMultiplyDefinedLabels) {
-          CString msg;
-          msg = "Some regions in the problem have been defined\n";
-          msg += "by more than one block label.  These potentially\n";
-          msg += "problematic regions will appear as selected in\n";
-          msg += "the initial view.";
-          MsgBox(msg);
-          bMultiplyDefinedLabels = TRUE;
+  //
+  // InTriangle() does a "search outward from the last hit" that's fast
+  // when consecutive queries are spatially close together, but each
+  // block label's (x,y) here can be anywhere in the model -- for a large
+  // mesh this degrades towards an O(elements) scan per query, and this
+  // loop calls it once per block label. Bin element centroids into a
+  // uniform grid once (O(elements)) and search outward cell-by-cell from
+  // each query point's own cell instead: same "will eventually find it
+  // if it's there" guarantee as InTriangle()'s scan (the search radius
+  // grows until every populated cell within the grid has been
+  // considered), just starting from wherever the point actually is
+  // instead of wherever the previous, unrelated query happened to land.
+  bMultiplyDefinedLabels = FALSE;
+  if (meshelem.GetSize() > 0 && blocklist.GetSize() > 0) {
+    double xlo, xhi, ylo, yhi;
+    xlo = xhi = meshelem[0].ctr.re;
+    ylo = yhi = meshelem[0].ctr.im;
+    for (i = 1; i < meshelem.GetSize(); i++) {
+      if (meshelem[i].ctr.re < xlo)
+        xlo = meshelem[i].ctr.re;
+      if (meshelem[i].ctr.re > xhi)
+        xhi = meshelem[i].ctr.re;
+      if (meshelem[i].ctr.im < ylo)
+        ylo = meshelem[i].ctr.im;
+      if (meshelem[i].ctr.im > yhi)
+        yhi = meshelem[i].ctr.im;
+    }
+    int gridN = (int)ceil(sqrt((double)meshelem.GetSize()));
+    if (gridN < 1)
+      gridN = 1;
+    double gw = (xhi > xlo) ? (xhi - xlo) / gridN : 1.;
+    double gh = (yhi > ylo) ? (yhi - ylo) / gridN : 1.;
+    if (gw <= 0)
+      gw = 1.;
+    if (gh <= 0)
+      gh = 1.;
+
+    std::vector<std::vector<int> > grid(gridN * gridN);
+    for (i = 0; i < meshelem.GetSize(); i++) {
+      int ix = (int)((meshelem[i].ctr.re - xlo) / gw);
+      int iy = (int)((meshelem[i].ctr.im - ylo) / gh);
+      if (ix < 0)
+        ix = 0;
+      if (ix >= gridN)
+        ix = gridN - 1;
+      if (iy < 0)
+        iy = 0;
+      if (iy >= gridN)
+        iy = gridN - 1;
+      grid[iy * gridN + ix].push_back(i);
+    }
+
+    for (k = 0; k < blocklist.GetSize(); k++) {
+      double qx = blocklist[k].x, qy = blocklist[k].y;
+      int qix = (int)((qx - xlo) / gw);
+      int qiy = (int)((qy - ylo) / gh);
+      if (qix < 0)
+        qix = 0;
+      if (qix >= gridN)
+        qix = gridN - 1;
+      if (qiy < 0)
+        qiy = 0;
+      if (qiy >= gridN)
+        qiy = gridN - 1;
+
+      int found = -1;
+      for (int radius = 0; radius <= gridN && found < 0; radius++) {
+        int x0 = __max(qix - radius, 0);
+        int x1 = __min(qix + radius, gridN - 1);
+        int y0 = __max(qiy - radius, 0);
+        int y1 = __min(qiy + radius, gridN - 1);
+        for (int cy = y0; cy <= y1 && found < 0; cy++) {
+          for (int cx = x0; cx <= x1 && found < 0; cx++) {
+            std::vector<int>& cell = grid[cy * gridN + cx];
+            for (size_t ci = 0; ci < cell.size(); ci++) {
+              if (InTriangleTest(qx, qy, cell[ci])) {
+                found = cell[ci];
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (found >= 0) {
+        i = found;
+        if (meshelem[i].lbl != k) {
+          blocklist[meshelem[i].lbl].IsSelected = TRUE;
+          if (!bMultiplyDefinedLabels) {
+            CString msg;
+            msg = "Some regions in the problem have been defined\n";
+            msg += "by more than one block label.  These potentially\n";
+            msg += "problematic regions will appear as selected in\n";
+            msg += "the initial view.";
+            MsgBox(msg);
+            bMultiplyDefinedLabels = TRUE;
+          }
         }
       }
     }

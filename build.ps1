@@ -251,7 +251,6 @@ if (-Not $DoNotSetupVS) {
   $tokens = $tokens.split('.')
   if ($DoNotUseNinja) {
     $dllfolder = "Release"
-    $selectConfig = " --config Release "
     if ($tokens[0] -eq "14") {
       $generator = "Visual Studio 14 2015"
       $AdditionalBuildSetup = $AdditionalBuildSetup + " -T `"host=x64`" -A `"x64`""
@@ -276,6 +275,21 @@ if (-Not $DoNotSetupVS) {
     $dllfolder = ""
   }
 }
+
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+# $selectConfig used to only be set inside "if ($DoNotUseNinja)" above, but
+# $DoNotUseNinja was never declared in this script's param() block -- that
+# branch could never run, so $selectConfig was always empty. No -G is ever
+# passed to cmake below (only -A x64/-A Win32), so cmake always fell back to
+# its own default generator, a multi-config Visual Studio generator, and
+# building it with no --config defaults to Debug. Every build produced by
+# this script (dev builds, the packaged installer, and CI) has therefore
+# always been an unoptimized Debug build of every target (femmx.exe,
+# fkn.exe, csolv.exe, hsolv.exe, belasolv.exe, triangle.exe, femmplot.exe),
+# despite the build_win_release* folder names. Set unconditionally so a
+# real Release build actually happens, matching those folder names' intent.
+$selectConfig = " --config Release "
+
 Write-Host "Setting up environment to use CMake generator: $generator"
 
 if (-Not $DoNotDeleteBuildFolder) {
