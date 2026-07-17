@@ -601,13 +601,24 @@ BOOL CbeladrawView::Pump()
       || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
       || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
 
-  // Still dispatch queued input/sent-message traffic so the app doesn't
-  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
-  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
-  // call is still on the stack, racing this same view's member state
-  // (ox/oy/mag, cached screen coordinates, ...) between the two nested
-  // frames.
-  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // this used to also dispatch PM_QS_INPUT here -- deliberately leaving
+  // out only PM_QS_PAINT (see the original comment/commit ff79e58 this
+  // replaces). That still reentrantly dispatched the very pan/zoom/click
+  // input bCancel above just detected, calling OnPanRight()/OnZoomOut()/
+  // etc mid-loop: those mutate this same view's ox/oy/mag while the
+  // caller is still iterating using screen coordinates cached at the top
+  // of *this* OnDraw call for the OLD ox/oy/mag -- exactly the
+  // "now-stale cached coordinates" hazard ff79e58 set out to fix, just
+  // still present for PM_QS_INPUT instead of PM_QS_PAINT. Only
+  // sent-message traffic (cross-thread ::SendMessage, e.g. from COM
+  // automation) needs servicing here so the app doesn't look hung to
+  // whoever's waiting on one; peeking (not dispatching) input is enough
+  // for bCancel above to unwind the caller's loop, and leaving that
+  // input queued means the normal message loop dispatches it
+  // non-reentrantly once OnDraw actually returns, whose own
+  // InvalidateRect() schedules a fresh, correct redraw.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
