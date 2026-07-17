@@ -534,6 +534,47 @@ static BOOL ClipMeshSegment(int x0, int y0, int x1, int y1, int Zm, POINT out[2]
   return TRUE;
 }
 
+BOOL ChdrawView::Pump()
+{
+  // Services the message pump during redraws that take a long time (e.g. a
+  // large generated mesh), same idea/pattern as CFemmviewView::Pump() in
+  // the post-processor. Checked only periodically (not on every call),
+  // since checking every call would itself slow things down.
+  //
+  // Returns TRUE as soon as new navigation input (keyboard pan/zoom, mouse
+  // wheel/click, resize) is queued for this view, so the caller's drawing
+  // loop can abandon this now-stale redraw immediately instead of spending
+  // the rest of its time finishing a frame the user has already navigated
+  // away from -- the newly-dispatched command's own InvalidateRect() call
+  // schedules a follow-up repaint that starts as soon as OnDraw returns.
+
+  static int k = 0;
+
+  if (k++ < 1000)
+    return FALSE;
+  k = 0;
+
+  MSG msg;
+  BOOL bCancel = ::PeekMessage(&msg, m_hWnd, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_LBUTTONDOWN, WM_LBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
+
+  // Still dispatch queued input/sent-message traffic so the app doesn't
+  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
+  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
+  // call is still on the stack, racing this same view's member state
+  // (ox/oy/mag, cached screen coordinates, ...) between the two nested
+  // frames.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+
+  return bCancel;
+}
+
 void ChdrawView::OnDraw(CDC* pDC)
 {
   ChdrawDoc* pDoc = GetDocument();
@@ -550,6 +591,10 @@ void ChdrawView::OnDraw(CDC* pDC)
   double xd, yd, side, R, dt;
   CComplex c, p, s;
   CString lbl;
+  BOOL bCanceled = FALSE; // set by Pump() once newer navigation input is
+                          // queued -- once TRUE, every remaining stage
+                          // below is skipped so the stale redraw ends
+                          // and control returns to the message pump ASAP
 
   CFont fntArial, *pOldFont;
   fntArial.CreateFont(16, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Tahoma");
@@ -673,7 +718,7 @@ void ChdrawView::OnDraw(CDC* pDC)
     meshPts.reserve(kMaxMeshEdgePts);
 
     pOldPen = pDC->SelectObject(&penMesh);
-    for (i = 0; i < pDoc->meshline.GetSize(); i++) {
+    for (i = 0; i < pDoc->meshline.GetSize() && !bCanceled; i++) {
       POINT clipped[2];
       if (ClipMeshSegment(pDoc->meshnode[pDoc->meshline[i].x].xs, pDoc->meshnode[pDoc->meshline[i].x].ys,
               pDoc->meshnode[pDoc->meshline[i].y].xs, pDoc->meshnode[pDoc->meshline[i].y].ys, ZmMesh, clipped)) {
@@ -685,6 +730,8 @@ void ChdrawView::OnDraw(CDC* pDC)
           meshPts.clear();
         }
       }
+      if (Pump())
+        bCanceled = TRUE;
     }
     if (!meshPts.empty()) {
       std::vector<DWORD> counts(meshPts.size() / 2, 2);
@@ -693,29 +740,33 @@ void ChdrawView::OnDraw(CDC* pDC)
     }
     pDC->SelectObject(pOldPen);
 
-    pOldPen = pDC->SelectObject(&penGrey);
-    for (i = 0; i < pDoc->greymeshline.GetSize(); i++) {
-      POINT clipped[2];
-      if (ClipMeshSegment(pDoc->meshnode[pDoc->greymeshline[i].x].xs, pDoc->meshnode[pDoc->greymeshline[i].x].ys,
-              pDoc->meshnode[pDoc->greymeshline[i].y].xs, pDoc->meshnode[pDoc->greymeshline[i].y].ys, ZmMesh, clipped)) {
-        meshPts.push_back(clipped[0]);
-        meshPts.push_back(clipped[1]);
-        if (meshPts.size() >= kMaxMeshEdgePts) {
-          std::vector<DWORD> counts(meshPts.size() / 2, 2);
-          pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
-          meshPts.clear();
+    if (!bCanceled) {
+      pOldPen = pDC->SelectObject(&penGrey);
+      for (i = 0; i < pDoc->greymeshline.GetSize() && !bCanceled; i++) {
+        POINT clipped[2];
+        if (ClipMeshSegment(pDoc->meshnode[pDoc->greymeshline[i].x].xs, pDoc->meshnode[pDoc->greymeshline[i].x].ys,
+                pDoc->meshnode[pDoc->greymeshline[i].y].xs, pDoc->meshnode[pDoc->greymeshline[i].y].ys, ZmMesh, clipped)) {
+          meshPts.push_back(clipped[0]);
+          meshPts.push_back(clipped[1]);
+          if (meshPts.size() >= kMaxMeshEdgePts) {
+            std::vector<DWORD> counts(meshPts.size() / 2, 2);
+            pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+            meshPts.clear();
+          }
         }
+        if (Pump())
+          bCanceled = TRUE;
       }
+      if (!meshPts.empty()) {
+        std::vector<DWORD> counts(meshPts.size() / 2, 2);
+        pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+      }
+      pDC->SelectObject(pOldPen);
     }
-    if (!meshPts.empty()) {
-      std::vector<DWORD> counts(meshPts.size() / 2, 2);
-      pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
-    }
-    pDC->SelectObject(pOldPen);
   }
 
   // Draw lines linking nodes
-  for (i = 0; i < pDoc->linelist.GetSize(); i++) {
+  for (i = 0; i < pDoc->linelist.GetSize() && !bCanceled; i++) {
     if (pDoc->linelist[i].IsSelected == FALSE)
       pOldPen = pDC->SelectObject(&penBlue);
     else
@@ -730,7 +781,7 @@ void ChdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw Arc Segments;
-  for (i = 0; i < pDoc->arclist.GetSize(); i++) {
+  for (i = 0; i < pDoc->arclist.GetSize() && !bCanceled; i++) {
     if (pDoc->arclist[i].IsSelected == FALSE)
       pOldPen = pDC->SelectObject(&penBlue);
     else
@@ -753,7 +804,7 @@ void ChdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw node points
-  for (i = 0; i < pDoc->nodelist.GetSize(); i++) {
+  for (i = 0; i < pDoc->nodelist.GetSize() && !bCanceled; i++) {
     xs = pDoc->nodelist[i].xs;
     ys = pDoc->nodelist[i].ys;
 
@@ -772,7 +823,7 @@ void ChdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw block labels
-  for (i = 0; i < pDoc->blocklist.GetSize(); i++) {
+  for (i = 0; i < pDoc->blocklist.GetSize() && !bCanceled; i++) {
     DwgToScreen(pDoc->blocklist[i].x, pDoc->blocklist[i].y, &xs, &ys, &r);
 
     if (pDoc->blocklist[i].IsSelected == FALSE)

@@ -639,6 +639,13 @@ BOOL CbelaviewView::Pump()
   // Idea here is to service the message pump during redraws that take a long time.
   // We don't actually have to check the messages every time Pump is called, because that
   // slows things down.  Just check every once in a while when Pump is called.
+  //
+  // Returns TRUE as soon as new navigation input (keyboard pan/zoom, mouse
+  // wheel/click, resize) is queued for this view, so the caller's drawing
+  // loop can abandon this now-stale redraw immediately instead of spending
+  // the rest of its time finishing a frame the user has already navigated
+  // away from -- the newly-dispatched command's own InvalidateRect() call
+  // schedules a follow-up repaint that starts as soon as OnDraw returns.
 
   static int k = 0;
 
@@ -647,13 +654,24 @@ BOOL CbelaviewView::Pump()
   k = 0;
 
   MSG msg;
+  BOOL bCancel = ::PeekMessage(&msg, m_hWnd, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_LBUTTONDOWN, WM_LBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
 
-  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_PAINT | PM_QS_SENDMESSAGE)) {
+  // Still dispatch queued input/sent-message traffic so the app doesn't
+  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
+  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
+  // call is still on the stack, racing this same view's member state
+  // (ox/oy/mag, cached screen coordinates, ...) between the two nested
+  // frames.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
 
-  return FALSE;
+  return bCancel;
 }
 
 // Clips a line segment to a Zm-radius square centered on the origin --
@@ -735,6 +753,10 @@ void CbelaviewView::OnDraw(CDC* pDC)
   double xd, yd, dt, R;
   double xss, yss, rss, rt;
   CComplex p, c, s;
+  BOOL bCanceled = FALSE; // set by Pump() once newer navigation input is
+                          // queued -- once TRUE, every remaining stage
+                          // below is skipped so the stale redraw ends
+                          // and control returns to the message pump ASAP
 
   const COLORREF mymap[] = {
     Color00, Color01, Color02, Color03, Color04,
@@ -882,12 +904,13 @@ void CbelaviewView::OnDraw(CDC* pDC)
 
   // Draw flux densities if they are enabled...
   if (DensityPlot != 0) {
-    for (i = 0; i < pDoc->meshelem.GetSize(); i++) {
+    for (i = 0; i < pDoc->meshelem.GetSize() && !bCanceled; i++) {
       if ((pDoc->meshelem[i].lbl == DrawSelected) || (DrawSelected == -1)) {
         rt = abs(CComplex(xss, yss) - pDoc->meshelem[i].ctr);
         if (rt < (sqrt(pDoc->meshelem[i].rsqr) + rss)) {
           PlotFluxDensity(pDC, i, DensityPlot);
-          Pump();
+          if (Pump())
+            bCanceled = TRUE;
         }
       }
     }
@@ -923,7 +946,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
   }
 
   // Draw mesh if it is enabled...
-  if (MeshFlag == TRUE) {
+  if (MeshFlag == TRUE && !bCanceled) {
     int pi, po, OnBoundary;
 
     // Batched: accumulate mesh edges into a buffer and flush with a
@@ -947,7 +970,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
     meshPts.reserve(kMaxMeshEdgePts);
 
     pOldPen = pDC->SelectObject(&penMesh);
-    for (i = 0; i < pDoc->meshelem.GetSize(); i++) {
+    for (i = 0; i < pDoc->meshelem.GetSize() && !bCanceled; i++) {
       if ((pDoc->meshelem[i].lbl == DrawSelected) || (DrawSelected == -1)) {
 
         OnBoundary = FALSE;
@@ -976,7 +999,8 @@ void CbelaviewView::OnDraw(CDC* pDC)
             }
           }
         }
-        Pump();
+        if (Pump())
+          bCanceled = TRUE;
       }
     }
     if (!meshPts.empty()) {
@@ -988,33 +1012,35 @@ void CbelaviewView::OnDraw(CDC* pDC)
 
   // Draw contour lines, if they are enabled.
   pOldPen = pDC->SelectObject(&penReal);
-  if (ShowAr == TRUE)
-    for (i = 0; i < pDoc->meshelem.GetSize(); i++) {
+  if (ShowAr == TRUE && !bCanceled)
+    for (i = 0; i < pDoc->meshelem.GetSize() && !bCanceled; i++) {
       if ((pDoc->meshelem[i].lbl == DrawSelected) || (DrawSelected == -1)) {
         rt = sqrt(pow(xss - pDoc->meshelem[i].ctr.re, 2.) + pow(yss - pDoc->meshelem[i].ctr.im, 2.));
         if (rt < (sqrt(pDoc->meshelem[i].rsqr) + rss))
           for (j = 0; j < 3; j++)
             DoContours(pDC, pDoc->meshelem[i].p, j, 0);
-        Pump();
+        if (Pump())
+          bCanceled = TRUE;
       }
     }
 
   pDC->SelectObject(&penMask);
-  if (ShowMask == TRUE)
-    for (i = 0; i < pDoc->meshelem.GetSize(); i++) {
+  if (ShowMask == TRUE && !bCanceled)
+    for (i = 0; i < pDoc->meshelem.GetSize() && !bCanceled; i++) {
       if ((pDoc->meshelem[i].lbl == DrawSelected) || (DrawSelected == -1)) {
         rt = sqrt(pow(xss - pDoc->meshelem[i].ctr.re, 2.) + pow(yss - pDoc->meshelem[i].ctr.im, 2.));
         if (rt < (sqrt(pDoc->meshelem[i].rsqr) + rss))
           for (j = 0; j < 3; j++)
             DoContours(pDC, pDoc->meshelem[i].p, j, 2);
-        Pump();
+        if (Pump())
+          bCanceled = TRUE;
       }
     }
 
   pDC->SelectObject(pOldPen);
 
   // Draw lines linking nodes
-  for (i = 0; i < pDoc->linelist.GetSize(); i++)
+  for (i = 0; i < pDoc->linelist.GetSize() && !bCanceled; i++)
     if (pDoc->linelist[i].Hidden == FALSE) {
       if (pDoc->linelist[i].IsSelected == FALSE)
         pOldPen = pDC->SelectObject(&penBlue);
@@ -1030,7 +1056,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
     }
 
   // Draw Arc Segments;
-  for (i = 0; i < pDoc->arclist.GetSize(); i++)
+  for (i = 0; i < pDoc->arclist.GetSize() && !bCanceled; i++)
     if (pDoc->arclist[i].Hidden == FALSE) {
       if (pDoc->arclist[i].IsSelected == FALSE)
         pOldPen = pDC->SelectObject(&penBlue);
@@ -1054,8 +1080,8 @@ void CbelaviewView::OnDraw(CDC* pDC)
     }
 
   // Draw node points
-  if (PtsFlag == TRUE)
-    for (i = 0; i < pDoc->nodelist.GetSize(); i++) {
+  if (PtsFlag == TRUE && !bCanceled)
+    for (i = 0; i < pDoc->nodelist.GetSize() && !bCanceled; i++) {
       xs = pDoc->nodelist[i].xs;
       ys = pDoc->nodelist[i].ys;
 
@@ -1074,7 +1100,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
     }
 
   // Draw vectors
-  if ((VectorPlot > 0) && (pDoc->nodelist.GetSize() > 0)) {
+  if ((VectorPlot > 0) && (pDoc->nodelist.GetSize() > 0) && !bCanceled) {
     CPointVals u;
     BOOL drawgrid = TRUE;
     double MaxVal;
@@ -1097,7 +1123,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
       StatBar->SetPaneText(0, "Vectors too dense to display.", TRUE);
     } else {
       pOldPen = pDC->SelectObject(&penArrow);
-      for (k = 0; k < pDoc->meshelem.GetSize(); k++) {
+      for (k = 0; k < pDoc->meshelem.GetSize() && !bCanceled; k++) {
         rt = abs(CComplex(xss, yss) - pDoc->meshelem[k].ctr);
         if (rt < (sqrt(pDoc->meshelem[k].rsqr) + rss)) {
           c0 = pDoc->meshelem[k].ctr - sqrt(pDoc->meshelem[k].rsqr) * (1. + I);
@@ -1108,8 +1134,8 @@ void CbelaviewView::OnDraw(CDC* pDC)
           ihi = (int)ceil(Re(c1));
           jlo = (int)floor(Im(c0));
           jhi = (int)ceil(Im(c1));
-          for (i = ilo; i <= ihi; i++) {
-            for (j = jlo; j <= jhi; j++) {
+          for (i = ilo; i <= ihi && !bCanceled; i++) {
+            for (j = jlo; j <= jhi && !bCanceled; j++) {
               xd = GridSize * ((double)i);
               yd = GridSize * ((double)j);
               if (pDoc->InTriangleTest(xd, yd, k)) {
@@ -1138,7 +1164,8 @@ void CbelaviewView::OnDraw(CDC* pDC)
                   DwgToScreen(xd + Re(vr + va), yd + Im(vr + va), &xs, &ys, &r);
                   MyLineTo(pDC, xs, ys);
                 }
-                Pump();
+                if (Pump())
+                  bCanceled = TRUE;
               }
             }
           }
@@ -1148,11 +1175,11 @@ void CbelaviewView::OnDraw(CDC* pDC)
     }
   }
 
-  if (EditAction == 1)
+  if (EditAction == 1 && !bCanceled)
     DrawUserContour(TRUE);
 
   // draw block names/labels
-  if (ShowNames) {
+  if (ShowNames && !bCanceled) {
     pDC->SetTextColor(NameColor);
     pOldPen = pDC->SelectObject(&penGreen);
     CString lbl;
@@ -1175,7 +1202,7 @@ void CbelaviewView::OnDraw(CDC* pDC)
   }
 
   // Draw Legend if it is enabled;
-  if ((LegendFlag == TRUE) && (DensityPlot != 0)) {
+  if ((LegendFlag == TRUE) && (DensityPlot != 0) && !bCanceled) {
     CBrush* pOldBrush;
     char cc[80];
     double dta;

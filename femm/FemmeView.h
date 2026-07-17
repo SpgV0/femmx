@@ -37,6 +37,7 @@ class CFemmeView : public CView {
   BOOL WritePreferences();
   void OnNewDocument();
   void CheckIt();
+  BOOL Pump();
 
   int EditAction; // tells if operating on points, lines, or blox
   double mx, my; // location of the mouse in model coordinates
