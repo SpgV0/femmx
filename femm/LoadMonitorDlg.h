@@ -14,6 +14,12 @@
 // dynamically (LoadLibrary/GetProcAddress) so this has no hard link-time
 // CUDA dependency and degrades gracefully (GPU trace just stays empty)
 // on non-NVIDIA machines; RAM usage comes from GlobalMemoryStatusEx.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// widened the chart's rolling window from 60s to 1000s (kMaxSamples
+// 240 -> 4000) for longer solves. Everything else (buffer reserve, the
+// erase-oldest/push-back logic, the chart's x-axis label scaling)
+// already derives from kMaxSamples/kSampleIntervalMs, so no other code
+// needed to change.
 #pragma once
 
 #include <vector>
@@ -74,7 +80,7 @@ class CLoadMonitorDlg : public CDialog {
   DECLARE_MESSAGE_MAP()
 
   private:
-  static const int kMaxSamples = 240; // 240 * 250ms = 60s rolling window
+  static const int kMaxSamples = 4000; // 4000 * 250ms = 1000s rolling window
   static const UINT kSampleIntervalMs = 250;
   static const int kMaxLogLines = 200; // cap the stats log's memory use -- each solve now logs several short lines instead of one long one
 
