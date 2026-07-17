@@ -53,6 +53,33 @@
 // VERSIONINFO's FILEVERSION/PRODUCTVERSION) -- keep in sync with
 // script.nsi's PROJECT_VERSION and the git tag created for this release
 // (see CHANGELOG.md).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// replaced 4 of the 6 hardcoded "1.2.0"/"1,2,0,0" literals above
+// (VERSIONINFO's FILEVERSION/PRODUCTVERSION and its FileVersion/
+// ProductVersion string values) with the FEMMX_VERSION_* macros below,
+// so bumping those means editing the 4 numbers here once. This is a
+// .rc file: it's run through the C preprocessor exactly like a .cpp
+// file before rc.exe ever sees it, and VS_VERSION_INFO's own VALUE
+// grammar accepts a macro that expands to adjacent quoted-string
+// tokens the same way a C compiler concatenates literals -- confirmed
+// by a clean build. IDD_ABOUTBOX's LTEXT and IDR_MAINFRAME's
+// STRINGTABLE entry do NOT support this, though: tried the same macro
+// there first and rc.exe rejected it (RC2116/RC2108, "expecting number
+// for ID") -- classic dialog-item and string-table text apparently use
+// a stricter single-token grammar that VERSIONINFO's VALUE statement
+// doesn't. Those two stay hardcoded strings, bumped by hand alongside
+// the 4 numbers below. script.nsi's PROJECT_VERSION also remains a
+// separate, manually-synced value: NSIS has its own preprocessor and
+// can't read a C header.
+#define FEMMX_VERSION_MAJOR 1
+#define FEMMX_VERSION_MINOR 2
+#define FEMMX_VERSION_PATCH 0
+#define FEMMX_VERSION_BUILD 0
+#define FEMMX_STRINGIZE2(x) #x
+#define FEMMX_STRINGIZE(x) FEMMX_STRINGIZE2(x)
+// "1, 2, 0, 0" -- VS_VERSION_INFO's FileVersion/ProductVersion string
+// values traditionally use this comma-space form.
+#define FEMMX_VERSION_STR_CSV FEMMX_STRINGIZE(FEMMX_VERSION_MAJOR) ", " FEMMX_STRINGIZE(FEMMX_VERSION_MINOR) ", " FEMMX_STRINGIZE(FEMMX_VERSION_PATCH) ", " FEMMX_STRINGIZE(FEMMX_VERSION_BUILD)
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -3235,8 +3262,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,2,0,0
- PRODUCTVERSION 1,2,0,0
+ FILEVERSION FEMMX_VERSION_MAJOR,FEMMX_VERSION_MINOR,FEMMX_VERSION_PATCH,FEMMX_VERSION_BUILD
+ PRODUCTVERSION FEMMX_VERSION_MAJOR,FEMMX_VERSION_MINOR,FEMMX_VERSION_PATCH,FEMMX_VERSION_BUILD
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -3253,12 +3280,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "David Meeker"
             VALUE "FileDescription", "FEMMX MFC Application"
-            VALUE "FileVersion", "1, 2, 0, 0"
+            VALUE "FileVersion", FEMMX_VERSION_STR_CSV
             VALUE "InternalName", "femmx"
             VALUE "LegalCopyright", "Copyright (C) 2006"
             VALUE "OriginalFilename", "femmx.EXE"
             VALUE "ProductName", "FEMMX Application"
-            VALUE "ProductVersion", "1, 2, 0, 0"
+            VALUE "ProductVersion", FEMMX_VERSION_STR_CSV
         END
     END
     BLOCK "VarFileInfo"
