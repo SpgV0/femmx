@@ -36,6 +36,18 @@
 // load monitor now disabled by default (CMainFrame::OnCreate), the
 // window was appearing at startup anyway before Enable(FALSE) (a no-op,
 // since m_bEnabled already defaults to FALSE) had any window to hide.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// the IDD_ABOUTBOX rebrand above only changed the dialog's own content --
+// missed that all 6 problem types' Help menus (pre- and post-processor)
+// separately hardcode the menu item text too; changed all 10 "&About
+// femm..." occurrences to "&About FEMMX...".
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// added a "Dark Theme" item to the View menu of the 6 problem types that
+// were missing it (IDR_BELADRAWTYPE/HDRAWTYPE/CDRAWTYPE pre-processors,
+// IDR_BELAVIEWTYPE/HVIEWTYPE/CVIEWTYPE post-processors), reusing
+// ID_VIEW_DARKTHEME -- previously only IDR_FEMMETYPE/IDR_FEMMVIEWTYPE
+// (magnetics) had this. Each view's own ApplyTheme() now swaps its canvas
+// colors the same way CFemmeView/CFemmviewView already did.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -386,7 +398,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -502,7 +514,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -590,7 +602,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -653,6 +665,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -703,7 +716,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -768,6 +781,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -788,7 +802,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -836,7 +850,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -899,6 +913,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -949,7 +964,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1014,6 +1029,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -1034,7 +1050,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1097,6 +1113,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Lua Console",                ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     MENUITEM "P&roblem",                    ID_DEFINE_PROBLEM
     POPUP "&Grid"
@@ -1147,7 +1164,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "&License",                    ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 
@@ -1212,6 +1229,7 @@ BEGIN
         MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
         MENUITEM "&Point Props",                ID_PT_PROP
         MENUITEM "Lua Console",                 ID_VIEW_LUACONSOLE
+        MENUITEM "Dark &Theme",                 ID_VIEW_DARKTHEME
     END
     POPUP "&Operation"
     BEGIN
@@ -1232,7 +1250,7 @@ BEGIN
         MENUITEM "&Help Topics",                ID_HELP_FINDER
         MENUITEM SEPARATOR
         MENUITEM "License",                     ID_HELP_LICENSE
-        MENUITEM "&About femm...",              ID_APP_ABOUT
+        MENUITEM "&About FEMMX...",              ID_APP_ABOUT
     END
 END
 

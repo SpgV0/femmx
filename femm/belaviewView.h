@@ -122,6 +122,13 @@ class CbelaviewView : public CView {
   COLORREF MaskLineColor;
   COLORREF VectorColor;
 
+  // Dark Theme toggle (View menu) -- swaps the canvas colors above
+  // between the light defaults and a dark palette; everything else
+  // (title bars, menus, toolbars, dialogs, every native control) is
+  // driven by the app-wide DarkMode::SetEnabled() -- see DarkMode.h.
+  BOOL m_bDarkTheme;
+  void ApplyTheme(BOOL bDark);
+
   // Operations
   public:
   void DoContours(CDC* pDC, int* p, int side, int Aflag);
@@ -211,6 +218,8 @@ class CbelaviewView : public CView {
   afx_msg void OnViewShowblocknames();
   afx_msg void OnVplot();
   afx_msg void OnSize(UINT nType, int cx, int cy);
+  afx_msg void OnViewDarkTheme();
+  afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

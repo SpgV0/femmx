@@ -21,6 +21,7 @@
 #include "hd_libdlg.h"
 #include "PromptBox.h"
 #include "MakeABCDlg.h"
+#include "DarkMode.h"
 
 #include <winreg.h>
 
@@ -100,6 +101,8 @@ ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
 ON_COMMAND(ID_EDIT_CREATEOPENBOUNDARY, &ChdrawView::OnMakeABC)
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
@@ -118,6 +121,7 @@ ChdrawView::ChdrawView()
   NodeColor = RGB(0, 0, 0);
   BackColor = RGB(255, 255, 255);
   NameColor = RGB(0, 0, 0);
+  m_bDarkTheme = FALSE;
 
   // assume some default behaviors if they can't be
   // loaded from disk
@@ -253,6 +257,42 @@ BOOL ChdrawView::PreCreateWindow(CREATESTRUCT& cs)
   // TODO: Modify the Window class or styles here by modifying
   //  the CREATESTRUCT cs
   return CView::PreCreateWindow(cs);
+}
+
+void ChdrawView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+  } else {
+    BackColor = RGB(255, 255, 255);
+    LineColor = RGB(0, 0, 255);
+    NodeColor = RGB(0, 0, 0);
+    BlockColor = RGB(0, 125, 0);
+    MeshColor = RGB(213, 228, 20);
+    GridColor = RGB(0, 0, 255);
+    NameColor = RGB(0, 0, 0);
+    SelColor = RGB(255, 0, 0);
+  }
+  DarkMode::SetEnabled(bDark);
+  InvalidateRect(NULL);
+}
+
+void ChdrawView::OnViewDarkTheme()
+{
+  ApplyTheme(!DarkMode::IsEnabled());
+}
+
+void ChdrawView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 /////////////////////////////////////////////////////////////////////////////

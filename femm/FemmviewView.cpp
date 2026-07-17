@@ -12,6 +12,7 @@
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
+#include "DarkMode.h"
 #include "femm.h"
 #include "problem.h"
 #include "xyplot.h"
@@ -4868,25 +4869,22 @@ void CFemmviewView::ApplyTheme(BOOL bDark)
     ImagVectorColor = dImagVectorColor;
   }
 
-  // Best-effort: also switch the main frame's title bar between light
-  // and dark (Windows 10 1809+/11). A no-op on older systems.
-  HWND hFrame = AfxGetMainWnd() ? AfxGetMainWnd()->GetSafeHwnd() : NULL;
-  if (hFrame != NULL) {
-    BOOL useDark = bDark;
-    DwmSetWindowAttribute(hFrame, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
-  }
+  // Everything besides this canvas's own GDI colors above (title bars,
+  // menus, toolbars, dialogs, every native control) is driven by the
+  // single app-wide flag -- see DarkMode.h.
+  DarkMode::SetEnabled(bDark);
 
   RedrawView();
 }
 
 void CFemmviewView::OnViewDarkTheme()
 {
-  ApplyTheme(!m_bDarkTheme);
+  ApplyTheme(!DarkMode::IsEnabled());
 }
 
 void CFemmviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
 {
-  pCmdUI->SetCheck(m_bDarkTheme);
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 void CFemmviewView::OnVplot()

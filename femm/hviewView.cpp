@@ -24,6 +24,7 @@
 #include "hv_BlockInt.h"
 #include "hv_CircDlg.h"
 #include "BendContourDlg.h"
+#include "DarkMode.h"
 
 #include <process.h>
 
@@ -91,6 +92,8 @@ ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
 ON_WM_LBUTTONDBLCLK()
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 END_MESSAGE_MAP()
 
 void MyMessageBox(CString s);
@@ -190,6 +193,7 @@ ChviewView::ChviewView()
   MaskLineColor = dMaskLineColor;
   NameColor = dNameColor;
   VectorColor = dRealVectorColor;
+  m_bDarkTheme = FALSE;
 
   BinDir = ((CFemmApp*)AfxGetApp())->GetExecutablePath();
 
@@ -222,6 +226,52 @@ ChviewView::~ChviewView()
 BOOL ChviewView::PreCreateWindow(CREATESTRUCT& cs)
 {
   return CView::PreCreateWindow(cs);
+}
+
+void ChviewView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+    RegionColor = RGB(120, 220, 120);
+    TextColor = RGB(230, 230, 230);
+    RealFluxLineColor = RGB(230, 230, 230);
+    MaskLineColor = RGB(255, 150, 80);
+    VectorColor = RGB(230, 230, 230);
+  } else {
+    BackColor = dBackColor;
+    LineColor = dLineColor;
+    NodeColor = dNodeColor;
+    BlockColor = dBlockColor;
+    MeshColor = dMeshColor;
+    GridColor = dGridColor;
+    NameColor = dNameColor;
+    SelColor = dSelColor;
+    RegionColor = dRegionColor;
+    TextColor = dTextColor;
+    RealFluxLineColor = dRealFluxLineColor;
+    MaskLineColor = dMaskLineColor;
+    VectorColor = dRealVectorColor;
+  }
+  DarkMode::SetEnabled(bDark);
+  InvalidateRect(NULL);
+}
+
+void ChviewView::OnViewDarkTheme()
+{
+  ApplyTheme(!DarkMode::IsEnabled());
+}
+
+void ChviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 /////////////////////////////////////////////////////////////////////////////

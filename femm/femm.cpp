@@ -38,6 +38,7 @@
 #include <afxctl.h>
 #include <process.h>
 #include "MyRecentFileList.h"
+#include "DarkMode.h"
 
 #ifdef MATHLINK
 #include "mathlink.h"
@@ -161,6 +162,12 @@ MLENV mathenv;
 
 BOOL CFemmApp::InitInstance()
 {
+  // App-wide dark mode support (title bars, native controls, menus --
+  // see DarkMode.h). Installs a CBT hook, so it must be up before any
+  // window (including the splash/main frame) is created; starts
+  // disabled, toggled via View > Dark Theme like before.
+  DarkMode::Init();
+
   // Initialize OLE libraries
   if (!AfxOleInit()) {
     MsgBox("OLE initialization failed.  Make sure that the OLE libraries are the correct version.");

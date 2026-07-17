@@ -38,6 +38,7 @@
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
+#include "DarkMode.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -3682,23 +3683,20 @@ void CFemmeView::ApplyTheme(BOOL bDark)
     SelColor = dSelColor;
   }
 
-  // Best-effort: also switch the main frame's title bar between light
-  // and dark (Windows 10 1809+/11). A no-op on older systems.
-  HWND hFrame = AfxGetMainWnd() ? AfxGetMainWnd()->GetSafeHwnd() : NULL;
-  if (hFrame != NULL) {
-    BOOL useDark = bDark;
-    DwmSetWindowAttribute(hFrame, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
-  }
+  // Everything besides this canvas's own GDI colors above (title bars,
+  // menus, toolbars, dialogs, every native control) is driven by the
+  // single app-wide flag -- see DarkMode.h.
+  DarkMode::SetEnabled(bDark);
 
   InvalidateRect(NULL);
 }
 
 void CFemmeView::OnViewDarkTheme()
 {
-  ApplyTheme(!m_bDarkTheme);
+  ApplyTheme(!DarkMode::IsEnabled());
 }
 
 void CFemmeView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
 {
-  pCmdUI->SetCheck(m_bDarkTheme);
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }

@@ -24,6 +24,7 @@
 #include "cv_BlockInt.h"
 #include "cv_CircDlg.h"
 #include "BendContourDlg.h"
+#include "DarkMode.h"
 
 #include <process.h>
 
@@ -91,6 +92,8 @@ ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
 ON_WM_LBUTTONDBLCLK()
+ON_COMMAND(ID_VIEW_DARKTHEME, OnViewDarkTheme)
+ON_UPDATE_COMMAND_UI(ID_VIEW_DARKTHEME, OnUpdateViewDarkTheme)
 END_MESSAGE_MAP()
 
 void MyMessageBox(CString s);
@@ -193,6 +196,7 @@ CcviewView::CcviewView()
   NameColor = dNameColor;
   RealVectorColor = dRealVectorColor;
   ImagVectorColor = dImagVectorColor;
+  m_bDarkTheme = FALSE;
 
   BinDir = ((CFemmApp*)AfxGetApp())->GetExecutablePath();
 
@@ -226,6 +230,56 @@ CcviewView::~CcviewView()
 BOOL CcviewView::PreCreateWindow(CREATESTRUCT& cs)
 {
   return CView::PreCreateWindow(cs);
+}
+
+void CcviewView::ApplyTheme(BOOL bDark)
+{
+  m_bDarkTheme = bDark;
+  if (bDark) {
+    BackColor = RGB(30, 30, 30);
+    LineColor = RGB(90, 160, 255);
+    NodeColor = RGB(230, 230, 230);
+    BlockColor = RGB(120, 220, 120);
+    MeshColor = RGB(160, 150, 60);
+    GridColor = RGB(70, 70, 90);
+    NameColor = RGB(230, 230, 230);
+    SelColor = RGB(255, 90, 90);
+    RegionColor = RGB(120, 220, 120);
+    TextColor = RGB(230, 230, 230);
+    RealFluxLineColor = RGB(230, 230, 230);
+    ImagFluxLineColor = RGB(160, 160, 160);
+    MaskLineColor = RGB(255, 150, 80);
+    RealVectorColor = RGB(230, 230, 230);
+    ImagVectorColor = RGB(160, 160, 160);
+  } else {
+    BackColor = dBackColor;
+    LineColor = dLineColor;
+    NodeColor = dNodeColor;
+    BlockColor = dBlockColor;
+    MeshColor = dMeshColor;
+    GridColor = dGridColor;
+    NameColor = dNameColor;
+    SelColor = dSelColor;
+    RegionColor = dRegionColor;
+    TextColor = dTextColor;
+    RealFluxLineColor = dRealFluxLineColor;
+    ImagFluxLineColor = dImagFluxLineColor;
+    MaskLineColor = dMaskLineColor;
+    RealVectorColor = dRealVectorColor;
+    ImagVectorColor = dImagVectorColor;
+  }
+  DarkMode::SetEnabled(bDark);
+  InvalidateRect(NULL);
+}
+
+void CcviewView::OnViewDarkTheme()
+{
+  ApplyTheme(!DarkMode::IsEnabled());
+}
+
+void CcviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
+{
+  pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
 /////////////////////////////////////////////////////////////////////////////
