@@ -5,6 +5,7 @@
 #include "femm.h"
 #include <afxtempl.h>
 #include <time.h>
+#include <vector>
 #include "cdrawDoc.h"
 #include "cdrawView.h"
 #include "MainFrm.h"
@@ -468,6 +469,112 @@ BOOL CcdrawView::DwgToScreen(double xd, double yd, int* xs, int* ys, RECT* r)
   return TRUE;
 }
 
+// Clips a line segment to a Zm-radius square centered on the origin --
+// the same bound MyLineTo() uses to keep extreme-zoom screen coordinates
+// from overflowing GDI -- without drawing anything or touching MyLineTo's
+// Xm/Ym "current position" state. Used by the batched mesh-edge drawing
+// in OnDraw so Zm/GetClientRect only need to be fetched once for the
+// whole mesh, not once per edge (see the comment there). Math mirrors
+// MyLineTo's clipping branch exactly. Returns FALSE if the segment lies
+// entirely outside the bound (nothing to draw).
+static BOOL ClipMeshSegment(int x0, int y0, int x1, int y1, int Zm, POINT out[2])
+{
+  if ((abs(x0) < Zm) && (abs(y0) < Zm) && (abs(x1) < Zm) && (abs(y1) < Zm)) {
+    out[0].x = x0;
+    out[0].y = y0;
+    out[1].x = x1;
+    out[1].y = y1;
+    return TRUE;
+  }
+
+  CComplex p, q, pc, qc;
+  double a, b, c, u0, u1;
+
+  p = (x0 + I * y0) / ((double)Zm);
+  q = (x1 + I * y1) / ((double)Zm);
+  pc = conj(p);
+  qc = conj(q);
+
+  c = Re(p * pc - 1.);
+  b = Re(-2. * p * pc + pc * q + p * qc);
+  a = Re(p * pc - pc * q - p * qc + q * qc);
+
+  if (fabs(a) == 0)
+    return FALSE;
+
+  b /= a;
+  c /= a;
+  if ((b * b - 4. * c) <= 0)
+    return FALSE;
+
+  u0 = -b / 2. + sqrt(b * b - 4. * c) / 2.;
+  u1 = -b / 2. - sqrt(b * b - 4. * c) / 2.;
+  if (u1 < u0) {
+    c = u0;
+    u0 = u1;
+    u1 = c;
+  }
+  if ((u0 >= 1) || (u1 <= 0))
+    return FALSE;
+
+  if (u0 < 0)
+    u0 = 0;
+  if (u1 > 1)
+    u1 = 1;
+
+  pc = p * (1. - u0) + q * u0;
+  qc = p * (1. - u1) + q * u1;
+  pc *= ((double)Zm);
+  qc *= ((double)Zm);
+
+  out[0].x = (int)Re(pc);
+  out[0].y = (int)Im(pc);
+  out[1].x = (int)Re(qc);
+  out[1].y = (int)Im(qc);
+  return TRUE;
+}
+
+BOOL CcdrawView::Pump()
+{
+  // Services the message pump during redraws that take a long time (e.g. a
+  // large generated mesh), same idea/pattern as CFemmviewView::Pump() in
+  // the post-processor. Checked only periodically (not on every call),
+  // since checking every call would itself slow things down.
+  //
+  // Returns TRUE as soon as new navigation input (keyboard pan/zoom, mouse
+  // wheel/click, resize) is queued for this view, so the caller's drawing
+  // loop can abandon this now-stale redraw immediately instead of spending
+  // the rest of its time finishing a frame the user has already navigated
+  // away from -- the newly-dispatched command's own InvalidateRect() call
+  // schedules a follow-up repaint that starts as soon as OnDraw returns.
+
+  static int k = 0;
+
+  if (k++ < 1000)
+    return FALSE;
+  k = 0;
+
+  MSG msg;
+  BOOL bCancel = ::PeekMessage(&msg, m_hWnd, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_LBUTTONDOWN, WM_LBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_RBUTTONDOWN, WM_RBUTTONDOWN, PM_NOREMOVE)
+      || ::PeekMessage(&msg, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE);
+
+  // Still dispatch queued input/sent-message traffic so the app doesn't
+  // look hung -- but deliberately leave WM_PAINT queued (PM_QS_PAINT
+  // omitted): dispatching it here would re-enter OnPaint/OnDraw while this
+  // call is still on the stack, racing this same view's member state
+  // (ox/oy/mag, cached screen coordinates, ...) between the two nested
+  // frames.
+  while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+
+  return bCancel;
+}
+
 void CcdrawView::OnDraw(CDC* pDC)
 {
   CcdrawDoc* pDoc = GetDocument();
@@ -484,6 +591,10 @@ void CcdrawView::OnDraw(CDC* pDC)
   double xd, yd, side, R, dt;
   CComplex c, p, s;
   CString lbl;
+  BOOL bCanceled = FALSE; // set by Pump() once newer navigation input is
+                          // queued -- once TRUE, every remaining stage
+                          // below is skipped so the stale redraw ends
+                          // and control returns to the message pump ASAP
 
   CFont fntArial, *pOldFont;
   fntArial.CreateFont(16, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Tahoma");
@@ -592,27 +703,70 @@ void CcdrawView::OnDraw(CDC* pDC)
 
   // Draw mesh if it is enabled...
   if (MeshFlag == TRUE) {
+    // Batched, same rationale/technique as the post-processor result
+    // views' mesh drawing (see FemmviewView.cpp's OnDraw): accumulate
+    // edges and flush via a single PolyPolyline() call every
+    // kMaxMeshEdgePts points instead of one MoveTo()+LineTo() GDI call
+    // pair per edge, and fetch the MyLineTo()-equivalent off-screen
+    // clamping bound once via ClipMeshSegment() instead of once per edge.
+    RECT crMesh;
+    GetClientRect(&crMesh);
+    int ZmMesh = __max(__max(crMesh.right, crMesh.bottom), __max(crMesh.left, crMesh.top));
+    ZmMesh = (ZmMesh * 3) / 2;
+    const size_t kMaxMeshEdgePts = 4000; // 2000 edges
+    std::vector<POINT> meshPts;
+    meshPts.reserve(kMaxMeshEdgePts);
+
     pOldPen = pDC->SelectObject(&penMesh);
-    for (i = 0; i < pDoc->meshline.GetSize(); i++) {
-      MyMoveTo(pDC, pDoc->meshnode[pDoc->meshline[i].x].xs,
-          pDoc->meshnode[pDoc->meshline[i].x].ys);
-      MyLineTo(pDC, pDoc->meshnode[pDoc->meshline[i].y].xs,
-          pDoc->meshnode[pDoc->meshline[i].y].ys);
+    for (i = 0; i < pDoc->meshline.GetSize() && !bCanceled; i++) {
+      POINT clipped[2];
+      if (ClipMeshSegment(pDoc->meshnode[pDoc->meshline[i].x].xs, pDoc->meshnode[pDoc->meshline[i].x].ys,
+              pDoc->meshnode[pDoc->meshline[i].y].xs, pDoc->meshnode[pDoc->meshline[i].y].ys, ZmMesh, clipped)) {
+        meshPts.push_back(clipped[0]);
+        meshPts.push_back(clipped[1]);
+        if (meshPts.size() >= kMaxMeshEdgePts) {
+          std::vector<DWORD> counts(meshPts.size() / 2, 2);
+          pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+          meshPts.clear();
+        }
+      }
+      if (Pump())
+        bCanceled = TRUE;
+    }
+    if (!meshPts.empty()) {
+      std::vector<DWORD> counts(meshPts.size() / 2, 2);
+      pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+      meshPts.clear();
     }
     pDC->SelectObject(pOldPen);
 
-    pOldPen = pDC->SelectObject(&penGrey);
-    for (i = 0; i < pDoc->greymeshline.GetSize(); i++) {
-      MyMoveTo(pDC, pDoc->meshnode[pDoc->greymeshline[i].x].xs,
-          pDoc->meshnode[pDoc->greymeshline[i].x].ys);
-      MyLineTo(pDC, pDoc->meshnode[pDoc->greymeshline[i].y].xs,
-          pDoc->meshnode[pDoc->greymeshline[i].y].ys);
+    if (!bCanceled) {
+      pOldPen = pDC->SelectObject(&penGrey);
+      for (i = 0; i < pDoc->greymeshline.GetSize() && !bCanceled; i++) {
+        POINT clipped[2];
+        if (ClipMeshSegment(pDoc->meshnode[pDoc->greymeshline[i].x].xs, pDoc->meshnode[pDoc->greymeshline[i].x].ys,
+                pDoc->meshnode[pDoc->greymeshline[i].y].xs, pDoc->meshnode[pDoc->greymeshline[i].y].ys, ZmMesh, clipped)) {
+          meshPts.push_back(clipped[0]);
+          meshPts.push_back(clipped[1]);
+          if (meshPts.size() >= kMaxMeshEdgePts) {
+            std::vector<DWORD> counts(meshPts.size() / 2, 2);
+            pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+            meshPts.clear();
+          }
+        }
+        if (Pump())
+          bCanceled = TRUE;
+      }
+      if (!meshPts.empty()) {
+        std::vector<DWORD> counts(meshPts.size() / 2, 2);
+        pDC->PolyPolyline(meshPts.data(), counts.data(), (int)counts.size());
+      }
+      pDC->SelectObject(pOldPen);
     }
-    pDC->SelectObject(pOldPen);
   }
 
   // Draw lines linking nodes
-  for (i = 0; i < pDoc->linelist.GetSize(); i++) {
+  for (i = 0; i < pDoc->linelist.GetSize() && !bCanceled; i++) {
     if (pDoc->linelist[i].IsSelected == FALSE)
       pOldPen = pDC->SelectObject(&penBlue);
     else
@@ -627,7 +781,7 @@ void CcdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw Arc Segments;
-  for (i = 0; i < pDoc->arclist.GetSize(); i++) {
+  for (i = 0; i < pDoc->arclist.GetSize() && !bCanceled; i++) {
     if (pDoc->arclist[i].IsSelected == FALSE)
       pOldPen = pDC->SelectObject(&penBlue);
     else
@@ -650,7 +804,7 @@ void CcdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw node points
-  for (i = 0; i < pDoc->nodelist.GetSize(); i++) {
+  for (i = 0; i < pDoc->nodelist.GetSize() && !bCanceled; i++) {
     xs = pDoc->nodelist[i].xs;
     ys = pDoc->nodelist[i].ys;
 
@@ -669,7 +823,7 @@ void CcdrawView::OnDraw(CDC* pDC)
   }
 
   // Draw block labels
-  for (i = 0; i < pDoc->blocklist.GetSize(); i++) {
+  for (i = 0; i < pDoc->blocklist.GetSize() && !bCanceled; i++) {
     DwgToScreen(pDoc->blocklist[i].x, pDoc->blocklist[i].y, &xs, &ys, &r);
 
     if (pDoc->blocklist[i].IsSelected == FALSE)

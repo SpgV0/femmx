@@ -18,10 +18,18 @@
 ; build output (scifemm/CMakeLists.txt now builds it as a proper DLL
 ; instead of an unused static lib) installed next to scifemm.sci, since
 ; that's where scifemm.sci looks for it at Scilab runtime.
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+; added PROJECT_VERSION, folded into the installer's OutFile name (e.g.
+; FEMMX_v1.1.0_installer.exe) and written as the uninstall registry key's
+; DisplayVersion, so it shows up in Windows' "Apps & Features" list.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
 !define PROJECT_NAME "FEMMX"
+; Single source of truth for the installer's own display/file version --
+; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
+; created for each release (see CHANGELOG.md).
+!define PROJECT_VERSION "1.1.0"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
@@ -44,7 +52,7 @@ UninstPage uninstConfirm
 UninstPage instfiles
 
 # define name of installer
-OutFile "bin\${PROJECT_NAME}_installer.exe"
+OutFile "bin\${PROJECT_NAME}_v${PROJECT_VERSION}_installer.exe"
 
 # define installation directory
 # Fixed C:\FEMMX (not $APPDATA), matching the original FEMM 4.2 installer's
@@ -125,6 +133,7 @@ Section
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" /S _?=$INSTDIR'
+    WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "DisplayVersion" "${PROJECT_VERSION}"
 SectionEnd
 
 # uninstaller section start
