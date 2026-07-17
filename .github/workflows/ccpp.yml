@@ -49,6 +49,22 @@
 #
 # `continue-on-error: true` still on for now since this exact
 # runner+CUDA combination hasn't gone green in a live run yet.
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+# added manual-PDF build/versioning/upload steps to win-vcpkg, run via
+# manual/build_manual.bat as a step of their own -- deliberately NOT by
+# dropping -DisableLaTeX from the "Build FEMM" step above and letting
+# CMake's own LaTeXDocument target pull the manual into that same build.
+# Verified locally this session: when the LaTeX/dvips/ps2pdf toolchain
+# hiccups, CMake's custom-build-rule failure propagates straight through
+# `cmake --build --target install` as a hard failure -- build.ps1 throws
+# (MyThrow) and the entire job (installer included) would go down with
+# it. A separately-invoked build_manual.bat, marked
+# `continue-on-error: true` and gated on manual.pdf actually existing
+# afterward, means a flaky first-run MiKTeX package fetch (network-
+# dependent, the likeliest real-world failure mode in a fresh CI runner)
+# can only ever cost this one optional artifact, never the build/tests/
+# installer that the rest of this job produces.
 name: FEMMX Continuous Integration
 
 on:
@@ -71,6 +87,37 @@ jobs:
     - name: 'Build FEMM'
       shell: pwsh
       run: ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit
+
+    - name: 'Install LaTeX (MiKTeX) + Ghostscript for the manual PDF'
+      shell: pwsh
+      continue-on-error: true
+      run: choco install miktex ghostscript -y --no-progress
+
+    - name: 'Build manual PDF'
+      shell: pwsh
+      continue-on-error: true
+      run: |
+        & "${{ github.workspace }}/manual/build_manual.bat"
+
+    - name: 'Version the manual PDF (FEMMX_v<version>_manual.pdf)'
+      shell: pwsh
+      continue-on-error: true
+      run: |
+        $manualPdf = "${{ github.workspace }}/manual/manual.pdf"
+        if (Test-Path $manualPdf) {
+          $nsi = Get-Content "${{ github.workspace }}/script.nsi" -Raw
+          $version = [regex]::Match($nsi, 'PROJECT_VERSION "([^"]+)"').Groups[1].Value
+          if (-not $version) { $version = "unknown" }
+          Copy-Item $manualPdf "${{ github.workspace }}/manual/FEMMX_v${version}_manual.pdf"
+        } else {
+          Write-Host "manual.pdf was not produced (LaTeX toolchain issue) -- skipping, this artifact is best-effort."
+        }
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: FEMMX-manual
+        path: ${{ github.workspace }}/manual/FEMMX_v*_manual.pdf
+        if-no-files-found: warn
 
     - uses: actions/setup-python@v5
       with:

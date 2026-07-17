@@ -9,6 +9,13 @@
 % (View Manipulation section) -- both preexisting features this fork
 % had added but never described in the manual body (get_solve_stats()
 % itself was already documented separately in magnlua.tex).
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+% title page: version bumped from the stale upstream "4.2" to FEMMX's own
+% "1.1.1" (keep in sync with script.nsi's PROJECT_VERSION / femm/femm.rc's
+% VERSIONINFO), added an explicit "fork of FEMM 4.2 (femm.info)" line and
+% a FEMMX repo link, and relabeled the existing David Meeker credit as
+% the original FEMM author rather than implying he wrote this fork --
+% mirrors the wording already established in README.md/NOTICE.md.
 
 % ------------------------------------------------------------------------
 %  My Format for a Article
@@ -66,15 +73,19 @@
 
 \vspace*{16pt} {\Large Finite Element Method Magnetics}
 
-\vspace*{16pt} {\Large Version 4.2}
+\vspace*{16pt} {\Large Version 1.1.1}
+
+\vspace*{8pt} {\large A fork of FEMM 4.2 (\href{https://www.femm.info/}{femm.info})}
 
 \vspace*{16pt} {\Large User's Manual}
 
 \vspace*{16pt} \today
 
-\vspace*{48pt} David Meeker \\
-\href{mailto:dmeeker@ieee.org}{\tt dmeeker@ieee.org} \\
-%{\tt dmeeker@ieee.org} \\
+\vspace*{32pt} Original FEMM by David Meeker \\
+\href{mailto:dmeeker@ieee.org}{\tt dmeeker@ieee.org}
+
+\vspace*{16pt} FEMMX fork maintained at \\
+\href{https://github.com/SpgV0/femmx}{\tt github.com/SpgV0/femmx}
 \end{center}
 
 \newpage
