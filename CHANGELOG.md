@@ -1,4 +1,45 @@
-﻿17Jul2026 (v1.1.1)
+﻿17Jul2026 (v1.2.0)
+
+* Extended the Dark Theme toggle to the entire application, not just the
+  magnetics editor. New `femm/DarkMode.h`/`femm/DarkMode.cpp`: an
+  app-wide subsystem covering the main frame, every MDI child, and every
+  dialog's native controls (via `DWMWA_USE_IMMERSIVE_DARK_MODE` for
+  title bars, undocumented uxtheme.dll ordinals for native control
+  theming, and a `WH_CBT`/`HCBT_CREATEWND` hook + window subclassing to
+  catch every dialog control regardless of creation order -- no shared
+  dialog base class exists across the app to hook centrally). Each of
+  the 6 problem-type views that previously had no canvas dark-theme
+  support at all (electrostatics, heat flow, current flow -- pre- and
+  post-processor each) gained its own `ApplyTheme()`/
+  `OnViewDarkTheme()` pair mirroring the existing
+  `CFemmeView`/`CFemmviewView` pattern, plus a "Dark Theme" View menu
+  entry.
+* Fixed redraw corruption when panning or zooming while a large mesh's
+  grid or density plot is being drawn: a single pan/zoom keystroke could
+  leave the view stuck with only a small fraction of the plot rendered,
+  indefinitely, even after input went quiet. `Pump()` (all 8 view
+  classes) lets a slow `OnDraw` bail out of a now-stale redraw once
+  newer navigation input is queued, but the message that triggered the
+  cancellation (very often a trailing `WM_KEYUP` right behind the
+  `WM_KEYDOWN` that started the redraw, or `WM_MOUSEWHEEL`, which no
+  view handles at all) does nothing when it's finally dispatched -- so
+  no replacement redraw ever arrived to finish the job. Every `OnDraw`
+  now unconditionally requests one more repaint whenever it was cut
+  short, regardless of which message caused the cancellation, which
+  guarantees eventual completion once input actually settles.
+* Widened the CPU/GPU/RAM load monitor chart's rolling window from 60s
+  to 1000s (`kMaxSamples` 240 -> 4000, still one sample per 250ms) for
+  longer solves.
+* Updated the LaTeX manual's title page: version bumped from the stale
+  pre-fork "4.2" to FEMMX's own version, added an explicit "fork of FEMM
+  4.2 (femm.info)" line and this repository's URL, and relabeled the
+  existing David Meeker credit as the original FEMM author's rather than
+  this fork's. CI now builds `FEMMX_v<version>_manual.pdf` and uploads
+  it as an artifact alongside the installer, kept fully decoupled from
+  the main build so a LaTeX toolchain hiccup can't fail the
+  build/tests/installer.
+
+17Jul2026 (v1.1.1)
 
 * Fixed .ans load taking minutes on large solved models (e.g. a
   transformer model with an 8.7M-node/element mesh: 384.5s -> 10.4s to

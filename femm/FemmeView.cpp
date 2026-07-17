@@ -985,6 +985,24 @@ void CFemmeView::OnDraw(CDC* pDC)
   }
   pDC->SelectObject(pOldFont);
   fntArial.DeleteObject();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+  // ff79e58's bCanceled-abort design assumed whatever pending message
+  // Pump() saw would itself cause a fresh, complete repaint once
+  // dispatched -- true for a genuinely new WM_KEYDOWN/WM_MOUSEWHEEL/etc,
+  // but Pump() peeks the whole WM_KEYFIRST..WM_KEYLAST range, which also
+  // matches WM_KEYUP (always queued right behind the WM_KEYDOWN that
+  // just triggered *this* redraw) -- a message that does nothing when
+  // finally dispatched. Cancelling for one of those abandons the redraw
+  // with no replacement ever coming (confirmed via debug tracing this
+  // session on the post-processor's density plot -- same Pump()/
+  // bCanceled pattern as here). Unconditionally requesting one more
+  // repaint whenever this one was cut short is what actually guarantees
+  // eventual completion, regardless of which message Pump() happened to
+  // see -- if something is still genuinely pending, that next attempt
+  // cancels early too and asks again, converging once input goes quiet.
+  if (bCanceled)
+    InvalidateRect(NULL);
 }
 
 void CFemmeView::OnInitialUpdate()
