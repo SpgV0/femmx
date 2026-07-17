@@ -29,6 +29,13 @@
 // IDD_ABOUTBOX (still said "About femm" / "femm 4.2" post-fork) to
 // "About FEMMX" / "FEMMX v1.1.0". Keep in sync with script.nsi's
 // PROJECT_VERSION and the git tag created for each release (CHANGELOG.md).
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-17:
+// dropped WS_VISIBLE from IDD_LOADMONITOR's style -- CDialog::Create()
+// shows a WS_VISIBLE template's window immediately regardless of the
+// CLoadMonitorDlg::Enable() state it's about to be given, so with the
+// load monitor now disabled by default (CMainFrame::OnCreate), the
+// window was appearing at startup anyway before Enable(FALSE) (a no-op,
+// since m_bEnabled already defaults to FALSE) had any window to hide.
 #include "resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
@@ -1259,7 +1266,7 @@ END
 //
 
 IDD_LOADMONITOR DIALOGEX 0, 0, 260, 240
-STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+STYLE DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "CPU / GPU / RAM Load"
 FONT 8, "MS Sans Serif"
