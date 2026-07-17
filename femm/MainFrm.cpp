@@ -210,14 +210,15 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
     m_LuaConsole.ShowWindow(SW_SHOW);
   LuaConsole = &m_LuaConsole;
 
-  // Persistent CPU/GPU/RAM load monitor -- always created, enabled by
-  // default (matching the always-on-while-solving behavior this
-  // replaces). OnMenuAnalyze() and its heatflow/electrostatics/
-  // currentflow equivalents call LoadMonitorWnd->MarkSolveStart()/
-  // MarkSolveEnd() around each solve.
+  // Persistent CPU/GPU/RAM load monitor -- always created, but disabled
+  // (hidden) by default; opt in via View > CPU/GPU Load Monitor
+  // (ID_VIEW_LOADMONITOR, magnetics editor only). OnMenuAnalyze() and its
+  // heatflow/electrostatics/currentflow equivalents call
+  // LoadMonitorWnd->MarkSolveStart()/MarkSolveEnd() around each solve --
+  // safe to call even while disabled (no-ops, see CLoadMonitorDlg).
   m_LoadMonitor.Create(IDD_LOADMONITOR);
   LoadMonitorWnd = &m_LoadMonitor;
-  m_LoadMonitor.Enable(TRUE);
+  m_LoadMonitor.Enable(FALSE);
 
   lua_register(lua, "main_minimize", luaMinimize);
   lua_register(lua, "main_maximize", luaMaximize);
