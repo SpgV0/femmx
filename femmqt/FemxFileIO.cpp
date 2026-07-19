@@ -69,7 +69,11 @@ struct FemxCircuitPropRecord {
 
 struct FemxNodeRecord {
   double x, y;
-  int32_t boundaryMarker, inGroup;
+  // Named to match FemmNode::pointPropIndex (a point-property reference,
+  // not a boundary one -- see that field's comment in FemmProblem.h);
+  // on-disk layout (int32 at this offset) is unchanged from before the
+  // rename, so no version bump was needed.
+  int32_t pointPropIndex, inGroup;
 };
 
 struct FemxSegmentRecord {
@@ -293,7 +297,7 @@ bool FemxFileIO::writeFemx(const QString& femxPath, const QString& sourceFemPath
   if (!p.nodes.isEmpty()) {
     QVector<FemxNodeRecord> recs(p.nodes.size());
     for (int i = 0; i < p.nodes.size(); i++)
-      recs[i] = { p.nodes[i].x, p.nodes[i].y, p.nodes[i].boundaryMarker, p.nodes[i].inGroup };
+      recs[i] = { p.nodes[i].x, p.nodes[i].y, p.nodes[i].pointPropIndex, p.nodes[i].inGroup };
     if (!writeArray(file, recs.constData(), recs.size(), errorMessage, "node data"))
       return false;
   }
@@ -448,7 +452,7 @@ bool FemxFileIO::readFemx(const QString& femxPath, FemmProblem& p, QString& erro
     return false;
   p.nodes.resize(nodeRecs.size());
   for (int i = 0; i < nodeRecs.size(); i++)
-    p.nodes[i] = { nodeRecs[i].x, nodeRecs[i].y, nodeRecs[i].boundaryMarker, nodeRecs[i].inGroup, false };
+    p.nodes[i] = { nodeRecs[i].x, nodeRecs[i].y, nodeRecs[i].pointPropIndex, nodeRecs[i].inGroup, false };
 
   QVector<FemxSegmentRecord> segRecs;
   if (!readArray(file, segRecs, header.segmentCount, errorMessage, femxPath))

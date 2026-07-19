@@ -55,7 +55,17 @@ struct FemmCircuitProp {
 
 struct FemmNode {
   double x = 0, y = 0;
-  int boundaryMarker = 0; // 0 = none, else 1-based index into boundaryProps
+  // 0 = none, else 1-based index into pointProps -- NOT boundaryProps.
+  // Confirmed against femm/FemmeDoc.cpp's .fem writer (OnSaveDocument):
+  // this column is produced by matching against nodeproplist[j].PointName,
+  // not lineproplist[j].BdryName like segments'/arcs' own boundaryMarker
+  // below -- individual nodes only ever carry a point property (nodal
+  // current source / prescribed A) in classic FEMM, never a standalone
+  // boundary condition (that's implicit from whichever segment/arc the
+  // node happens to touch). Named differently from FemmSegment/
+  // FemmArcSegment's boundaryMarker on purpose so this distinction can't
+  // be missed again.
+  int pointPropIndex = 0;
   int inGroup = 0;
   bool isSelected = false;
 };

@@ -65,6 +65,38 @@
 # dependent, the likeliest real-world failure mode in a fresh CI runner)
 # can only ever cost this one optional artifact, never the build/tests/
 # installer that the rest of this job produces.
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+# added an "Install Qt6" step (both jobs, right before the "Build FEMM"
+# step) so CI actually compiles and validates femmqt, the new Qt6-based
+# GUI (femmqt/, see femmqt/CMakeLists.txt) -- it's now the default GUI
+# the installer ships (script.nsi), so leaving it completely unbuilt by
+# CI would be a real coverage gap. jurplel/install-qt-action sets the
+# CMAKE_PREFIX_PATH *environment* variable, which CMake's find_package()
+# reads automatically (documented CMake behavior, no extra -D flags
+# needed here) -- so no build.ps1/CMakeLists.txt changes were needed
+# beyond installing Qt before the build step runs. Version/arch
+# (6.11.1, win64_msvc2022_64) match the MSVC 2022 64-bit kit this was
+# developed and verified against locally. modules: 'qtsvg' is needed
+# because femmqt/CMakeLists.txt requires the Svg component (toolbar
+# icons, see IconTheme.cpp) -- unlike Qt5, QtSvg is a separate add-on
+# module aqtinstall doesn't fetch by default, and femmqt/CMakeLists.txt's
+# find_package(Qt6 QUIET COMPONENTS Widgets Svg) only succeeds if every
+# requested component is present, so omitting this would silently skip
+# building femmqt in CI again (gracefully, per the fallback mentioned
+# below, just not usefully).
+#
+# Marked continue-on-error: true, matching the LaTeX-install reasoning
+# just above -- a flaky Qt download/network hiccup in a fresh runner is
+# a real, likely failure mode, and should only ever cost femmqt's build
+# coverage, never the femm/fkn/triangle build, the test suite, or the
+# installer. This is safe specifically because femmqt/CMakeLists.txt
+# itself already degrades gracefully (find_package(Qt6 QUIET ...) +
+# early return()) when Qt6 isn't found, rather than failing the whole
+# CMake configure -- added the same day after confirming CI would
+# otherwise hard-fail outright (find_package(Qt6 REQUIRED ...) previously
+# took the entire configure down, not just this target, on any runner
+# without Qt6, which is every CI runner as of this change).
 name: FEMMX Continuous Integration
 
 on:
@@ -83,6 +115,17 @@ jobs:
     - name: 'Install NSIS'
       shell: pwsh
       run: choco install nsis -y --no-progress
+
+    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
+      continue-on-error: true
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.11.1'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
+        modules: 'qtsvg'
+        cache: true
 
     - name: 'Build FEMM'
       shell: pwsh
@@ -199,6 +242,17 @@ jobs:
     - name: 'Install NSIS'
       shell: pwsh
       run: choco install nsis -y --no-progress
+
+    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
+      continue-on-error: true
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.11.1'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
+        modules: 'qtsvg'
+        cache: true
 
     - name: 'Install CUDA Toolkit'
       id: cuda-toolkit

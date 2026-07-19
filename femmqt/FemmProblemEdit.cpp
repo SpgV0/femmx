@@ -20,6 +20,18 @@ int FemmProblemEdit::addSegment(FemmProblem& p, int n0, int n1)
   return p.segments.size() - 1;
 }
 
+int FemmProblemEdit::addArcSegment(FemmProblem& p, int n0, int n1, double arcLengthDeg, double maxSideLengthDeg)
+{
+  FemmArcSegment a;
+  a.n0 = n0;
+  a.n1 = n1;
+  a.arcLength = arcLengthDeg;
+  a.maxSideLength = maxSideLengthDeg;
+  a.mySideLength = maxSideLengthDeg; // "regular case" default -- see MeshBuilder.cpp's writepoly.cpp reference comment
+  p.arcSegments.push_back(a);
+  return p.arcSegments.size() - 1;
+}
+
 int FemmProblemEdit::addBlockLabel(FemmProblem& p, double x, double y)
 {
   FemmBlockLabel b;
@@ -85,4 +97,109 @@ void FemmProblemEdit::deleteBlockLabel(FemmProblem& p, int blockLabelIndex)
   if (blockLabelIndex < 0 || blockLabelIndex >= p.blockLabels.size())
     return;
   p.blockLabels.remove(blockLabelIndex);
+}
+
+int FemmProblemEdit::countPointPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmNode& node : p.nodes)
+    if (node.pointPropIndex == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deletePointProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.pointProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmNode& node : p.nodes) {
+    if (node.pointPropIndex == marker)
+      node.pointPropIndex = 0;
+    else if (node.pointPropIndex > marker)
+      node.pointPropIndex--;
+  }
+  p.pointProps.remove(index);
+}
+
+int FemmProblemEdit::countBoundaryPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmSegment& s : p.segments)
+    if (s.boundaryMarker == marker)
+      n++;
+  for (const FemmArcSegment& a : p.arcSegments)
+    if (a.boundaryMarker == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteBoundaryProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.boundaryProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmSegment& s : p.segments) {
+    if (s.boundaryMarker == marker)
+      s.boundaryMarker = 0;
+    else if (s.boundaryMarker > marker)
+      s.boundaryMarker--;
+  }
+  for (FemmArcSegment& a : p.arcSegments) {
+    if (a.boundaryMarker == marker)
+      a.boundaryMarker = 0;
+    else if (a.boundaryMarker > marker)
+      a.boundaryMarker--;
+  }
+  p.boundaryProps.remove(index);
+}
+
+int FemmProblemEdit::countMaterialPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmBlockLabel& b : p.blockLabels)
+    if (b.blockTypeIndex == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteMaterialProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.materialProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (b.blockTypeIndex == marker)
+      b.blockTypeIndex = -1; // reverts to a hole -- see this function's header comment
+    else if (b.blockTypeIndex > marker)
+      b.blockTypeIndex--;
+  }
+  p.materialProps.remove(index);
+}
+
+int FemmProblemEdit::countCircuitPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmBlockLabel& b : p.blockLabels)
+    if (b.circuitIndex == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteCircuitProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.circuitProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (b.circuitIndex == marker)
+      b.circuitIndex = 0;
+    else if (b.circuitIndex > marker)
+      b.circuitIndex--;
+  }
+  p.circuitProps.remove(index);
 }

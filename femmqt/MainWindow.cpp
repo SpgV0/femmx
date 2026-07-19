@@ -1,8 +1,20 @@
 #include "MainWindow.h"
 
+#include "ArcPropDialog.h"
+#include "BlockLabelPropDialog.h"
+#include "BoundaryPropDialog.h"
+#include "CircuitPropDialog.h"
 #include "FemmFileIO.h"
+#include "FemmProblemEdit.h"
 #include "FemxFileIO.h"
 #include "GuiSwitch.h"
+#include "IconTheme.h"
+#include "MaterialPropDialog.h"
+#include "NodePropDialog.h"
+#include "PointPropDialog.h"
+#include "ProblemPropertiesDialog.h"
+#include "PropertyListDialog.h"
+#include "SegmentPropDialog.h"
 #include "SolutionView.h"
 #include "SolveRunner.h"
 
@@ -14,8 +26,32 @@
 #include <QGraphicsView>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSet>
 #include <QStatusBar>
 #include <QToolBar>
+
+namespace {
+// Generates "New <Base>"/"<Base> Copy", disambiguated with a trailing
+// " (2)", " (3)", ... against whatever names are already in `list` --
+// shared by the Add New / Duplicate callbacks below for all four
+// property lists (they're otherwise unrelated struct types, but all
+// start with a QString `name` member, so this only needs to be a small
+// template rather than four near-identical copies).
+template <typename T>
+QString uniqueName(const QVector<T>& list, const QString& base)
+{
+  QSet<QString> existing;
+  for (const T& item : list)
+    existing.insert(item.name);
+  if (!existing.contains(base))
+    return base;
+  for (int n = 2;; n++) {
+    QString candidate = QString("%1 (%2)").arg(base).arg(n);
+    if (!existing.contains(candidate))
+      return candidate;
+  }
+}
+}
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -25,6 +61,7 @@ MainWindow::MainWindow(QWidget* parent)
   m_scene = new GeometryScene(this);
   m_scene->setProblem(&m_problem);
   connect(m_scene, &GeometryScene::problemEdited, this, &MainWindow::onProblemEdited);
+  connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
 
   m_view = new QGraphicsView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing);
@@ -51,27 +88,45 @@ MainWindow::MainWindow(QWidget* parent)
   meshMenu->addAction("&Solve", this, &MainWindow::onSolveTriggered, QKeySequence("Ctrl+L"));
   meshMenu->addAction("&View Results...", this, &MainWindow::onViewResultsTriggered);
 
+  QMenu* problemMenu = menuBar()->addMenu("&Problem");
+  problemMenu->addAction("&Problem Properties...", this, &MainWindow::onProblemPropertiesTriggered);
+  problemMenu->addSeparator();
+  problemMenu->addAction("&Materials...", this, &MainWindow::onMaterialsTriggered);
+  problemMenu->addAction("&Boundary Properties...", this, &MainWindow::onBoundaryPropsTriggered);
+  problemMenu->addAction("&Circuits...", this, &MainWindow::onCircuitsTriggered);
+  problemMenu->addAction("Poi&nt Properties...", this, &MainWindow::onPointPropsTriggered);
+
   QToolBar* toolBar = addToolBar("Draw");
+  // Icon-only, matching a modern CAD-style toolbar -- each action keeps
+  // its descriptive text (set below) as a tooltip and for the
+  // accessibility/menu fallback, it just isn't painted next to the icon.
+  toolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  toolBar->setIconSize(QSize(20, 20));
   auto* toolGroup = new QActionGroup(this);
   toolGroup->setExclusive(true);
 
-  m_selectToolAction = toolBar->addAction("Select");
+  m_selectToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/select.svg"), "Select");
   m_selectToolAction->setCheckable(true);
   m_selectToolAction->setChecked(true);
   toolGroup->addAction(m_selectToolAction);
   connect(m_selectToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Select); });
 
-  m_addNodeToolAction = toolBar->addAction("Add Node");
+  m_addNodeToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_node.svg"), "Add Node");
   m_addNodeToolAction->setCheckable(true);
   toolGroup->addAction(m_addNodeToolAction);
   connect(m_addNodeToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddNode); });
 
-  m_addSegmentToolAction = toolBar->addAction("Add Segment");
+  m_addSegmentToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_segment.svg"), "Add Segment");
   m_addSegmentToolAction->setCheckable(true);
   toolGroup->addAction(m_addSegmentToolAction);
   connect(m_addSegmentToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddSegment); });
 
-  m_addBlockLabelToolAction = toolBar->addAction("Add Block Label");
+  m_addArcToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_arc.svg"), "Add Arc");
+  m_addArcToolAction->setCheckable(true);
+  toolGroup->addAction(m_addArcToolAction);
+  connect(m_addArcToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddArc); });
+
+  m_addBlockLabelToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_block_label.svg"), "Add Block Label");
   m_addBlockLabelToolAction->setCheckable(true);
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
@@ -319,8 +374,189 @@ bool MainWindow::hasAppliedPeriodicBoundary() const
 
 void MainWindow::onProblemEdited()
 {
+  markEdited();
+}
+
+void MainWindow::markEdited()
+{
   m_dirty = true;
   updateTitle();
+}
+
+void MainWindow::onProblemPropertiesTriggered()
+{
+  ProblemPropertiesDialog dlg(m_problem, this);
+  if (dlg.exec() == QDialog::Accepted)
+    markEdited();
+}
+
+void MainWindow::onMaterialsTriggered()
+{
+  PropertyListDialog::Callbacks cb;
+  cb.count = [this]() { return m_problem.materialProps.size(); };
+  cb.nameAt = [this](int i) { return m_problem.materialProps[i].name; };
+  cb.editAt = [this](int i) {
+    MaterialPropDialog dlg(m_problem.materialProps[i], this);
+    if (dlg.exec() == QDialog::Accepted)
+      markEdited();
+  };
+  cb.addNew = [this]() {
+    FemmMaterialProp m;
+    m.name = uniqueName(m_problem.materialProps, "New Material");
+    m_problem.materialProps.push_back(m);
+    markEdited();
+  };
+  cb.duplicate = [this](int i) {
+    FemmMaterialProp m = m_problem.materialProps[i];
+    m.name = uniqueName(m_problem.materialProps, m.name);
+    m_problem.materialProps.push_back(m);
+    markEdited();
+  };
+  cb.referenceCount = [this](int i) { return FemmProblemEdit::countMaterialPropReferences(m_problem, i); };
+  cb.remove = [this](int i) {
+    FemmProblemEdit::deleteMaterialProp(m_problem, i);
+    m_scene->rebuild();
+    markEdited();
+  };
+  PropertyListDialog dlg("Materials", "material", cb, this);
+  dlg.exec();
+}
+
+void MainWindow::onBoundaryPropsTriggered()
+{
+  PropertyListDialog::Callbacks cb;
+  cb.count = [this]() { return m_problem.boundaryProps.size(); };
+  cb.nameAt = [this](int i) { return m_problem.boundaryProps[i].name; };
+  cb.editAt = [this](int i) {
+    BoundaryPropDialog dlg(m_problem.boundaryProps[i], this);
+    if (dlg.exec() == QDialog::Accepted)
+      markEdited();
+  };
+  cb.addNew = [this]() {
+    FemmBoundaryProp b;
+    b.name = uniqueName(m_problem.boundaryProps, "New Boundary");
+    m_problem.boundaryProps.push_back(b);
+    markEdited();
+  };
+  cb.duplicate = [this](int i) {
+    FemmBoundaryProp b = m_problem.boundaryProps[i];
+    b.name = uniqueName(m_problem.boundaryProps, b.name);
+    m_problem.boundaryProps.push_back(b);
+    markEdited();
+  };
+  cb.referenceCount = [this](int i) { return FemmProblemEdit::countBoundaryPropReferences(m_problem, i); };
+  cb.remove = [this](int i) {
+    FemmProblemEdit::deleteBoundaryProp(m_problem, i);
+    m_scene->rebuild();
+    markEdited();
+  };
+  PropertyListDialog dlg("Boundary Properties", "boundary", cb, this);
+  dlg.exec();
+}
+
+void MainWindow::onCircuitsTriggered()
+{
+  PropertyListDialog::Callbacks cb;
+  cb.count = [this]() { return m_problem.circuitProps.size(); };
+  cb.nameAt = [this](int i) { return m_problem.circuitProps[i].name; };
+  cb.editAt = [this](int i) {
+    CircuitPropDialog dlg(m_problem.circuitProps[i], this);
+    if (dlg.exec() == QDialog::Accepted)
+      markEdited();
+  };
+  cb.addNew = [this]() {
+    FemmCircuitProp c;
+    c.name = uniqueName(m_problem.circuitProps, "New Circuit");
+    m_problem.circuitProps.push_back(c);
+    markEdited();
+  };
+  cb.duplicate = [this](int i) {
+    FemmCircuitProp c = m_problem.circuitProps[i];
+    c.name = uniqueName(m_problem.circuitProps, c.name);
+    m_problem.circuitProps.push_back(c);
+    markEdited();
+  };
+  cb.referenceCount = [this](int i) { return FemmProblemEdit::countCircuitPropReferences(m_problem, i); };
+  cb.remove = [this](int i) {
+    FemmProblemEdit::deleteCircuitProp(m_problem, i);
+    m_scene->rebuild();
+    markEdited();
+  };
+  PropertyListDialog dlg("Circuits", "circuit", cb, this);
+  dlg.exec();
+}
+
+void MainWindow::onPointPropsTriggered()
+{
+  PropertyListDialog::Callbacks cb;
+  cb.count = [this]() { return m_problem.pointProps.size(); };
+  cb.nameAt = [this](int i) { return m_problem.pointProps[i].name; };
+  cb.editAt = [this](int i) {
+    PointPropDialog dlg(m_problem.pointProps[i], this);
+    if (dlg.exec() == QDialog::Accepted)
+      markEdited();
+  };
+  cb.addNew = [this]() {
+    FemmPointProp p;
+    p.name = uniqueName(m_problem.pointProps, "New Point Property");
+    m_problem.pointProps.push_back(p);
+    markEdited();
+  };
+  cb.duplicate = [this](int i) {
+    FemmPointProp p = m_problem.pointProps[i];
+    p.name = uniqueName(m_problem.pointProps, p.name);
+    m_problem.pointProps.push_back(p);
+    markEdited();
+  };
+  cb.referenceCount = [this](int i) { return FemmProblemEdit::countPointPropReferences(m_problem, i); };
+  cb.remove = [this](int i) {
+    FemmProblemEdit::deletePointProp(m_problem, i);
+    m_scene->rebuild();
+    markEdited();
+  };
+  PropertyListDialog dlg("Point Properties", "point property", cb, this);
+  dlg.exec();
+}
+
+void MainWindow::onEntityDoubleClicked(FemmItemKind kind, int index)
+{
+  bool accepted = false;
+  switch (kind) {
+  case FemmItemKind::Node:
+    if (index >= 0 && index < m_problem.nodes.size()) {
+      NodePropDialog dlg(m_problem.nodes[index], m_problem, this);
+      accepted = dlg.exec() == QDialog::Accepted;
+    }
+    break;
+  case FemmItemKind::Segment:
+    if (index >= 0 && index < m_problem.segments.size()) {
+      SegmentPropDialog dlg(m_problem.segments[index], m_problem, this);
+      accepted = dlg.exec() == QDialog::Accepted;
+    }
+    break;
+  case FemmItemKind::Arc:
+    if (index >= 0 && index < m_problem.arcSegments.size()) {
+      ArcPropDialog dlg(m_problem.arcSegments[index], m_problem, this);
+      accepted = dlg.exec() == QDialog::Accepted;
+    }
+    break;
+  case FemmItemKind::BlockLabel:
+    if (index >= 0 && index < m_problem.blockLabels.size()) {
+      BlockLabelPropDialog dlg(m_problem.blockLabels[index], m_problem, this);
+      accepted = dlg.exec() == QDialog::Accepted;
+    }
+    break;
+  }
+
+  if (accepted) {
+    // A block label's hole/material-assigned rendering (see
+    // addBlockLabelItem's pen color) depends on blockTypeIndex, which
+    // this dialog can change -- rebuild() to reflect it. Cheap enough at
+    // this editor's scale (thousands, not millions, of entities) to just
+    // always do it here rather than tracking which edits actually need it.
+    m_scene->rebuild();
+    markEdited();
+  }
 }
 
 void MainWindow::updateTitle()

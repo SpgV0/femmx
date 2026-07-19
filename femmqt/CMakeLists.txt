@@ -20,7 +20,32 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(FEMMQT_QT6_DIR "C:/Qt/6.11.1/msvc2022_64" CACHE PATH "Path to the Qt6 MSVC kit root")
 list(APPEND CMAKE_PREFIX_PATH "${FEMMQT_QT6_DIR}")
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+# was find_package(Qt6 REQUIRED ...) -- that hard-fails the ENTIRE CMake
+# configure (not just this target) when Qt6 isn't installed, which broke
+# CI: both ccpp.yml jobs run build.ps1 with -ForceTriangle32bit, whose
+# main x64 configure pass (build.ps1's build_win_release64_notriangle
+# branch) builds this directory too, and neither CI runner has Qt6
+# installed. Since this target is meant to be purely additive (see the
+# plan doc), a missing optional dependency should skip just this target,
+# not take down femm/fkn/triangle/the installer with it. QUIET + an
+# explicit found-check + early return() achieves that; REQUIRED does not
+# offer a way to make just the package-not-found case non-fatal.
+find_package(Qt6 QUIET COMPONENTS Widgets Svg)
+# qt_standard_project_setup() (below) enables AUTOMOC but, confirmed this
+# session, not reliably AUTORCC -- icons.qrc silently never got compiled
+# into a qrc_icons.cpp without this, so IconTheme::themedToolIcon's
+# QFile::open(":/icons/...") failed at runtime and every toolbar button
+# fell back to Qt's built-in "no icon set" behavior (plain text, no icon
+# space reserved) instead of erroring loudly. Set explicitly rather than
+# relying on it being a qt_standard_project_setup() default.
+set(CMAKE_AUTORCC ON)
+if (NOT Qt6_FOUND)
+  message(WARNING "femmqt: Qt6 (Widgets, Svg) not found under CMAKE_PREFIX_PATH or FEMMQT_QT6_DIR="
+    "\"${FEMMQT_QT6_DIR}\" -- skipping the femmqt (Qt GUI) target. "
+    "Install Qt6 there, or pass -DFEMMQT_QT6_DIR=<path to a Qt6 MSVC kit>, to build it.")
+  return()
+endif()
 qt_standard_project_setup()
 
 qt_add_executable(femmqt WIN32
@@ -49,10 +74,33 @@ qt_add_executable(femmqt WIN32
   GuiSwitch.cpp
   FemxFileIO.h
   FemxFileIO.cpp
+  ProblemPropertiesDialog.h
+  ProblemPropertiesDialog.cpp
+  PropertyListDialog.h
+  PropertyListDialog.cpp
+  PointPropDialog.h
+  PointPropDialog.cpp
+  BoundaryPropDialog.h
+  BoundaryPropDialog.cpp
+  CircuitPropDialog.h
+  CircuitPropDialog.cpp
+  MaterialPropDialog.h
+  MaterialPropDialog.cpp
+  NodePropDialog.h
+  NodePropDialog.cpp
+  SegmentPropDialog.h
+  SegmentPropDialog.cpp
+  ArcPropDialog.h
+  ArcPropDialog.cpp
+  BlockLabelPropDialog.h
+  BlockLabelPropDialog.cpp
+  IconTheme.h
+  IconTheme.cpp
+  icons.qrc
 )
 
 target_compile_options(femmqt PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
-target_link_libraries(femmqt PRIVATE Qt6::Widgets)
+target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg)
 
 install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")
 

@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="select.svg">toolbar_icons/select.svg</file>
+    <file alias="add_node.svg">toolbar_icons/add_node.svg</file>
+    <file alias="add_segment.svg">toolbar_icons/add_segment.svg</file>
+    <file alias="add_arc.svg">toolbar_icons/add_arc.svg</file>
+    <file alias="add_block_label.svg">toolbar_icons/add_block_label.svg</file>
+  </qresource>
+</RCC>

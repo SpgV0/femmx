@@ -76,13 +76,15 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
   double dL = z / kLineFraction;
 
   // copy node list as-is, translating each node's already-resolved
-  // 1-based boundaryMarker (0 = none) into .poly's (index0based+2) point-
-  // marker encoding.
+  // 1-based pointPropIndex (0 = none) into .poly's (index0based+2) point-
+  // marker encoding. This is a point-property reference, not a boundary
+  // one -- see FemmNode::pointPropIndex's comment (FemmProblem.h) --
+  // matching femm/writepoly.cpp:259-260's nodeproplist lookup.
   for (const FemmNode& n : p.nodes) {
     WorkNode wn;
     wn.x = n.x;
     wn.y = n.y;
-    wn.marker = (n.boundaryMarker == 0) ? 0 : (n.boundaryMarker + 1);
+    wn.marker = (n.pointPropIndex == 0) ? 0 : (n.pointPropIndex + 1);
     nodes.push_back(wn);
   }
 

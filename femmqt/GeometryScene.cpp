@@ -10,6 +10,7 @@
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QPainterPath>
 #include <QPen>
@@ -88,6 +89,34 @@ class NodeItem : public QGraphicsEllipseItem {
   GeometryScene* m_scene;
 };
 
+// QGraphicsPathItem's default shape() (used for hit-testing, including
+// double-click dispatch -- see GeometryScene::mouseDoubleClickEvent) is
+// just a thin stroked outline of its path -- fine for the segment/arc
+// lines, but the block-label crosshair is two 1px-wide strokes crossing
+// at a point, which is a much less forgiving target than a node's filled
+// circle. Confirmed directly: double-clicking a freshly-placed label at
+// its exact creation coordinates still missed. Overriding shape() to a
+// filled circle (like NodeItem's hit area) fixes it without changing how
+// the crosshair itself is painted (paint() still just draws path()).
+class BlockLabelItem : public QGraphicsPathItem {
+  public:
+  BlockLabelItem(const QPainterPath& path, qreal hitRadius)
+      : QGraphicsPathItem(path)
+      , m_hitRadius(hitRadius)
+  {
+  }
+
+  QPainterPath shape() const override
+  {
+    QPainterPath p;
+    p.addEllipse(QPointF(0, 0), m_hitRadius, m_hitRadius);
+    return p;
+  }
+
+  private:
+  qreal m_hitRadius;
+};
+
 // Computes the same circle (center, radius, start angle) as
 // CFemmeDoc::GetCircle (femm/FemmeDoc.cpp) -- shared by both the initial
 // build and by live geometry updates when a node is dragged.
@@ -142,7 +171,7 @@ void GeometryScene::rebuild()
   m_nodeItems.clear();
   m_segmentItemsByNode.clear();
   m_arcItemsByNode.clear();
-  m_pendingSegmentNode = -1;
+  m_pendingNode = -1;
 
   if (!m_problem)
     return;
@@ -160,7 +189,7 @@ void GeometryScene::rebuild()
 void GeometryScene::setToolMode(GeometryToolMode mode)
 {
   m_toolMode = mode;
-  m_pendingSegmentNode = -1;
+  m_pendingNode = -1;
 }
 
 void GeometryScene::addNodeItem(int index)
@@ -220,10 +249,16 @@ void GeometryScene::addBlockLabelItem(int index)
   path.lineTo(r, 0);
   path.moveTo(0, -r);
   path.lineTo(0, r);
-  auto* item = addPath(path, pen);
+  auto* item = new BlockLabelItem(path, r);
+  item->setPen(pen);
+  addItem(item);
   item->setFlag(QGraphicsItem::ItemIsMovable);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
   item->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+  // Matches NodeItem's z-value reasoning (see its comment) -- keeps a
+  // label clickable/on-top even if it ends up visually over a segment or
+  // arc, not exercised by today's bug but the same latent hazard.
+  item->setZValue(1.0);
   item->setData(KindKey, static_cast<int>(FemmItemKind::BlockLabel));
   item->setData(IndexKey, index);
   item->setPos(b.x, b.y);
@@ -290,6 +325,12 @@ void GeometryScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
   // what a user (or, confirmed during this session's testing, an
   // automated UI test double-clicking the same node) would expect.
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
+    if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::Select) {
+      QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+      QGraphicsItem* hit = itemAt(event->scenePos(), deviceTransform);
+      if (hit)
+        emit entityDoubleClicked(static_cast<FemmItemKind>(hit->data(KindKey).toInt()), hit->data(IndexKey).toInt());
+    }
     QGraphicsScene::mouseDoubleClickEvent(event);
     return;
   }
@@ -322,13 +363,46 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     QGraphicsItem* hit = itemAt(pos, deviceTransform);
     if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
       int clickedNode = hit->data(IndexKey).toInt();
-      if (m_pendingSegmentNode < 0) {
-        m_pendingSegmentNode = clickedNode;
-      } else if (m_pendingSegmentNode != clickedNode) {
-        int idx = FemmProblemEdit::addSegment(*m_problem, m_pendingSegmentNode, clickedNode);
+      if (m_pendingNode < 0) {
+        m_pendingNode = clickedNode;
+      } else if (m_pendingNode != clickedNode) {
+        int idx = FemmProblemEdit::addSegment(*m_problem, m_pendingNode, clickedNode);
         addSegmentItem(idx);
-        m_pendingSegmentNode = -1;
+        m_pendingNode = -1;
         emit problemEdited();
+      }
+    }
+    break;
+  }
+  case GeometryToolMode::AddArc: {
+    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+    QGraphicsItem* hit = itemAt(pos, deviceTransform);
+    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
+      int clickedNode = hit->data(IndexKey).toInt();
+      if (m_pendingNode < 0) {
+        m_pendingNode = clickedNode;
+      } else if (m_pendingNode != clickedNode) {
+        // Prompt for the included angle and max mesh segment (degrees)
+        // right after the second node click -- mirrors CArcDlg's role in
+        // femm/FemmeView.cpp:2072-2092, including remembering the
+        // last-used values as this session's new defaults. Boundary
+        // assignment isn't prompted for here, matching Add Segment's own
+        // "set it afterward via double-click" pattern.
+        bool ok = false;
+        double arcAngle = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+            "Add Arc", "Arc Angle (deg, n0 -> n1 counterclockwise):", m_lastArcAngleDeg, 0.01, 359.99, 2, &ok);
+        if (ok) {
+          double maxSeg = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+              "Add Arc", "Max Segment (deg per mesh element):", m_lastArcMaxSegDeg, 0.01, 90.0, 2, &ok);
+          if (ok) {
+            m_lastArcAngleDeg = arcAngle;
+            m_lastArcMaxSegDeg = maxSeg;
+            int idx = FemmProblemEdit::addArcSegment(*m_problem, m_pendingNode, clickedNode, arcAngle, maxSeg);
+            addArcItem(idx);
+            emit problemEdited();
+          }
+        }
+        m_pendingNode = -1;
       }
     }
     break;

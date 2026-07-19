@@ -16,6 +16,7 @@ enum class GeometryToolMode {
   Select,
   AddNode,
   AddSegment,
+  AddArc,
   AddBlockLabel,
 };
 
@@ -49,6 +50,12 @@ class GeometryScene : public QGraphicsScene {
   signals:
   void problemEdited();
 
+  // Emitted on a double-click that hits an entity while in Select mode --
+  // MainWindow owns the actual per-entity property dialogs (NodePropDialog
+  // etc.), so this scene only reports what was clicked rather than
+  // depending on those dialog classes itself.
+  void entityDoubleClicked(FemmItemKind kind, int index);
+
   protected:
   void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
   void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
@@ -74,5 +81,11 @@ class GeometryScene : public QGraphicsScene {
   QMultiHash<int, QGraphicsItem*> m_segmentItemsByNode;
   QMultiHash<int, QGraphicsItem*> m_arcItemsByNode;
 
-  int m_pendingSegmentNode = -1; // first node clicked while in AddSegment mode, -1 if none yet
+  int m_pendingNode = -1; // first node clicked while in AddSegment/AddArc mode, -1 if none yet
+
+  // Last-used arc parameters, offered as the default the next time the Add
+  // Arc tool prompts for them -- mirrors FemmeView.cpp's MaxSeg/ArcAngle
+  // member fields (initialized to the same 1.0/90.0 defaults there).
+  double m_lastArcAngleDeg = 90.0;
+  double m_lastArcMaxSegDeg = 1.0;
 };

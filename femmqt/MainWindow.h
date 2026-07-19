@@ -31,12 +31,19 @@ class MainWindow : public QMainWindow {
   void onViewResultsTriggered();
   void onSwitchToClassicTriggered();
   void onProblemEdited();
+  void onProblemPropertiesTriggered();
+  void onMaterialsTriggered();
+  void onBoundaryPropsTriggered();
+  void onCircuitsTriggered();
+  void onPointPropsTriggered();
+  void onEntityDoubleClicked(FemmItemKind kind, int index);
 
   private:
   bool saveAs(const QString& path);
   bool confirmDiscardUnsavedChanges();
   void updateTitle();
   bool hasAppliedPeriodicBoundary() const;
+  void markEdited();
 
   GeometryScene* m_scene = nullptr;
   QGraphicsView* m_view = nullptr;
@@ -47,6 +54,7 @@ class MainWindow : public QMainWindow {
   QAction* m_selectToolAction = nullptr;
   QAction* m_addNodeToolAction = nullptr;
   QAction* m_addSegmentToolAction = nullptr;
+  QAction* m_addArcToolAction = nullptr;
   QAction* m_addBlockLabelToolAction = nullptr;
 
   class SolutionWindow* m_solutionWindow = nullptr;

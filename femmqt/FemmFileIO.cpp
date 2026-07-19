@@ -298,7 +298,7 @@ bool FemmFileIO::readFem(const QString& path, FemmProblem& problem, QString& err
         FemmNode node;
         node.x = f[0].toDouble();
         node.y = f[1].toDouble();
-        node.boundaryMarker = f[2].toInt();
+        node.pointPropIndex = f[2].toInt();
         node.inGroup = f[3].toInt();
         problem.nodes.push_back(node);
       }
@@ -500,7 +500,7 @@ bool FemmFileIO::writeFem(const QString& path, const FemmProblem& p, QString& er
 
   out << "[NumPoints] = " << p.nodes.size() << "\n";
   for (const FemmNode& n : p.nodes)
-    out << g17(n.x) << "\t" << g17(n.y) << "\t" << n.boundaryMarker << "\t" << n.inGroup << "\n";
+    out << g17(n.x) << "\t" << g17(n.y) << "\t" << n.pointPropIndex << "\t" << n.inGroup << "\n";
 
   out << "[NumSegments] = " << p.segments.size() << "\n";
   for (const FemmSegment& s : p.segments) {
