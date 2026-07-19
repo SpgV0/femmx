@@ -49,4 +49,24 @@ void deleteMaterialProp(FemmProblem& p, int index);
 int countCircuitPropReferences(const FemmProblem& p, int index);
 void deleteCircuitProp(FemmProblem& p, int index);
 
+// Geometry transforms on the current selection -- mirror classic FEMM's
+// CFemmeDoc::Move/Copy/Scale/Mirror, which iterate `if (xxx[i].IsSelected)`
+// over each entity list. This codebase's selection lives on the Qt side
+// (QGraphicsItem::isSelected()), so GeometryScene::syncSelectionToProblem()
+// must copy that into each entity's isSelected field before calling any of
+// these -- kept as an explicit separate step (not done inside these
+// functions) so FemmProblemEdit stays free of Qt graphics types, matching
+// this header's existing scope.
+//
+// Only nodes and block labels are actually moved/scaled/mirrored -- a
+// selected segment/arc has no independent position, it follows its
+// endpoint nodes automatically. Copy also duplicates a selected segment/
+// arc, but only when BOTH endpoints are selected (and therefore also being
+// copied) -- a segment can't reference a node that wasn't copied with it.
+void moveSelected(FemmProblem& p, double dx, double dy);
+void copySelected(FemmProblem& p, double dx, double dy);
+void scaleSelected(FemmProblem& p, double baseX, double baseY, double factor);
+// Reflects across the line through (x0,y0)-(x1,y1).
+void mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1);
+
 } // namespace FemmProblemEdit

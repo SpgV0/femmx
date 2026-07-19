@@ -96,6 +96,10 @@ qt_add_executable(femmqt WIN32
   BlockLabelPropDialog.cpp
   IconTheme.h
   IconTheme.cpp
+  GeometryView.h
+  GeometryView.cpp
+  MeshOverlay.h
+  MeshOverlay.cpp
   icons.qrc
 )
 

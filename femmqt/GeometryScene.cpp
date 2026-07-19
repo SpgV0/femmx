@@ -4,14 +4,18 @@
 
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
+#include "MeshOverlay.h"
 
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPathItem>
+#include <QGraphicsRectItem>
 #include <QGraphicsSceneMouseEvent>
+#include <QGraphicsSimpleTextItem>
 #include <QGraphicsView>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QPainterPath>
 #include <QPen>
 
@@ -73,6 +77,14 @@ class NodeItem : public QGraphicsEllipseItem {
   protected:
   QVariant itemChange(GraphicsItemChange change, const QVariant& value) override
   {
+    // Fires before the position is actually applied -- snapping here (by
+    // returning a modified value) affects the drag itself, not just where
+    // it lands, matching how classic FEMM applies grid snap to "the
+    // current mouse position" for every interaction, not just placement.
+    if (change == ItemPositionChange && m_scene && m_scene->snapToGrid()) {
+      QPointF center = value.toPointF() + rect().center();
+      return m_scene->snapPoint(center) - rect().center();
+    }
     if (change == ItemPositionHasChanged && m_problem && m_nodeIndex >= 0 && m_nodeIndex < m_problem->nodes.size()) {
       QPointF center = value.toPointF() + rect().center();
       m_problem->nodes[m_nodeIndex].x = center.x();
@@ -167,10 +179,17 @@ void GeometryScene::setProblem(FemmProblem* problem)
 
 void GeometryScene::rebuild()
 {
-  clear();
+  clear(); // deletes every item, including m_zoomWindowRectItem if present
   m_nodeItems.clear();
   m_segmentItemsByNode.clear();
   m_arcItemsByNode.clear();
+  m_blockNameItems.clear();
+  m_zoomWindowRectItem = nullptr;
+  // clear() above already deleted this along with everything else -- an
+  // edit invalidates any previous mesh anyway (matches classic FEMM's own
+  // MeshUpToDate flag being cleared on any geometry change), so there's no
+  // reason to try to preserve/re-add it here.
+  m_meshOverlayItem = nullptr;
   m_pendingNode = -1;
 
   if (!m_problem)
@@ -262,6 +281,19 @@ void GeometryScene::addBlockLabelItem(int index)
   item->setData(KindKey, static_cast<int>(FemmItemKind::BlockLabel));
   item->setData(IndexKey, index);
   item->setPos(b.x, b.y);
+
+  // Matches femm.rc's "Show Block Names" (ID_VIEW_SHOWNAMES) -- shows the
+  // assigned material's name (or "<None>" for a hole) next to the label,
+  // toggled via setShowBlockNames() rather than always drawn.
+  QString labelText = (!isHole && b.blockTypeIndex >= 1 && b.blockTypeIndex <= m_problem->materialProps.size())
+      ? m_problem->materialProps[b.blockTypeIndex - 1].name
+      : QStringLiteral("<None>");
+  auto* text = addSimpleText(labelText);
+  text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+  text->setBrush(isHole ? QColor(160, 160, 160) : QColor(120, 0, 0));
+  text->setPos(b.x, b.y);
+  text->setVisible(m_showBlockNames);
+  m_blockNameItems[index] = text;
 }
 
 void GeometryScene::updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex)
@@ -306,11 +338,50 @@ void GeometryScene::onNodeMoved(int nodeIndex)
 
 void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
+  if (event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::ZoomWindow) {
+    m_zoomWindowStartPos = event->scenePos();
+    if (!m_zoomWindowRectItem) {
+      m_zoomWindowRectItem = new QGraphicsRectItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_zoomWindowRectItem->setPen(pen);
+      m_zoomWindowRectItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_zoomWindowRectItem);
+    }
+    m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, QSizeF(0, 0)));
+    m_zoomWindowRectItem->setVisible(true);
+    event->accept();
+    return;
+  }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     QGraphicsScene::mousePressEvent(event);
     return;
   }
   handleToolClick(event);
+}
+
+void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
+{
+  if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
+    m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, event->scenePos()).normalized());
+    event->accept();
+    return;
+  }
+  QGraphicsScene::mouseMoveEvent(event);
+}
+
+void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
+{
+  if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
+    QRectF r = m_zoomWindowRectItem->rect();
+    m_zoomWindowRectItem->setVisible(false);
+    if (r.width() > 1e-9 && r.height() > 1e-9)
+      emit zoomWindowSelected(r);
+    setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's ZoomWndFlag reset
+    event->accept();
+    return;
+  }
+  QGraphicsScene::mouseReleaseEvent(event);
 }
 
 void GeometryScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
@@ -339,17 +410,23 @@ void GeometryScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
 
 void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
 {
+  // Only the "place new geometry here" tools snap -- AddSegment/AddArc
+  // use this same `pos` purely for hit-testing an EXISTING node below, and
+  // snapping that would shift it away from the node's actual (possibly
+  // off-grid) position, breaking the click.
   QPointF pos = event->scenePos();
 
   switch (m_toolMode) {
   case GeometryToolMode::AddNode: {
-    int idx = FemmProblemEdit::addNode(*m_problem, pos.x(), pos.y());
+    QPointF snapped = snapPoint(pos);
+    int idx = FemmProblemEdit::addNode(*m_problem, snapped.x(), snapped.y());
     addNodeItem(idx);
     emit problemEdited();
     break;
   }
   case GeometryToolMode::AddBlockLabel: {
-    int idx = FemmProblemEdit::addBlockLabel(*m_problem, pos.x(), pos.y());
+    QPointF snapped = snapPoint(pos);
+    int idx = FemmProblemEdit::addBlockLabel(*m_problem, snapped.x(), snapped.y());
     addBlockLabelItem(idx);
     emit problemEdited();
     break;
@@ -440,6 +517,7 @@ void GeometryScene::deleteSelectedItem()
   auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
   int index = item->data(IndexKey).toInt();
 
+  emit aboutToEdit();
   switch (kind) {
   case FemmItemKind::Node: FemmProblemEdit::deleteNode(*m_problem, index); break;
   case FemmItemKind::Segment: FemmProblemEdit::deleteSegment(*m_problem, index); break;
@@ -449,4 +527,226 @@ void GeometryScene::deleteSelectedItem()
 
   rebuild();
   emit problemEdited();
+}
+
+void GeometryScene::syncSelectionToProblem()
+{
+  if (!m_problem)
+    return;
+  for (FemmNode& n : m_problem->nodes)
+    n.isSelected = false;
+  for (FemmSegment& s : m_problem->segments)
+    s.isSelected = false;
+  for (FemmArcSegment& a : m_problem->arcSegments)
+    a.isSelected = false;
+  for (FemmBlockLabel& b : m_problem->blockLabels)
+    b.isSelected = false;
+
+  const auto sel = selectedItems();
+  for (QGraphicsItem* item : sel) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    switch (kind) {
+    case FemmItemKind::Node:
+      if (index >= 0 && index < m_problem->nodes.size())
+        m_problem->nodes[index].isSelected = true;
+      break;
+    case FemmItemKind::Segment:
+      if (index >= 0 && index < m_problem->segments.size())
+        m_problem->segments[index].isSelected = true;
+      break;
+    case FemmItemKind::Arc:
+      if (index >= 0 && index < m_problem->arcSegments.size())
+        m_problem->arcSegments[index].isSelected = true;
+      break;
+    case FemmItemKind::BlockLabel:
+      if (index >= 0 && index < m_problem->blockLabels.size())
+        m_problem->blockLabels[index].isSelected = true;
+      break;
+    }
+  }
+}
+
+void GeometryScene::setShowGrid(bool show)
+{
+  m_showGrid = show;
+  update();
+}
+
+void GeometryScene::setGridSize(double size)
+{
+  if (size > 0)
+    m_gridSize = size;
+  update();
+}
+
+QPointF GeometryScene::snapPoint(QPointF p) const
+{
+  if (!m_snapToGrid || m_gridSize <= 0)
+    return p;
+  return QPointF(std::round(p.x() / m_gridSize) * m_gridSize, std::round(p.y() / m_gridSize) * m_gridSize);
+}
+
+void GeometryScene::setShowBlockNames(bool show)
+{
+  m_showBlockNames = show;
+  for (auto it = m_blockNameItems.constBegin(); it != m_blockNameItems.constEnd(); ++it)
+    it.value()->setVisible(show);
+}
+
+void GeometryScene::setMeshOverlay(const MeshOverlay& mesh)
+{
+  clearMeshOverlay();
+  if (mesh.elements.isEmpty())
+    return;
+
+  // One batched path for the whole mesh (matches SolutionView.cpp's
+  // MeshSolutionItem reasoning) -- a per-triangle QGraphicsItem doesn't
+  // scale to a real mesh's element count.
+  QPainterPath path;
+  for (const MeshOverlayElement& e : mesh.elements) {
+    if (e.p0 < 0 || e.p0 >= mesh.nodes.size() || e.p1 < 0 || e.p1 >= mesh.nodes.size() || e.p2 < 0 || e.p2 >= mesh.nodes.size())
+      continue;
+    const MeshOverlayNode& a = mesh.nodes[e.p0];
+    const MeshOverlayNode& b = mesh.nodes[e.p1];
+    const MeshOverlayNode& c = mesh.nodes[e.p2];
+    path.moveTo(a.x, a.y);
+    path.lineTo(b.x, b.y);
+    path.lineTo(c.x, c.y);
+    path.lineTo(a.x, a.y);
+  }
+
+  QPen pen(QColor(180, 180, 180));
+  pen.setCosmetic(true);
+  auto* item = addPath(path, pen);
+  item->setZValue(-1.0); // beneath geometry (nodes/segments/arcs/labels)
+  item->setVisible(m_showMesh);
+  m_meshOverlayItem = item;
+}
+
+void GeometryScene::clearMeshOverlay()
+{
+  if (m_meshOverlayItem) {
+    removeItem(m_meshOverlayItem);
+    delete m_meshOverlayItem;
+    m_meshOverlayItem = nullptr;
+  }
+}
+
+void GeometryScene::setShowMesh(bool show)
+{
+  m_showMesh = show;
+  if (m_meshOverlayItem)
+    m_meshOverlayItem->setVisible(show);
+}
+
+bool GeometryScene::selectOrphans()
+{
+  if (!m_problem)
+    return false;
+
+  clearSelection();
+
+  QHash<int, int> touchCount;
+  for (const FemmSegment& s : m_problem->segments) {
+    touchCount[s.n0]++;
+    touchCount[s.n1]++;
+  }
+  for (const FemmArcSegment& a : m_problem->arcSegments) {
+    touchCount[a.n0]++;
+    touchCount[a.n1]++;
+  }
+
+  bool foundAny = false;
+  for (auto it = touchCount.constBegin(); it != touchCount.constEnd(); ++it) {
+    if (it.value() != 1)
+      continue;
+    foundAny = true;
+    int nodeIdx = it.key();
+    if (m_nodeItems.contains(nodeIdx))
+      m_nodeItems[nodeIdx]->setSelected(true);
+    const auto segItems = m_segmentItemsByNode.values(nodeIdx);
+    for (QGraphicsItem* item : segItems)
+      item->setSelected(true);
+    const auto arcItems = m_arcItemsByNode.values(nodeIdx);
+    for (QGraphicsItem* item : arcItems)
+      item->setSelected(true);
+  }
+  return foundAny;
+}
+
+void GeometryScene::selectByGroup(int groupNumber)
+{
+  if (!m_problem)
+    return;
+  clearSelection();
+  const auto all = items();
+  for (QGraphicsItem* item : all) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    bool matches = false;
+    switch (kind) {
+    case FemmItemKind::Node: matches = index >= 0 && index < m_problem->nodes.size() && m_problem->nodes[index].inGroup == groupNumber; break;
+    case FemmItemKind::Segment: matches = index >= 0 && index < m_problem->segments.size() && m_problem->segments[index].inGroup == groupNumber; break;
+    case FemmItemKind::Arc: matches = index >= 0 && index < m_problem->arcSegments.size() && m_problem->arcSegments[index].inGroup == groupNumber; break;
+    case FemmItemKind::BlockLabel: matches = index >= 0 && index < m_problem->blockLabels.size() && m_problem->blockLabels[index].inGroup == groupNumber; break;
+    }
+    if (matches)
+      item->setSelected(true);
+  }
+}
+
+void GeometryScene::applyGroupToSelected(int groupNumber)
+{
+  if (!m_problem)
+    return;
+  const auto sel = selectedItems();
+  for (QGraphicsItem* item : sel) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    switch (kind) {
+    case FemmItemKind::Node:
+      if (index >= 0 && index < m_problem->nodes.size())
+        m_problem->nodes[index].inGroup = groupNumber;
+      break;
+    case FemmItemKind::Segment:
+      if (index >= 0 && index < m_problem->segments.size())
+        m_problem->segments[index].inGroup = groupNumber;
+      break;
+    case FemmItemKind::Arc:
+      if (index >= 0 && index < m_problem->arcSegments.size())
+        m_problem->arcSegments[index].inGroup = groupNumber;
+      break;
+    case FemmItemKind::BlockLabel:
+      if (index >= 0 && index < m_problem->blockLabels.size())
+        m_problem->blockLabels[index].inGroup = groupNumber;
+      break;
+    }
+  }
+}
+
+void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
+{
+  QGraphicsScene::drawBackground(painter, rect);
+  if (!m_showGrid || m_gridSize <= 0)
+    return;
+
+  double x0 = std::floor(rect.left() / m_gridSize) * m_gridSize;
+  double y0 = std::floor(rect.top() / m_gridSize) * m_gridSize;
+  int nx = static_cast<int>(std::ceil(rect.width() / m_gridSize)) + 2;
+  int ny = static_cast<int>(std::ceil(rect.height() / m_gridSize)) + 2;
+  // Too zoomed out for the grid to be a useful visual (an unreadable solid
+  // mass of dots) or to draw quickly -- matches common CAD-editor behavior
+  // of auto-hiding a fine grid at low zoom rather than a hard error.
+  if ((qint64)nx * (qint64)ny > 200000)
+    return;
+
+  QPen pen(QColor(200, 200, 220));
+  pen.setCosmetic(true);
+  painter->setPen(pen);
+  for (int i = 0; i < nx; i++) {
+    double x = x0 + i * m_gridSize;
+    for (int j = 0; j < ny; j++)
+      painter->drawPoint(QPointF(x, y0 + j * m_gridSize));
+  }
 }

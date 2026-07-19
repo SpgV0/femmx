@@ -2,6 +2,10 @@
 
 #include "FemmProblem.h"
 
+#include <QHash>
+
+#include <cmath>
+
 int FemmProblemEdit::addNode(FemmProblem& p, double x, double y)
 {
   FemmNode n;
@@ -202,4 +206,119 @@ void FemmProblemEdit::deleteCircuitProp(FemmProblem& p, int index)
       b.circuitIndex--;
   }
   p.circuitProps.remove(index);
+}
+
+void FemmProblemEdit::moveSelected(FemmProblem& p, double dx, double dy)
+{
+  for (FemmNode& n : p.nodes) {
+    if (n.isSelected) {
+      n.x += dx;
+      n.y += dy;
+    }
+  }
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (b.isSelected) {
+      b.x += dx;
+      b.y += dy;
+    }
+  }
+}
+
+void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy)
+{
+  // Old node index -> new node index, for remapping copied segments/arcs.
+  QHash<int, int> nodeMap;
+  int originalNodeCount = p.nodes.size();
+  for (int i = 0; i < originalNodeCount; i++) {
+    if (!p.nodes[i].isSelected)
+      continue;
+    FemmNode copy = p.nodes[i];
+    copy.x += dx;
+    copy.y += dy;
+    copy.isSelected = false;
+    nodeMap[i] = p.nodes.size();
+    p.nodes.push_back(copy);
+  }
+
+  int originalSegmentCount = p.segments.size();
+  for (int i = 0; i < originalSegmentCount; i++) {
+    const FemmSegment& s = p.segments[i];
+    if (!s.isSelected || !nodeMap.contains(s.n0) || !nodeMap.contains(s.n1))
+      continue;
+    FemmSegment copy = s;
+    copy.n0 = nodeMap[s.n0];
+    copy.n1 = nodeMap[s.n1];
+    copy.isSelected = false;
+    p.segments.push_back(copy);
+  }
+
+  int originalArcCount = p.arcSegments.size();
+  for (int i = 0; i < originalArcCount; i++) {
+    const FemmArcSegment& a = p.arcSegments[i];
+    if (!a.isSelected || !nodeMap.contains(a.n0) || !nodeMap.contains(a.n1))
+      continue;
+    FemmArcSegment copy = a;
+    copy.n0 = nodeMap[a.n0];
+    copy.n1 = nodeMap[a.n1];
+    copy.isSelected = false;
+    p.arcSegments.push_back(copy);
+  }
+
+  int originalBlockLabelCount = p.blockLabels.size();
+  for (int i = 0; i < originalBlockLabelCount; i++) {
+    if (!p.blockLabels[i].isSelected)
+      continue;
+    FemmBlockLabel copy = p.blockLabels[i];
+    copy.x += dx;
+    copy.y += dy;
+    copy.isSelected = false;
+    p.blockLabels.push_back(copy);
+  }
+}
+
+void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, double factor)
+{
+  for (FemmNode& n : p.nodes) {
+    if (n.isSelected) {
+      n.x = baseX + (n.x - baseX) * factor;
+      n.y = baseY + (n.y - baseY) * factor;
+    }
+  }
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (b.isSelected) {
+      b.x = baseX + (b.x - baseX) * factor;
+      b.y = baseY + (b.y - baseY) * factor;
+    }
+  }
+}
+
+namespace {
+void reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy)
+{
+  // ux,uy is the mirror line's unit direction vector; (x0,y0) is any point
+  // on it. Standard reflect-across-a-line-through-a-point formula: subtract
+  // the point on the line, remove twice the perpendicular component, add
+  // the point back.
+  double dx = x - x0, dy = y - y0;
+  double proj = dx * ux + dy * uy;
+  double perpX = dx - proj * ux, perpY = dy - proj * uy;
+  x -= 2 * perpX;
+  y -= 2 * perpY;
+}
+}
+
+void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1)
+{
+  double dx = x1 - x0, dy = y1 - y0;
+  double len = std::hypot(dx, dy);
+  if (len <= 0)
+    return;
+  double ux = dx / len, uy = dy / len;
+
+  for (FemmNode& n : p.nodes)
+    if (n.isSelected)
+      reflectPoint(n.x, n.y, x0, y0, ux, uy);
+  for (FemmBlockLabel& b : p.blockLabels)
+    if (b.isSelected)
+      reflectPoint(b.x, b.y, x0, y0, ux, uy);
 }

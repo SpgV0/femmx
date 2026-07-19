@@ -43,6 +43,12 @@ int convertAnsxCli(const QString& ansPath)
 int main(int argc, char* argv[])
 {
   QApplication app(argc, argv);
+  // Gives QSettings (MainWindow's recent-files list) a stable registry
+  // location -- without this it defaults to an unset/empty organization,
+  // which still works but isn't a location a user (or an uninstaller)
+  // could find on purpose.
+  QCoreApplication::setOrganizationName("FEMMX");
+  QCoreApplication::setApplicationName("femmqt");
   const QStringList args = app.arguments();
 
   if (args.size() >= 3 && args.at(1) == "--convert-ansx")

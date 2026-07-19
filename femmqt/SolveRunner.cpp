@@ -22,7 +22,7 @@ QString solverDir()
 
 } // namespace
 
-bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
+bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
 {
   QFileInfo fi(femPath);
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
@@ -51,6 +51,17 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QStr
     errorMessage = "Call to triangle was unsuccessful. Check for small angles.";
     return false;
   }
+  return true;
+}
+
+bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
+{
+  QFileInfo fi(femPath);
+  QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
+  QString workingDir = fi.absolutePath();
+
+  if (!mesh(problem, femPath, errorMessage))
+    return false;
 
   QProcess fkn;
   fkn.setWorkingDirectory(workingDir);

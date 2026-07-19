@@ -4,9 +4,10 @@
 
 #include "FemmProblem.h"
 #include "GeometryScene.h"
+#include "GeometryView.h"
 
-class QGraphicsView;
 class QAction;
+class QMenu;
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -37,6 +38,30 @@ class MainWindow : public QMainWindow {
   void onCircuitsTriggered();
   void onPointPropsTriggered();
   void onEntityDoubleClicked(FemmItemKind kind, int index);
+  void onZoomIn();
+  void onZoomOut();
+  void onZoomNatural();
+  void onZoomWindowTriggered();
+  void onZoomWindowSelected(QRectF sceneRect);
+  void onPanLeft();
+  void onPanRight();
+  void onPanUp();
+  void onPanDown();
+  void onSetGridTriggered();
+  void onUndoTriggered();
+  void onMoveSelectedTriggered();
+  void onCopySelectedTriggered();
+  void onScaleSelectedTriggered();
+  void onMirrorSelectedTriggered();
+  void onCreateMeshTriggered();
+  void onPurgeMeshTriggered();
+  void onShowOrphansTriggered();
+  void onSelectByGroupTriggered();
+  void onSetGroupTriggered();
+  void onHelpTopicsTriggered();
+  void onLicenseTriggered();
+  void onAboutTriggered();
+  void onOpenRecentFile();
 
   private:
   bool saveAs(const QString& path);
@@ -44,18 +69,29 @@ class MainWindow : public QMainWindow {
   void updateTitle();
   bool hasAppliedPeriodicBoundary() const;
   void markEdited();
+  void snapshotForUndo();
+  void addToRecentFiles(const QString& path);
+  void updateRecentFilesMenu();
 
   GeometryScene* m_scene = nullptr;
-  QGraphicsView* m_view = nullptr;
+  GeometryView* m_view = nullptr;
   FemmProblem m_problem;
   QString m_currentPath;
   bool m_dirty = false;
+
+  // Single-level undo, matching classic FEMM's own CFemmeDoc::UpdateUndo/
+  // Undo (a snapshot overwritten before each destructive op, not a full
+  // undo/redo stack) -- see snapshotForUndo()'s call sites.
+  FemmProblem m_undoSnapshot;
+  bool m_hasUndo = false;
 
   QAction* m_selectToolAction = nullptr;
   QAction* m_addNodeToolAction = nullptr;
   QAction* m_addSegmentToolAction = nullptr;
   QAction* m_addArcToolAction = nullptr;
   QAction* m_addBlockLabelToolAction = nullptr;
+  QAction* m_showMeshAction = nullptr;
+  QMenu* m_recentFilesMenu = nullptr;
 
   class SolutionWindow* m_solutionWindow = nullptr;
 };

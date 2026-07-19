@@ -10,6 +10,7 @@
 #include "GuiSwitch.h"
 #include "IconTheme.h"
 #include "MaterialPropDialog.h"
+#include "MeshOverlay.h"
 #include "NodePropDialog.h"
 #include "PointPropDialog.h"
 #include "ProblemPropertiesDialog.h"
@@ -21,14 +22,24 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsView>
+#include <QInputDialog>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QSet>
+#include <QSettings>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QUrl>
+#include <QVBoxLayout>
 
 namespace {
 // Generates "New <Base>"/"<Base> Copy", disambiguated with a trailing
@@ -62,8 +73,10 @@ MainWindow::MainWindow(QWidget* parent)
   m_scene->setProblem(&m_problem);
   connect(m_scene, &GeometryScene::problemEdited, this, &MainWindow::onProblemEdited);
   connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
+  connect(m_scene, &GeometryScene::zoomWindowSelected, this, &MainWindow::onZoomWindowSelected);
+  connect(m_scene, &GeometryScene::aboutToEdit, this, &MainWindow::snapshotForUndo);
 
-  m_view = new QGraphicsView(m_scene, this);
+  m_view = new GeometryView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing);
   m_view->setDragMode(QGraphicsView::RubberBandDrag);
   // FEMM's geometry files use a math (y-up) convention, matching how
@@ -80,11 +93,41 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addAction("&Save", this, &MainWindow::onSaveTriggered, QKeySequence::Save);
   fileMenu->addAction("Save &As...", this, &MainWindow::onSaveAsTriggered, QKeySequence::SaveAs);
   fileMenu->addSeparator();
+  m_recentFilesMenu = fileMenu->addMenu("Recent Files");
+  fileMenu->addSeparator();
   fileMenu->addAction("Switch to &Classic GUI...", this, &MainWindow::onSwitchToClassicTriggered);
   fileMenu->addSeparator();
   fileMenu->addAction("E&xit", this, &QWidget::close);
 
+  // Matches femm.rc's IDR_FEMMETYPE Edit menu's geometry-transform subset
+  // (Undo, Move, Copy, Scale, Mirror) -- Create Radius/Create Open
+  // Boundary/Preferences/Copy as Bitmap-Metafile are separate todo items.
+  QMenu* editMenu = menuBar()->addMenu("&Edit");
+  editMenu->addAction("&Undo", this, &MainWindow::onUndoTriggered, QKeySequence::Undo);
+  editMenu->addSeparator();
+  editMenu->addAction("&Move...", this, &MainWindow::onMoveSelectedTriggered);
+  editMenu->addAction("&Copy...", this, &MainWindow::onCopySelectedTriggered);
+  editMenu->addAction("Sc&ale...", this, &MainWindow::onScaleSelectedTriggered);
+  editMenu->addAction("M&irror...", this, &MainWindow::onMirrorSelectedTriggered);
+  editMenu->addSeparator();
+  // Simplified, instant-action equivalent of femm.rc's "Operation > Group"
+  // mode (which requires switching modes, then pressing Tab to prompt for
+  // a group number) -- same underlying inGroup field, just two direct
+  // commands instead of a persistent tool mode.
+  editMenu->addAction("Select by &Group...", this, &MainWindow::onSelectByGroupTriggered);
+  editMenu->addAction("Set &Group...", this, &MainWindow::onSetGroupTriggered);
+
+  // Matches femm.rc's separate Mesh (Create/Show/Purge) and Analysis
+  // (Analyze/View Results) menus, just combined under one "Mesh" menu
+  // rather than two -- Create Mesh alone (no solve) lets a mesh be
+  // inspected/refined before committing to a full Solve.
   QMenu* meshMenu = menuBar()->addMenu("&Mesh");
+  meshMenu->addAction("&Create Mesh", this, &MainWindow::onCreateMeshTriggered);
+  m_showMeshAction = meshMenu->addAction("&Show Mesh");
+  m_showMeshAction->setCheckable(true);
+  connect(m_showMeshAction, &QAction::toggled, m_scene, &GeometryScene::setShowMesh);
+  meshMenu->addAction("&Purge Mesh", this, &MainWindow::onPurgeMeshTriggered);
+  meshMenu->addSeparator();
   meshMenu->addAction("&Solve", this, &MainWindow::onSolveTriggered, QKeySequence("Ctrl+L"));
   meshMenu->addAction("&View Results...", this, &MainWindow::onViewResultsTriggered);
 
@@ -95,6 +138,44 @@ MainWindow::MainWindow(QWidget* parent)
   problemMenu->addAction("&Boundary Properties...", this, &MainWindow::onBoundaryPropsTriggered);
   problemMenu->addAction("&Circuits...", this, &MainWindow::onCircuitsTriggered);
   problemMenu->addAction("Poi&nt Properties...", this, &MainWindow::onPointPropsTriggered);
+
+  // Matches femm.rc's IDR_FEMMETYPE View menu (Zoom/Pan/Show Block Names
+  // subset -- Show Orphans/Lua Console/Load Monitor are separate todo
+  // items, not part of this group).
+  QMenu* viewMenu = menuBar()->addMenu("&View");
+  viewMenu->addAction("Zoom &In", this, &MainWindow::onZoomIn, QKeySequence(Qt::Key_PageUp));
+  viewMenu->addAction("Zoom &Out", this, &MainWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
+  viewMenu->addAction("&Natural", this, &MainWindow::onZoomNatural, QKeySequence(Qt::Key_Home));
+  viewMenu->addAction("&Window", this, &MainWindow::onZoomWindowTriggered);
+  viewMenu->addSeparator();
+  viewMenu->addAction("Scroll &Left", this, &MainWindow::onPanLeft, QKeySequence(Qt::Key_Left));
+  viewMenu->addAction("Scroll &Right", this, &MainWindow::onPanRight, QKeySequence(Qt::Key_Right));
+  viewMenu->addAction("Scroll &Up", this, &MainWindow::onPanUp, QKeySequence(Qt::Key_Up));
+  viewMenu->addAction("Scroll &Down", this, &MainWindow::onPanDown, QKeySequence(Qt::Key_Down));
+  viewMenu->addSeparator();
+  QAction* showNamesAction = viewMenu->addAction("Show &Block Names");
+  showNamesAction->setCheckable(true);
+  connect(showNamesAction, &QAction::toggled, m_scene, &GeometryScene::setShowBlockNames);
+  viewMenu->addAction("Show &Orphans", this, &MainWindow::onShowOrphansTriggered);
+
+  QMenu* gridMenu = menuBar()->addMenu("&Grid");
+  QAction* showGridAction = gridMenu->addAction("&Show Grid");
+  showGridAction->setCheckable(true);
+  showGridAction->setChecked(m_scene->showGrid());
+  connect(showGridAction, &QAction::toggled, m_scene, &GeometryScene::setShowGrid);
+  QAction* snapGridAction = gridMenu->addAction("S&nap to Grid");
+  snapGridAction->setCheckable(true);
+  snapGridAction->setChecked(m_scene->snapToGrid());
+  connect(snapGridAction, &QAction::toggled, m_scene, &GeometryScene::setSnapToGrid);
+  gridMenu->addAction("S&et Grid...", this, &MainWindow::onSetGridTriggered);
+
+  QMenu* helpMenu = menuBar()->addMenu("&Help");
+  helpMenu->addAction("&Help Topics", this, &MainWindow::onHelpTopicsTriggered);
+  helpMenu->addSeparator();
+  helpMenu->addAction("&License", this, &MainWindow::onLicenseTriggered);
+  helpMenu->addAction("&About FEMMX...", this, &MainWindow::onAboutTriggered);
+
+  updateRecentFilesMenu();
 
   QToolBar* toolBar = addToolBar("Draw");
   // Icon-only, matching a modern CAD-style toolbar -- each action keeps
@@ -215,6 +296,7 @@ void MainWindow::openFile(const QString& path)
                                 .arg(m_problem.blockLabels.size())
                                 .arg(loadedFromFemx ? ".femx" : ".fem"));
   updateTitle();
+  addToRecentFiles(femPath);
 }
 
 void MainWindow::onSaveTriggered()
@@ -254,6 +336,7 @@ bool MainWindow::saveAs(const QString& path)
   m_dirty = false;
   updateTitle();
   statusBar()->showMessage(QString("Saved %1").arg(path));
+  addToRecentFiles(path);
   return true;
 }
 
@@ -557,6 +640,392 @@ void MainWindow::onEntityDoubleClicked(FemmItemKind kind, int index)
     m_scene->rebuild();
     markEdited();
   }
+}
+
+// Zoom/Pan -- mirrors FemmeView.cpp's OnZoomIn/OnZoomOut/OnPan* (2x-per-
+// step zoom, quarter-viewport-per-step pan), just expressed as relative
+// QGraphicsView transforms/scrollbar deltas instead of raw GDI ox/oy/mag
+// bookkeeping -- Qt's view already owns an equivalent transform, so there's
+// no reason to duplicate that state on this side.
+void MainWindow::onZoomIn()
+{
+  m_view->scale(2.0, 2.0);
+}
+
+void MainWindow::onZoomOut()
+{
+  m_view->scale(0.5, 0.5);
+}
+
+void MainWindow::onZoomNatural()
+{
+  QRectF bounds = m_scene->itemsBoundingRect();
+  if (bounds.isEmpty())
+    return;
+  m_view->fitInView(bounds, Qt::KeepAspectRatio);
+}
+
+void MainWindow::onZoomWindowTriggered()
+{
+  m_scene->setToolMode(GeometryToolMode::ZoomWindow);
+}
+
+void MainWindow::onZoomWindowSelected(QRectF sceneRect)
+{
+  m_view->fitInView(sceneRect, Qt::KeepAspectRatio);
+  // Match the toolbar's radio buttons back to Select, which is what the
+  // scene itself reverted to internally (see GeometryScene::
+  // mouseReleaseEvent) -- Zoom Window isn't part of that QActionGroup (see
+  // its header comment), so nothing else re-checks this automatically.
+  m_selectToolAction->setChecked(true);
+}
+
+void MainWindow::onPanLeft()
+{
+  auto* bar = m_view->horizontalScrollBar();
+  bar->setValue(bar->value() - m_view->viewport()->width() / 4);
+}
+
+void MainWindow::onPanRight()
+{
+  auto* bar = m_view->horizontalScrollBar();
+  bar->setValue(bar->value() + m_view->viewport()->width() / 4);
+}
+
+void MainWindow::onPanUp()
+{
+  auto* bar = m_view->verticalScrollBar();
+  bar->setValue(bar->value() - m_view->viewport()->height() / 4);
+}
+
+void MainWindow::onPanDown()
+{
+  auto* bar = m_view->verticalScrollBar();
+  bar->setValue(bar->value() + m_view->viewport()->height() / 4);
+}
+
+void MainWindow::onSetGridTriggered()
+{
+  bool ok = false;
+  double size = QInputDialog::getDouble(this, "Set Grid", "Grid Spacing:", m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
+  if (ok)
+    m_scene->setGridSize(size);
+}
+
+void MainWindow::snapshotForUndo()
+{
+  m_undoSnapshot = m_problem;
+  m_hasUndo = true;
+}
+
+void MainWindow::onUndoTriggered()
+{
+  if (!m_hasUndo) {
+    statusBar()->showMessage("Nothing to undo");
+    return;
+  }
+  m_problem = m_undoSnapshot;
+  m_hasUndo = false;
+  m_scene->rebuild();
+  markEdited();
+  statusBar()->showMessage("Undone");
+}
+
+void MainWindow::onMoveSelectedTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Move", "Nothing selected.");
+    return;
+  }
+  bool ok = false;
+  double dx = QInputDialog::getDouble(this, "Move", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double dy = QInputDialog::getDouble(this, "Move", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+
+  snapshotForUndo();
+  m_scene->syncSelectionToProblem();
+  FemmProblemEdit::moveSelected(m_problem, dx, dy);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onCopySelectedTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Copy", "Nothing selected.");
+    return;
+  }
+  bool ok = false;
+  double dx = QInputDialog::getDouble(this, "Copy", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double dy = QInputDialog::getDouble(this, "Copy", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+
+  snapshotForUndo();
+  m_scene->syncSelectionToProblem();
+  FemmProblemEdit::copySelected(m_problem, dx, dy);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onScaleSelectedTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Scale", "Nothing selected.");
+    return;
+  }
+  bool ok = false;
+  double factor = QInputDialog::getDouble(this, "Scale", "Scale Factor:", 1.0, 1e-9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double baseX = QInputDialog::getDouble(this, "Scale", "Base Point X:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double baseY = QInputDialog::getDouble(this, "Scale", "Base Point Y:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+
+  snapshotForUndo();
+  m_scene->syncSelectionToProblem();
+  FemmProblemEdit::scaleSelected(m_problem, baseX, baseY, factor);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onMirrorSelectedTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Mirror", "Nothing selected.");
+    return;
+  }
+  bool ok = false;
+  double x0 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 1, X:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double y0 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 1, Y:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double x1 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 2, X:", 0.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+  double y1 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 2, Y:", 1.0, -1e9, 1e9, 6, &ok);
+  if (!ok)
+    return;
+
+  snapshotForUndo();
+  m_scene->syncSelectionToProblem();
+  FemmProblemEdit::mirrorSelected(m_problem, x0, y0, x1, y1);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onCreateMeshTriggered()
+{
+  // Same "must be saved first" requirement as Solve -- MeshBuilder reads
+  // geometry from the saved .fem, not m_problem directly (see
+  // onSolveTriggered's comment).
+  if (m_currentPath.isEmpty()) {
+    onSaveAsTriggered();
+    if (m_currentPath.isEmpty())
+      return;
+  } else if (!saveAs(m_currentPath)) {
+    return;
+  }
+
+  if (hasAppliedPeriodicBoundary()) {
+    QMessageBox::warning(this, "Cannot Mesh",
+        "This problem uses a periodic or antiperiodic boundary condition, "
+        "which this Qt GUI doesn't support meshing for yet. Open it in the "
+        "classic FEMMX GUI instead.");
+    return;
+  }
+
+  statusBar()->showMessage("Meshing...");
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  QString error;
+  bool ok = SolveRunner::mesh(m_problem, m_currentPath, error);
+  QApplication::restoreOverrideCursor();
+  if (!ok) {
+    statusBar()->showMessage("Meshing failed");
+    QMessageBox::warning(this, "Mesh Failed", error);
+    return;
+  }
+
+  QFileInfo fi(m_currentPath);
+  QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
+  MeshOverlay mesh;
+  if (!MeshOverlayIO::load(rootPath, mesh, error)) {
+    statusBar()->showMessage("Meshing failed");
+    QMessageBox::warning(this, "Mesh Failed", error);
+    return;
+  }
+
+  m_scene->setMeshOverlay(mesh);
+  m_scene->setShowMesh(true);
+  m_showMeshAction->setChecked(true);
+  statusBar()->showMessage(QString("Meshed -- %1 nodes, %2 elements").arg(mesh.nodes.size()).arg(mesh.elements.size()));
+}
+
+void MainWindow::onPurgeMeshTriggered()
+{
+  m_scene->clearMeshOverlay();
+  m_showMeshAction->setChecked(false);
+
+  // Matches femm.rc's "Purge Mesh" actually deleting the mesh files on
+  // disk (not just hiding the overlay), so a subsequent Solve can't
+  // accidentally pick up a stale mesh -- though SolveRunner::solve()
+  // always regenerates them fresh anyway, this also mirrors the classic
+  // GUI's own disk-cleanliness intent.
+  if (!m_currentPath.isEmpty()) {
+    QFileInfo fi(m_currentPath);
+    QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
+    QFile::remove(rootPath + ".node");
+    QFile::remove(rootPath + ".edge");
+    QFile::remove(rootPath + ".ele");
+  }
+  statusBar()->showMessage("Mesh purged");
+}
+
+void MainWindow::onShowOrphansTriggered()
+{
+  if (m_scene->selectOrphans())
+    statusBar()->showMessage("Orphaned nodes found and selected -- these likely mean an unclosed region.");
+  else
+    statusBar()->showMessage("No orphaned nodes found.");
+}
+
+void MainWindow::onSelectByGroupTriggered()
+{
+  bool ok = false;
+  int group = QInputDialog::getInt(this, "Select by Group", "Group Number:", 0, 0, 1000000, 1, &ok);
+  if (ok)
+    m_scene->selectByGroup(group);
+}
+
+void MainWindow::onSetGroupTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Set Group", "Nothing selected.");
+    return;
+  }
+  bool ok = false;
+  int group = QInputDialog::getInt(this, "Set Group", "Group Number:", 0, 0, 1000000, 1, &ok);
+  if (!ok)
+    return;
+  m_scene->syncSelectionToProblem();
+  m_scene->applyGroupToSelected(group);
+  markEdited();
+}
+
+void MainWindow::addToRecentFiles(const QString& path)
+{
+  QSettings settings;
+  QStringList recent = settings.value("recentFiles").toStringList();
+  recent.removeAll(path);
+  recent.prepend(path);
+  while (recent.size() > 8)
+    recent.removeLast();
+  settings.setValue("recentFiles", recent);
+  updateRecentFilesMenu();
+}
+
+void MainWindow::updateRecentFilesMenu()
+{
+  m_recentFilesMenu->clear();
+  QSettings settings;
+  QStringList recent = settings.value("recentFiles").toStringList();
+  if (recent.isEmpty()) {
+    QAction* empty = m_recentFilesMenu->addAction("(none)");
+    empty->setEnabled(false);
+    return;
+  }
+  for (const QString& path : recent) {
+    QAction* action = m_recentFilesMenu->addAction(path);
+    action->setData(path);
+    connect(action, &QAction::triggered, this, &MainWindow::onOpenRecentFile);
+  }
+}
+
+void MainWindow::onOpenRecentFile()
+{
+  auto* action = qobject_cast<QAction*>(sender());
+  if (!action)
+    return;
+  QString path = action->data().toString();
+  if (!QFileInfo::exists(path)) {
+    QMessageBox::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
+    QSettings settings;
+    QStringList recent = settings.value("recentFiles").toStringList();
+    recent.removeAll(path);
+    settings.setValue("recentFiles", recent);
+    updateRecentFilesMenu();
+    return;
+  }
+  if (!confirmDiscardUnsavedChanges())
+    return;
+  openFile(path);
+}
+
+void MainWindow::onHelpTopicsTriggered()
+{
+  // femm.rc's "Help Topics" opens a compiled .chm; this GUI has no
+  // equivalent yet, so this opens the same LaTeX-built manual.pdf the
+  // classic GUI's installer also ships (see manual/build_manual.bat) --
+  // checked next to the exe first (where a real install would put it),
+  // falling back to the source-tree location for a dev build.
+  QString exeDir = QCoreApplication::applicationDirPath();
+  QStringList candidates = {
+    exeDir + "/manual.pdf",
+    exeDir + "/../manual/manual.pdf",
+    exeDir + "/../../manual/manual.pdf",
+  };
+  for (const QString& candidate : candidates) {
+    if (QFileInfo::exists(candidate)) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(candidate).absoluteFilePath()));
+      return;
+    }
+  }
+  QMessageBox::information(this, "Help Topics",
+      "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
+      "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+void MainWindow::onLicenseTriggered()
+{
+  QString exeDir = QCoreApplication::applicationDirPath();
+  QFile file(exeDir + "/license.txt");
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QMessageBox::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
+    return;
+  }
+  QString text = QString::fromUtf8(file.readAll());
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("License");
+  dlg.resize(600, 500);
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* view = new QPlainTextEdit(text, &dlg);
+  view->setReadOnly(true);
+  layout->addWidget(view);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
+}
+
+void MainWindow::onAboutTriggered()
+{
+  QMessageBox::about(this, "About FEMMX",
+      "<b>FEMMX (Qt)</b> -- Magnetics Editor<br><br>"
+      "A Qt6-based GUI for FEMMX, alongside the classic Windows GUI "
+      "(femmx.exe). Shares the same .fem/.ans file formats and solver "
+      "executables (triangle.exe, fkn.exe).<br><br>"
+      "See File &gt; Switch to Classic GUI to use the original interface.");
 }
 
 void MainWindow::updateTitle()

@@ -1,10 +1,10 @@
 ---
 name: femmqt-qt-gui
-description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI, magnetics-only Phase 1 plus full property editing, shipped and made the default -- what it covers, what it doesn't, and where the design decisions live"
+description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: magnetics-only Phase 1, full property editing, and a menu-by-menu parity pass (zoom/pan/grid/undo/move/copy/scale/mirror, mesh split, post-processor analysis tools) -- what it covers, what it doesn't, and where the design decisions live"
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T11:15:54.591Z
+  modified: 2026-07-19T12:21:05.431Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -117,6 +117,48 @@ alias` (default alias = the `<file>` text verbatim) -- `<file>icons/
 foo.svg</file>` under `prefix="/icons"` resolves to `:/icons/icons/
 foo.svg`, not `:/icons/foo.svg`; use an explicit `alias="foo.svg"` to
 get the shorter runtime path.
+
+**Update (2026-07-19, later same day): menu-by-menu parity pass,
+committed on `new_features`.** User asked directly whether every classic-
+GUI button had been covered -- it hadn't (checked `femm.rc`'s actual menu
+resources for the real gap list). Added: geometry-editor Zoom/Pan/Grid,
+single-level Undo (snapshot-before-destructive-op, matching classic's own
+`UpdateUndo`/`Undo`), Move/Copy/Scale/Mirror on selection, Show Block
+Names, Mesh menu split (Create/Show/Purge, separate from Solve --
+`SolveRunner::mesh()`/`MeshOverlay.h`), Show Orphans, simplified Group
+mode, Help/Recent Files; post-processor Contour/Vector plot modes
+alongside Density (`MeshSolutionItem::PlotMode`), Point/Contour/Area
+analysis tools, Plot X-Y (text table, no charting lib linked), Problem
+Info. Full details and exact scope trims (Create Radius/Open Boundary/
+Materials Library/Preferences/Dark Theme toggle/DXF/Print/Lua Console all
+deliberately deferred, documented) are in the plan doc's "Round 3"
+section -- read that before extending any of this further. Contour/
+Vector plots verified against a real solved file (straight wire) with
+textbook-correct output (concentric equipotential circles; tangential
+right-hand-rule B field) -- high confidence. Point/Area tools share the
+same verified interpolation code but weren't independently click-tested
+(see the UI-automation note below -- the host was in active concurrent
+use during this round, confirmed via `win32gui.GetForegroundWindow()`
+changing mid-script, so heavy interactive automation was deliberately
+scaled back in favor of code review + build verification).
+
+**`.qrc` resource paths and `CMAKE_AUTORCC` gotchas** (from the toolbar
+icons work earlier the same day): a `.qrc`'s runtime resource path is
+`prefix + "/" + alias` where alias defaults to the `<file>` element's
+text verbatim -- `<file>icons/foo.svg</file>` under `prefix="/icons"`
+resolves to `:/icons/icons/foo.svg`, not the shorter path you'd expect;
+use an explicit `alias="foo.svg"` to get `:/icons/foo.svg`. Separately,
+`qt_standard_project_setup()` does NOT reliably enable `CMAKE_AUTORCC` --
+a `.qrc` listed in `qt_add_executable()`'s sources silently never got
+compiled into a `qrc_*.cpp` until `set(CMAKE_AUTORCC ON)` was added
+explicitly before the call, and the runtime symptom (`QFile::open(":/...")`
+failing) doesn't point at the build system at all, easy to chase in the
+wrong place. Also: this repo's `.gitignore` has a standalone `Icon?` line
+(macOS Finder's cursed `Icon\r` custom-folder-icon convention) that
+collides case-insensitively with any 5-letter directory literally named
+`icons` on Windows git (`core.ignorecase`) -- new icon assets live in
+`femmqt/toolbar_icons/`, not `femmqt/icons/`, to dodge this; don't touch
+the `Icon?` rule itself, it's legitimate elsewhere.
 
 **Double-click UI-automation gotcha (test methodology, not an app bug)**:
 `pywinauto.mouse.double_click()` / `click_input(double=True)` did not
