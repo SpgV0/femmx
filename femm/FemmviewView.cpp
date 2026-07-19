@@ -4922,6 +4922,69 @@ void CFemmviewView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
   pCmdUI->SetCheck(DarkMode::IsEnabled());
 }
 
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+// added for the new femmqt.exe Qt GUI's magnetics-only Phase 1 -- see
+// CFemmeView::OnSwitchToQtGui (femm/FemmeView.cpp) for the full rationale;
+// this is the post-processor's copy of the same logic. No save-first step
+// here: this view is looking at an already-solved .ans on disk, not
+// editing anything that could be unsaved.
+void CFemmviewView::OnSwitchToQtGui()
+{
+  CFemmviewDoc* TheDoc = GetDocument();
+  ASSERT_VALID(TheDoc);
+
+  CString pn = TheDoc->GetPathName();
+  if (pn.GetLength() == 0) {
+    MsgBox("This view has no file on disk to hand off to the Qt GUI.");
+    return;
+  }
+
+  CString fname = BinDir + "femm.cfg";
+  CStringArray lines;
+  BOOL bReplaced = FALSE;
+  FILE* fp = fopen(fname, "rt");
+  if (fp != NULL) {
+    char s[1024];
+    while (fgets(s, 1024, fp) != NULL) {
+      CString line(s);
+      line.TrimRight("\r\n");
+      CString trimmed = line;
+      trimmed.TrimLeft();
+      if (_strnicmp(trimmed, "<PreferredGUI>", 14) == 0) {
+        lines.Add("<PreferredGUI>    = 1");
+        bReplaced = TRUE;
+      } else {
+        lines.Add(line);
+      }
+    }
+    fclose(fp);
+  }
+  if (!bReplaced)
+    lines.Add("<PreferredGUI>    = 1");
+
+  fp = fopen(fname, "wt");
+  if (fp != NULL) {
+    for (int i = 0; i < lines.GetSize(); i++)
+      fprintf(fp, "%s\n", (const char*)lines[i]);
+    fclose(fp);
+  }
+
+  char CommandLine[1024];
+  sprintf(CommandLine, "\"%sfemmqt.exe\" \"%s\"", (const char*)BinDir, (const char*)pn);
+  STARTUPINFO StartupInfo = { 0 };
+  PROCESS_INFORMATION ProcessInfo;
+  StartupInfo.cb = sizeof(STARTUPINFO);
+  if (!CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
+          0, NULL, NULL, &StartupInfo, &ProcessInfo)) {
+    MsgBox("Couldn't find or start femmqt.exe next to femm.exe.");
+    return;
+  }
+  CloseHandle(ProcessInfo.hProcess);
+  CloseHandle(ProcessInfo.hThread);
+
+  AfxGetMainWnd()->PostMessage(WM_CLOSE);
+}
+
 void CFemmviewView::OnVplot()
 {
   // TODO: Add your command handler code here

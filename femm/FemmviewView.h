@@ -245,6 +245,7 @@ class CFemmviewView : public CView {
   afx_msg void OnViewShownames();
   afx_msg void OnViewDarkTheme();
   afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
+  afx_msg void OnSwitchToQtGui();
   afx_msg void OnVplot();
   afx_msg void OnSize(UINT nType, int cx, int cy);
   //}}AFX_MSG

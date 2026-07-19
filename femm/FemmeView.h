@@ -179,6 +179,7 @@ class CFemmeView : public CView {
   afx_msg void OnMakeABC();
   afx_msg void OnViewDarkTheme();
   afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
+  afx_msg void OnSwitchToQtGui();
   //}}AFX_MSG
   DECLARE_MESSAGE_MAP()
   public:

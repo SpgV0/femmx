@@ -116,6 +116,7 @@ ON_COMMAND(ID_FILE_PRINT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_DIRECT, CView::OnFilePrint)
 ON_COMMAND(ID_FILE_PRINT_PREVIEW, CView::OnFilePrintPreview)
 ON_COMMAND(ID_EDIT_CREATEOPENBOUNDARY, &CFemmeView::OnMakeABC)
+ON_COMMAND(ID_VIEW_SWITCHTOQT, OnSwitchToQtGui)
 END_MESSAGE_MAP()
 
 CFemmeView::~CFemmeView()
@@ -3728,4 +3729,75 @@ void CFemmeView::OnViewDarkTheme()
 void CFemmeView::OnUpdateViewDarkTheme(CCmdUI* pCmdUI)
 {
   pCmdUI->SetCheck(DarkMode::IsEnabled());
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+// added for the new femmqt.exe Qt GUI's magnetics-only Phase 1 -- writes
+// <PreferredGUI> to femm.cfg (mirroring the flat "<Tag> = value" format
+// femm/GeneralPrefs.cpp's CGeneralPrefs::ScanPrefs/WritePrefs already use
+// for the 5 keys it knows about, but read-modify-write here instead of
+// truncate-and-rewrite, so this doesn't silently drop those 5 keys if
+// femm.cfg already has them and this runs first), launches femmqt.exe
+// (found the same way fkn.exe/triangle.exe already are, via BinDir --
+// see OnMenuAnalyze above), and closes this app. Requires the document
+// to already be saved to disk, matching OnMenuAnalyze's own
+// pn.GetLength()==0 check just above -- the other process needs a real
+// file path, not an in-memory handoff.
+void CFemmeView::OnSwitchToQtGui()
+{
+  CFemmeDoc* TheDoc = GetDocument();
+  ASSERT_VALID(TheDoc);
+
+  CString pn = TheDoc->GetPathName();
+  if (pn.GetLength() == 0) {
+    MsgBox("A data file must be loaded,\nor the current data must saved.");
+    return;
+  }
+  if (TheDoc->OnSaveDocument(pn) == FALSE)
+    return;
+
+  CString fname = BinDir + "femm.cfg";
+  CStringArray lines;
+  BOOL bReplaced = FALSE;
+  FILE* fp = fopen(fname, "rt");
+  if (fp != NULL) {
+    char s[1024];
+    while (fgets(s, 1024, fp) != NULL) {
+      CString line(s);
+      line.TrimRight("\r\n");
+      CString trimmed = line;
+      trimmed.TrimLeft();
+      if (_strnicmp(trimmed, "<PreferredGUI>", 14) == 0) {
+        lines.Add("<PreferredGUI>    = 1");
+        bReplaced = TRUE;
+      } else {
+        lines.Add(line);
+      }
+    }
+    fclose(fp);
+  }
+  if (!bReplaced)
+    lines.Add("<PreferredGUI>    = 1");
+
+  fp = fopen(fname, "wt");
+  if (fp != NULL) {
+    for (int i = 0; i < lines.GetSize(); i++)
+      fprintf(fp, "%s\n", (const char*)lines[i]);
+    fclose(fp);
+  }
+
+  char CommandLine[1024];
+  sprintf(CommandLine, "\"%sfemmqt.exe\" \"%s\"", (const char*)BinDir, (const char*)pn);
+  STARTUPINFO StartupInfo = { 0 };
+  PROCESS_INFORMATION ProcessInfo;
+  StartupInfo.cb = sizeof(STARTUPINFO);
+  if (!CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
+          0, NULL, NULL, &StartupInfo, &ProcessInfo)) {
+    MsgBox("Couldn't find or start femmqt.exe next to femm.exe.");
+    return;
+  }
+  CloseHandle(ProcessInfo.hProcess);
+  CloseHandle(ProcessInfo.hThread);
+
+  AfxGetMainWnd()->PostMessage(WM_CLOSE);
 }

@@ -15,6 +15,11 @@
 // fkn.exe into femm.exe (CMainFrame::m_LoadMonitor) so it can run
 // continuously across solves instead of being tied to one fkn.exe
 // process; see femm/LoadMonitorDlg.h.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+// added ID_VIEW_SWITCHTOQT for the new femmqt.exe Qt GUI's File-menu
+// "Switch to Qt GUI" entry (magnetics pre-/post-processor only, matching
+// the Qt GUI's current magnetics-only scope) -- see FemmeView.cpp/
+// FemmviewView.cpp's OnSwitchToQtGui.
 #define IDR_MAINFRAME 100
 #define IDR_FEMMETYPE 101
 #define IDR_BELADRAWTYPE 102
@@ -859,6 +864,7 @@
 #define ID_BUTTON32854 32854
 #define ID_VIEW_DARKTHEME 32855
 #define ID_VIEW_LOADMONITOR 32856
+#define ID_VIEW_SWITCHTOQT 32857
 
 #define IDD_LOADMONITOR 238
 #define IDC_LOADCHART 1494

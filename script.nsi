@@ -27,6 +27,22 @@
 ; branding/version update + versioned-PDF CI artifact, load monitor
 ; window widened to 1000s, and a redraw-corruption fix for pan/zoom
 ; during large-mesh drawing -- see CHANGELOG.md).
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+; packaged the new femmqt.exe (Qt GUI, magnetics-only Phase 1) and its Qt6
+; runtime (DLLs + plugin subfolders, deployed into flat bin\ by
+; femmqt/CMakeLists.txt's windeployqt install(CODE ...) step -- see that
+; file for why it's flat bin\, not bin\plain\: this whole installer build
+; runs as part of the same `cmake --build . --target install` invocation
+; that populates bin\ in the first place, before build_femmx.ps1's later
+; bin\ -> bin\plain\/bin\cuda\ move ever happens). Made it the default
+; Start Menu shortcut target (FEMMX.lnk); the classic MFC GUI stays
+; installed and reachable via a second shortcut (FEMMX (Classic).lnk),
+; per "keep the existing GUI as an option". femm.ActiveFEMM's COM
+; automation registration deliberately still points at femmx.exe (below,
+; unchanged) -- femmqt.exe has no COM automation support yet, so pointing
+; COM at it would break existing pyfemm/Octave/Mathematica/Scilab scripts.
+; All the new File lines are /nonfatal, matching this file's existing CUDA
+; DLL precedent, so a build with SKIP_femmqt set still packages cleanly.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -86,6 +102,7 @@ Section
     File "bin\condlib.dat"
     File "bin\csolv.exe"
     File "bin\femmx.exe"
+    File /nonfatal "bin\femmqt.exe"
     File "bin\femmplot.exe"
     File "bin\fkn.exe"
     File "bin\heatlib.dat"
@@ -104,6 +121,39 @@ Section
     File /nonfatal "bin\cudart64_*.dll"
     File /nonfatal "bin\cusparse64_*.dll"
     File /nonfatal "bin\nvJitLink_*.dll"
+
+    # femmqt.exe's Qt6 runtime, deployed into flat bin\ by
+    # femmqt/CMakeLists.txt's windeployqt install(CODE ...) step. Wildcarded
+    # (not individually named) so this doesn't need to track exactly which
+    # DLLs/plugins windeployqt decides a given Qt version needs -- same
+    # reasoning as the CUDA DLLs above. /nonfatal throughout: a build with
+    # SKIP_femmqt set (or a Qt-less machine) has none of this in bin\, and
+    # the installer should still package everything else cleanly.
+    File /nonfatal "bin\Qt6Core.dll"
+    File /nonfatal "bin\Qt6Gui.dll"
+    File /nonfatal "bin\Qt6Widgets.dll"
+    File /nonfatal "bin\Qt6Network.dll"
+    File /nonfatal "bin\Qt6Svg.dll"
+    File /nonfatal "bin\opengl32sw.dll"
+    File /nonfatal "bin\D3Dcompiler_47.dll"
+    File /nonfatal "bin\dxcompiler.dll"
+    File /nonfatal "bin\dxil.dll"
+
+    SetOutPath "$INSTDIR\bin\generic"
+    File /nonfatal "bin\generic\*.dll"
+    SetOutPath "$INSTDIR\bin\iconengines"
+    File /nonfatal "bin\iconengines\*.dll"
+    SetOutPath "$INSTDIR\bin\imageformats"
+    File /nonfatal "bin\imageformats\*.dll"
+    SetOutPath "$INSTDIR\bin\networkinformation"
+    File /nonfatal "bin\networkinformation\*.dll"
+    SetOutPath "$INSTDIR\bin\platforms"
+    File /nonfatal "bin\platforms\*.dll"
+    SetOutPath "$INSTDIR\bin\styles"
+    File /nonfatal "bin\styles\*.dll"
+    SetOutPath "$INSTDIR\bin\tls"
+    File /nonfatal "bin\tls\*.dll"
+    SetOutPath "$INSTDIR\bin"
 
     # Mathematica interface -- see mathfemm/usage.nb for setup instructions
     SetOutPath "$INSTDIR\mathfemm"
@@ -133,7 +183,13 @@ Section
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     SetOutPath "$STARTMENU\Programs\${PROJECT_NAME}"
-    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmx.exe"
+    ; FEMMX.lnk is the primary/default icon -- Qt GUI, per user request
+    ; ("make the qt gui the default gui when starting the program"). The
+    ; classic MFC GUI remains fully installed and reachable via its own
+    ; shortcut, matching "keep the existing GUI as an option" -- this is
+    ; purely a Start Menu default, not a removal.
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmqt.exe"
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Classic).lnk" "$INSTDIR\bin\femmx.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
@@ -158,6 +214,7 @@ Section "uninstall"
 
     # remove the links from the start menu
     Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk"
+    Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Classic).lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk"
     RMDir "$STARTMENU\Programs\${PROJECT_NAME}"
 
