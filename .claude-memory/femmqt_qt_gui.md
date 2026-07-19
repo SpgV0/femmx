@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T16:00:26.997Z
+  modified: 2026-07-19T16:33:02.906Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -346,6 +346,32 @@ formulas themselves:
    file -- byte-identical to the classic GUI's displayed values (Total
    current, Voltage Drop, Flux Linkage, Flux/Current, Voltage/Current,
    Power all matched).
+
+**Round 7 (2026-07-19, same day, "skip the lua console, make sure
+everything else is added... show coordinates when drawing... and the
+value of the field when hovering"), committed `65df00f` on
+`new_features` (pushed).** Two explicitly-requested live status-bar
+readouts, plus a fresh femm.rc audit now that the big deferred-list items
+were done (found real remaining gaps: Print Setup was missing in both
+windows, Print/Print Preview/Print Setup were missing *entirely* from
+the Solution Viewer, Delete/Open Selected had no menu items -- keyboard/
+double-click only -- and the Solution Viewer had no read-only "BH
+Curves" viewer distinct from the geometry editor's editable one).
+- **Mouse-position readout** (geometry editor): `GeometryScene::
+  mousePositionChanged` emitted from `mouseMoveEvent` (grid-snapped),
+  driving a permanent status-bar `QLabel` in `MainWindow`. Needed
+  `GeometryView::setMouseTracking(true)` -- without it, `QGraphicsScene::
+  mouseMoveEvent` only fires while a button is held (dragging), not on
+  plain hover.
+- **Field-value-on-hover readout** (Solution Viewer): `SolutionGraphicsView::
+  hoveredAt`, reusing the Point tool's own `findContainingElement`/
+  `interpolateA`. Throttled to ~20 updates/sec (`QElapsedTimer`) --
+  `findContainingElement` is a documented linear scan over every mesh
+  element, fine for one deliberate click but not for firing on every
+  pixel of mouse movement across a multi-million-element mesh.
+- Verified live for both: screenshotted the status bar mid-hover over the
+  straight-wire test file -- showed live x/y plus `|B|`/`A` matching the
+  known-correct field pattern at that point.
 
 **Lesson, worth remembering beyond this one feature**: when a classic-
 FEMM formula involves `LengthConv`/unit conversions, do not trust a
