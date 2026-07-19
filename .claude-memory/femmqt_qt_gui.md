@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T17:02:52.457Z
+  modified: 2026-07-19T17:41:33.754Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -422,6 +422,60 @@ icons), committed `f191e1a` on `new_features` (pushed).**
   mode (icons correctly re-tint), the floating tooltips tracking the
   cursor with live text in both windows, and the fixed dark-theme dialog
   fields (white-on-dark, confirmed before/after the Fusion-style fix).
+
+**Round 9 (2026-07-19, same day, 3 more direct requests: 2-second hover
+help text on every icon, "make sure all icons have the implemented
+functionality and test it", and boundary-condition edge coloring),
+committed `1accc3c` on `new_features` (pushed).**
+- **2-second hover tooltips** (`HoverTooltip.h/.cpp`): Qt's own tooltip
+  appears almost instantly (~700ms) -- this suppresses that (`QEvent::
+  ToolTip` swallowed in an event filter) and shows the same text itself
+  via `QToolTip::showText()` from an `Enter`-triggered 2000ms `QTimer`
+  instead. Every toolbar action in both windows got an explicit
+  `setToolTip()` -- text pulled from `femm.rc`'s own `STRINGTABLE`
+  where a description exists for that command ID (confirmed most core
+  edit/mesh/zoom/pan/grid commands DO have one there), written fresh for
+  Qt-only commands (Dark Theme, Load Monitor, Circuit Props, plot
+  modes) that have no classic equivalent. Verified by screenshotting a
+  button at 0.8s (nothing) and 2.2s (tooltip visible, correct text).
+- **Comprehensive click-through verification**: opened a real test file
+  and clicked every single toolbar button in both windows, checking for
+  a REAL effect (dialog opened with sane content, geometry actually
+  changed, files actually written), not just "didn't crash". Caught and
+  fixed a genuine TEST-SCRIPT bug worth remembering for next time: using
+  `win32gui.GetWindowRect` (full window incl. title bar) instead of the
+  client area for click coordinates silently misaligned every click by
+  the title-bar height -- fixed by using `win32gui.ClientToScreen(hwnd,
+  (0,0))` as the coordinate origin instead. Also hit a **modal-dialog-
+  eats-later-clicks** trap: a `QDialog::exec()`-opened dialog left open
+  by an earlier test step silently absorbed every subsequent synthetic
+  click in the same script (no crash, no visible effect) -- looked
+  exactly like "button does nothing" until checking for a stray already-
+  open window. Confirmed genuinely working, with real evidence, not just
+  a click: Create Mesh (fresh `.node`/`.ele`/`.poly`/`.pbc` files with
+  matching timestamps), Zoom In (5 clicks visibly revealed individual
+  mesh triangles), Zoom Window (a real multi-step rubber-band drag
+  correctly reframed the view -- a single-jump `SetCursorPos` drag
+  without intermediate move steps did NOT register with Qt, worth
+  remembering: synthetic drags need multiple intermediate `SetCursorPos`
+  calls, not just press-at-A/release-at-B), Delete+Undo (node removed,
+  then restored), Solve (produced a real solved `.ans`, auto-opened the
+  Solution Viewer), and in the Solution Viewer: Point/Contours/Areas
+  (each produced correct results, all three echoed to the Output
+  Window), Circuit Props (reproduced this session's earlier-validated
+  reference numbers exactly, again), Density/Contour/Vector plot mode
+  (Vector mode visibly showed real directional arrows).
+- **Boundary-condition edge coloring** (`AppTheme::boundaryEdgeColor()`,
+  wired into `GeometryScene::addSegmentItem`/`addArcItem`): a segment or
+  arc with `boundaryMarker != 0` now renders in a distinct orange shade
+  instead of its normal segment/arc color -- classic FEMM has no
+  equivalent, purely a modern-CAD-style affordance. Free-riding on
+  already-existing behavior: `MainWindow::onEntityDoubleClicked` already
+  unconditionally calls `m_scene->rebuild()` after any accepted property
+  edit, so this recolors automatically the moment a boundary condition
+  is assigned/cleared via the properties dialog -- no new refresh logic
+  needed. Verified live against a file with a real Dirichlet ("A=0")
+  boundary on its outer arc -- rendered orange as expected.
 
 **Lesson, worth remembering beyond this one feature**: when a classic-
 FEMM formula involves `LengthConv`/unit conversions, do not trust a
