@@ -9,6 +9,7 @@
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
 #include "GuiSwitch.h"
+#include "HoverTooltip.h"
 #include "IconTheme.h"
 #include "MainWindow.h"
 
@@ -564,30 +565,38 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   toolBar->setIconSize(QSize(20, 20));
   toolBar->addAction(m_pointToolAction);
   m_pointToolAction->setIcon(IconTheme::themedToolIcon(":/icons/point_properties.svg"));
+  m_pointToolAction->setToolTip("Point Properties -- click a point on the mesh to see the field value there");
   m_themedActions.push_back({ m_pointToolAction, ":/icons/point_properties.svg" });
   toolBar->addAction(m_contourToolAction);
   m_contourToolAction->setIcon(IconTheme::themedToolIcon(":/icons/contours.svg"));
+  m_contourToolAction->setToolTip("Contours -- click points to trace a contour for length/integral calculations");
   m_themedActions.push_back({ m_contourToolAction, ":/icons/contours.svg" });
   toolBar->addAction(m_areaToolAction);
   m_areaToolAction->setIcon(IconTheme::themedToolIcon(":/icons/areas.svg"));
+  m_areaToolAction->setToolTip("Areas -- click inside a region to compute its area and average field");
   m_themedActions.push_back({ m_areaToolAction, ":/icons/areas.svg" });
   toolBar->addSeparator();
-  addThemedAction(toolBar, ":/icons/plot_xy.svg", "Plot X-Y", &SolutionWindow::onPlotXYTriggered);
-  addThemedAction(toolBar, ":/icons/integrate.svg", "Integrate", &SolutionWindow::onIntegrateTriggered);
-  addThemedAction(toolBar, ":/icons/circuit_props.svg", "Circuit Props", &SolutionWindow::onCircuitPropsTriggered);
+  addThemedAction(toolBar, ":/icons/plot_xy.svg", "Plot X-Y", "Sample field values along the current contour", &SolutionWindow::onPlotXYTriggered);
+  addThemedAction(toolBar, ":/icons/integrate.svg", "Integrate", "Compute the line integral along the current contour", &SolutionWindow::onIntegrateTriggered);
+  addThemedAction(toolBar, ":/icons/circuit_props.svg", "Circuit Props", "View total current, voltage drop and flux linkage for a circuit", &SolutionWindow::onCircuitPropsTriggered);
   toolBar->addSeparator();
   toolBar->addAction(showMeshAction);
   showMeshAction->setIcon(IconTheme::themedToolIcon(":/icons/mesh.svg"));
+  showMeshAction->setToolTip("Show Mesh -- overlay the finite element mesh");
   m_themedActions.push_back({ showMeshAction, ":/icons/mesh.svg" });
   toolBar->addAction(contourAction);
   contourAction->setIcon(IconTheme::themedToolIcon(":/icons/contour_plot.svg"));
+  contourAction->setToolTip("Contour Plot -- draw equipotential (constant A) lines");
   m_themedActions.push_back({ contourAction, ":/icons/contour_plot.svg" });
   toolBar->addAction(densityAction);
   densityAction->setIcon(IconTheme::themedToolIcon(":/icons/density_plot.svg"));
+  densityAction->setToolTip("Density Plot -- color-shaded field magnitude");
   m_themedActions.push_back({ densityAction, ":/icons/density_plot.svg" });
   toolBar->addAction(vectorAction);
   vectorAction->setIcon(IconTheme::themedToolIcon(":/icons/vector_plot.svg"));
+  vectorAction->setToolTip("Vector Plot -- arrows showing field direction");
   m_themedActions.push_back({ vectorAction, ":/icons/vector_plot.svg" });
+  HoverTooltip::installOn(toolBar);
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &SolutionWindow::onHelpTopicsTriggered);
@@ -1318,9 +1327,10 @@ void SolutionWindow::updateRecentFilesMenu()
   }
 }
 
-QAction* SolutionWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (SolutionWindow::*slot)())
+QAction* SolutionWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (SolutionWindow::*slot)())
 {
   QAction* action = bar->addAction(IconTheme::themedToolIcon(iconPath), text, this, slot);
+  action->setToolTip(tooltip);
   m_themedActions.push_back({ action, iconPath });
   return action;
 }

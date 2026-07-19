@@ -170,7 +170,7 @@ class SolutionWindow : public QMainWindow {
   void updateContourVisual();
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
-  QAction* addThemedAction(class QToolBar* bar, const QString& iconPath, const QString& text, void (SolutionWindow::*slot)());
+  QAction* addThemedAction(class QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (SolutionWindow::*slot)());
   void refreshToolbarIcons();
   void showContourIntegral();
   // Echoes a Point/Contour/Area result into the persistent Output Window

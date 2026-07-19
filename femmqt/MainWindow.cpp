@@ -12,6 +12,7 @@
 #include "FemmProblemEdit.h"
 #include "FemxFileIO.h"
 #include "GuiSwitch.h"
+#include "HoverTooltip.h"
 #include "IconTheme.h"
 #include "LoadMonitorDialog.h"
 #include "MaterialLibraryDialog.h"
@@ -231,57 +232,68 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->setExclusive(true);
 
   m_selectToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/select.svg"), "Select");
+  m_selectToolAction->setToolTip("Select -- click or rubber-band-select existing geometry to edit it");
   m_selectToolAction->setCheckable(true);
   m_selectToolAction->setChecked(true);
   toolGroup->addAction(m_selectToolAction);
   connect(m_selectToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Select); });
 
   m_addNodeToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_node.svg"), "Add Node");
+  m_addNodeToolAction->setToolTip("Add Node -- click to place a new node");
   m_addNodeToolAction->setCheckable(true);
   toolGroup->addAction(m_addNodeToolAction);
   connect(m_addNodeToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddNode); });
 
   m_addSegmentToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_segment.svg"), "Add Segment");
+  m_addSegmentToolAction->setToolTip("Add Segment -- click two nodes to connect them with a straight line");
   m_addSegmentToolAction->setCheckable(true);
   toolGroup->addAction(m_addSegmentToolAction);
   connect(m_addSegmentToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddSegment); });
 
   m_addArcToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_arc.svg"), "Add Arc");
+  m_addArcToolAction->setToolTip("Add Arc -- click two nodes to connect them with a circular arc");
   m_addArcToolAction->setCheckable(true);
   toolGroup->addAction(m_addArcToolAction);
   connect(m_addArcToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddArc); });
 
   m_addBlockLabelToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_block_label.svg"), "Add Block Label");
+  m_addBlockLabelToolAction->setToolTip("Add Block Label -- click to mark a region and assign it a material");
   m_addBlockLabelToolAction->setCheckable(true);
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
+  HoverTooltip::installOn(toolBar);
 
   // Matches femm.rc's IDR_FEMMETYPE toolbar's edit/mesh/analyze section --
   // every one of these already exists as a menu item above; this just
   // gives the common ones a toolbar button too (per direct user request:
   // the classic GUI's toolbars are icon-driven, not text-menu-only).
+  // Tooltip text matches femm.rc's own STRINGTABLE descriptions for these
+  // command IDs where one exists, adapted lightly for wording that isn't
+  // Qt-specific-command-ID-shaped.
   QToolBar* editToolBar = addToolBar("Edit");
   editToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   editToolBar->setIconSize(QSize(20, 20));
-  addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", &MainWindow::onUndoTriggered);
-  addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", &MainWindow::onOpenSelectedTriggered);
-  addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", &MainWindow::onDeleteSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", "Undo the last operation", &MainWindow::onUndoTriggered);
+  addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", "Open the properties dialog for the currently selected entity", &MainWindow::onOpenSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", "Delete the selected objects", &MainWindow::onDeleteSelectedTriggered);
   editToolBar->addSeparator();
-  addThemedAction(editToolBar, ":/icons/move.svg", "Move", &MainWindow::onMoveSelectedTriggered);
-  addThemedAction(editToolBar, ":/icons/copy.svg", "Copy", &MainWindow::onCopySelectedTriggered);
-  addThemedAction(editToolBar, ":/icons/scale.svg", "Scale", &MainWindow::onScaleSelectedTriggered);
-  addThemedAction(editToolBar, ":/icons/mirror.svg", "Mirror", &MainWindow::onMirrorSelectedTriggered);
-  addThemedAction(editToolBar, ":/icons/create_radius.svg", "Create Radius", &MainWindow::onCreateRadiusTriggered);
-  addThemedAction(editToolBar, ":/icons/open_boundary.svg", "Create Open Boundary", &MainWindow::onCreateOpenBoundaryTriggered);
+  addThemedAction(editToolBar, ":/icons/move.svg", "Move", "Move the selected objects", &MainWindow::onMoveSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/copy.svg", "Copy", "Copy the selected objects", &MainWindow::onCopySelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/scale.svg", "Scale", "Scale the selected objects", &MainWindow::onScaleSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/mirror.svg", "Mirror", "Mirror the selected objects across a line", &MainWindow::onMirrorSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/create_radius.svg", "Create Radius", "Convert a sharp corner into a radius", &MainWindow::onCreateRadiusTriggered);
+  addThemedAction(editToolBar, ":/icons/open_boundary.svg", "Create Open Boundary", "Create an asymptotic (Kelvin-transform) open boundary around the model", &MainWindow::onCreateOpenBoundaryTriggered);
   editToolBar->addSeparator();
-  addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", &MainWindow::onSelectByGroupTriggered);
+  addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", "Select all entities belonging to a numbered group", &MainWindow::onSelectByGroupTriggered);
+  HoverTooltip::installOn(editToolBar);
 
   QToolBar* meshToolBar = addToolBar("Mesh");
   meshToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   meshToolBar->setIconSize(QSize(20, 20));
-  addThemedAction(meshToolBar, ":/icons/mesh.svg", "Create Mesh", &MainWindow::onCreateMeshTriggered);
-  addThemedAction(meshToolBar, ":/icons/solve.svg", "Solve", &MainWindow::onSolveTriggered);
-  addThemedAction(meshToolBar, ":/icons/view_results.svg", "View Results", &MainWindow::onViewResultsTriggered);
+  addThemedAction(meshToolBar, ":/icons/mesh.svg", "Create Mesh", "Run the mesh generator", &MainWindow::onCreateMeshTriggered);
+  addThemedAction(meshToolBar, ":/icons/solve.svg", "Solve", "Run the field analysis (mesh, then solve)", &MainWindow::onSolveTriggered);
+  addThemedAction(meshToolBar, ":/icons/view_results.svg", "View Results", "View the results of the analysis", &MainWindow::onViewResultsTriggered);
+  HoverTooltip::installOn(meshToolBar);
 
   // Matches femm.rc's separate IDR_LEFTBAR (zoom/pan/grid, docked on the
   // left in classic FEMM) -- kept as its own left-docked toolbar here
@@ -292,15 +304,15 @@ MainWindow::MainWindow(QWidget* parent)
   navToolBar->setOrientation(Qt::Vertical);
   navToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   navToolBar->setIconSize(QSize(20, 20));
-  addThemedAction(navToolBar, ":/icons/zoom_in.svg", "Zoom In", &MainWindow::onZoomIn);
-  addThemedAction(navToolBar, ":/icons/zoom_out.svg", "Zoom Out", &MainWindow::onZoomOut);
-  addThemedAction(navToolBar, ":/icons/zoom_natural.svg", "Natural", &MainWindow::onZoomNatural);
-  addThemedAction(navToolBar, ":/icons/zoom_window.svg", "Window", &MainWindow::onZoomWindowTriggered);
+  addThemedAction(navToolBar, ":/icons/zoom_in.svg", "Zoom In", "Zoom in", &MainWindow::onZoomIn);
+  addThemedAction(navToolBar, ":/icons/zoom_out.svg", "Zoom Out", "Zoom out", &MainWindow::onZoomOut);
+  addThemedAction(navToolBar, ":/icons/zoom_natural.svg", "Natural", "Zoom to fit the entire drawing", &MainWindow::onZoomNatural);
+  addThemedAction(navToolBar, ":/icons/zoom_window.svg", "Window", "Drag a rectangle to zoom into", &MainWindow::onZoomWindowTriggered);
   navToolBar->addSeparator();
-  addThemedAction(navToolBar, ":/icons/pan_up.svg", "Scroll Up", &MainWindow::onPanUp);
-  addThemedAction(navToolBar, ":/icons/pan_down.svg", "Scroll Down", &MainWindow::onPanDown);
-  addThemedAction(navToolBar, ":/icons/pan_left.svg", "Scroll Left", &MainWindow::onPanLeft);
-  addThemedAction(navToolBar, ":/icons/pan_right.svg", "Scroll Right", &MainWindow::onPanRight);
+  addThemedAction(navToolBar, ":/icons/pan_up.svg", "Scroll Up", "Move the view up", &MainWindow::onPanUp);
+  addThemedAction(navToolBar, ":/icons/pan_down.svg", "Scroll Down", "Move the view down", &MainWindow::onPanDown);
+  addThemedAction(navToolBar, ":/icons/pan_left.svg", "Scroll Left", "Move the view left", &MainWindow::onPanLeft);
+  addThemedAction(navToolBar, ":/icons/pan_right.svg", "Scroll Right", "Move the view right", &MainWindow::onPanRight);
   navToolBar->addSeparator();
   // Reuses the exact same QAction objects the Grid menu above already
   // created (not copies) so the toolbar buttons and menu checkmarks for
@@ -309,11 +321,14 @@ MainWindow::MainWindow(QWidget* parent)
   // manually here since addThemedAction() always creates a fresh action).
   navToolBar->addAction(showGridAction);
   showGridAction->setIcon(IconTheme::themedToolIcon(":/icons/show_grid.svg"));
+  showGridAction->setToolTip("Show grid points");
   m_themedActions.push_back({ showGridAction, ":/icons/show_grid.svg" });
   navToolBar->addAction(snapGridAction);
   snapGridAction->setIcon(IconTheme::themedToolIcon(":/icons/snap_grid.svg"));
+  snapGridAction->setToolTip("Snap new points and drags to the nearest grid point");
   m_themedActions.push_back({ snapGridAction, ":/icons/snap_grid.svg" });
-  addThemedAction(navToolBar, ":/icons/set_grid.svg", "Set Grid", &MainWindow::onSetGridTriggered);
+  addThemedAction(navToolBar, ":/icons/set_grid.svg", "Set Grid", "Change the grid spacing", &MainWindow::onSetGridTriggered);
+  HoverTooltip::installOn(navToolBar);
 
   m_positionLabel = new QLabel(this);
   m_positionLabel->setMinimumWidth(160);
@@ -1380,9 +1395,10 @@ void MainWindow::updateTitle()
   setWindowTitle(QString("FEMMX (Qt) - Magnetics - %1%2").arg(name, m_dirty ? "*" : ""));
 }
 
-QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (MainWindow::*slot)())
+QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)())
 {
   QAction* action = bar->addAction(IconTheme::themedToolIcon(iconPath), text, this, slot);
+  action->setToolTip(tooltip);
   m_themedActions.push_back({ action, iconPath });
   return action;
 }

@@ -93,10 +93,11 @@ class MainWindow : public QMainWindow {
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
   void refreshToolbarIcons();
-  // Adds a toolbar action wired to `slot` and remembers its icon path so
-  // refreshToolbarIcons() can re-tint it after a theme change -- see that
-  // function's comment for why a plain addAction() isn't enough.
-  QAction* addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (MainWindow::*slot)());
+  // Adds a toolbar action wired to `slot`, remembers its icon path so
+  // refreshToolbarIcons() can re-tint it after a theme change, and sets
+  // an explicit tooltip (shown after a 2-second hover via HoverTooltip,
+  // installed separately once a toolbar's buttons are all in place).
+  QAction* addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)());
 
   GeometryScene* m_scene = nullptr;
   GeometryView* m_view = nullptr;

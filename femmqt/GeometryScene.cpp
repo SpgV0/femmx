@@ -236,7 +236,8 @@ void GeometryScene::addNodeItem(int index)
 
 void GeometryScene::addSegmentItem(int index)
 {
-  QPen pen(AppTheme::segmentColor());
+  const FemmSegment& s = m_problem->segments[index];
+  QPen pen(s.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::segmentColor());
   pen.setCosmetic(true);
   auto* item = addLine(QLineF(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -244,14 +245,14 @@ void GeometryScene::addSegmentItem(int index)
   item->setData(IndexKey, index);
   updateSegmentItemGeometry(item, index);
 
-  const FemmSegment& s = m_problem->segments[index];
   m_segmentItemsByNode.insert(s.n0, item);
   m_segmentItemsByNode.insert(s.n1, item);
 }
 
 void GeometryScene::addArcItem(int index)
 {
-  QPen pen(AppTheme::arcColor());
+  const FemmArcSegment& a = m_problem->arcSegments[index];
+  QPen pen(a.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::arcColor());
   pen.setCosmetic(true);
   auto* item = addPath(QPainterPath(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -259,7 +260,6 @@ void GeometryScene::addArcItem(int index)
   item->setData(IndexKey, index);
   updateArcItemGeometry(item, index);
 
-  const FemmArcSegment& a = m_problem->arcSegments[index];
   m_arcItemsByNode.insert(a.n0, item);
   m_arcItemsByNode.insert(a.n1, item);
 }

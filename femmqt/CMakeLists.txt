@@ -122,6 +122,8 @@ qt_add_executable(femmqt WIN32
   BHCurveDialog.cpp
   CircuitAnalysis.h
   CircuitAnalysis.cpp
+  HoverTooltip.h
+  HoverTooltip.cpp
   icons.qrc
 )
 

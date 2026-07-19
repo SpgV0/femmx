@@ -93,6 +93,11 @@ QColor AppTheme::arcColor()
   return g_dark ? QColor(120, 200, 120) : QColor(0, 128, 0);
 }
 
+QColor AppTheme::boundaryEdgeColor()
+{
+  return g_dark ? QColor(255, 170, 40) : QColor(230, 140, 0);
+}
+
 QColor AppTheme::holeColor()
 {
   return g_dark ? QColor(120, 120, 120) : QColor(160, 160, 160);

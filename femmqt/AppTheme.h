@@ -27,6 +27,12 @@ QColor gridLine();
 QColor nodeColor();
 QColor segmentColor();
 QColor arcColor();
+// Segments/arcs with a boundary condition assigned (boundaryMarker != 0)
+// render in this color instead of segmentColor()/arcColor() -- a modern-
+// CAD-style visual cue (classic FEMM has no equivalent; it doesn't
+// color-code this) so a boundary condition is visible without opening
+// each edge's properties dialog.
+QColor boundaryEdgeColor();
 QColor holeColor();
 QColor blockLabelNameColor();
 QColor selectedColor();
