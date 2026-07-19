@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T17:41:33.754Z
+  modified: 2026-07-19T22:16:10.493Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -491,3 +491,92 @@ established this session for other verification) is directly reusable as
 an oracle for any future post-processing/numerical feature ported from
 `femm/FemmviewDoc.cpp` -- worth reaching for immediately rather than
 trusting a from-scratch derivation, given this session's experience.
+
+## Round 10: v2.0.0 -- Qt becomes the sole Start Menu entry, a real MFC bug found via user report (2026-07-19/20)
+
+Committed `d2eb7c8` on `new_features` (pushed). User reported "switch to
+qt gui did not work for me" / "the application crashed" after launching
+"FEMMX (Classic)" from the Start Menu and using its Solution Viewer's
+"Switch to Qt GUI..." menu item.
+
+**Real bug, confirmed by direct reproduction, not the user's environment**:
+`femm/FemmviewView.cpp`'s `CFemmviewView` (the classic GUI's post-
+processor) had a fully-implemented `OnSwitchToQtGui()` handler and a
+correctly-declared header/menu-resource entry, but the
+`ON_COMMAND(ID_VIEW_SWITCHTOQT, OnSwitchToQtGui)` line was simply
+missing from its `BEGIN_MESSAGE_MAP`/`END_MESSAGE_MAP` block -- clicking
+the menu item silently did nothing (not a crash; "did not work" was the
+accurate half of the report). `femm/FemmeView.cpp` (the pre-processor/
+editor)'s copy of the same feature *was* wired correctly, which is why
+reproducing against the editor first showed nothing wrong -- only
+testing the post-processor specifically (`.ans` file, not `.fem`)
+surfaced it. **Reproduction technique**: launch `femmx.exe <file>` as a
+real subprocess, find its real window via `win32gui.EnumWindows` +
+`win32process.GetWindowThreadProcessId` filtered to that PID (there can
+be more than one top-level window -- e.g. a modeless "FEMM Output"
+dialog, class `#32770`, alongside the real main frame; grabbing the
+first enumerated match without checking the title is a trap), then
+`win32gui.PostMessage(hwnd, win32con.WM_COMMAND, <resource.h ID>, 0)` --
+exactly reproduces a real menu click for MFC's command routing (verified
+`GetMenu`/`GetSubMenu`/`GetMenuItemID` walk to confirm the ID is really
+in that window's menu tree first), and poll `proc.poll()` / `Get-Process
+-Id ... | Responding` afterward to distinguish "silently did nothing"
+(still alive, responsive, no effect) from a real crash/hang. Fix: one
+added `ON_COMMAND` line.
+
+**Per user request, also removed the "FEMMX (Classic)" Start Menu
+shortcut** (`script.nsi`) -- a user following it out of habit is exactly
+who hit the bug above. `femmx.exe` stays fully installed (still load-
+bearing: `femm.ActiveFEMM` COM automation, and the only option for
+electrostatics/heat-flow/current-flow, which femmqt doesn't support
+yet), just no longer pinned to the Start Menu -- reachable via
+`bin\femmx.exe` directly or the Qt GUI's own "Switch to Classic GUI".
+`FEMMX.lnk` now launches `femmqt.exe` exclusively. This is a real
+behavior change other users of the installer will notice.
+
+**Version bumped to 2.0.0** (major, not patch -- marks Qt becoming the
+default a fresh install actually launches): `femm/femm.rc`'s
+`FEMMX_VERSION_MAJOR`/`MINOR` macros + the 2 hardcoded strings
+(`IDD_ABOUTBOX`, `IDR_MAINFRAME` STRINGTABLE) that can't use the macro
+(rc.exe rejects it there, RC2116/RC2108 -- established in the v1.2.0
+round), `script.nsi`'s `PROJECT_VERSION`, `CHANGELOG.md`. **Not tagged**
+-- version bump only, per explicit instruction; tagging/merge-to-main is
+a separate, not-yet-done step (see [[release_tagging_workflow]]).
+
+**Found while touching versioning: `manual/manual.tex` is gitignored**
+(`.gitignore:38`, pre-existing, not something this session added) -- so
+the v1.2.0-era changelog's claim of updating the manual's title page
+never actually landed (found it still hardcoded "1.1.1" from the v1.1.1
+round). Fixed locally (now says "2.0.0") but that edit is *not*
+committed/pushed and never will be under the current `.gitignore` --
+flagged to the user rather than unilaterally changing `.gitignore`
+(their call whether that's intentional or an oversight).
+
+**Build hygiene lesson, expensive to learn**: killing a `build_cuda.bat`
+mid-compile (via `TaskStop` on the background task) does NOT clean up
+`bin\` -- whatever CMake had already written there (in this case ~900MB
+of CUDA runtime DLLs, staged early via an `install(FILES ...)`-style
+step, well before final linking) sits there and silently contaminates
+the *next* build, regardless of variant. Concretely: a killed CUDA build
+left `cudart64_12.dll`/`cublas64_12.dll`/etc. in top-level `bin\`; the
+next `build_plain.bat` run's move-to-`bin\plain\` step swept them in
+too, producing a 664MB "plain" installer (should be ~32MB) that bundled
+CUDA libraries a CPU-only build has no business shipping, and separately
+made `test/gpu_solver_test.py` wrongly detect the plain build as CUDA-
+capable (see [[gpu_speedup_investigation]] for the test-heuristic
+detail). Fix used: `git clean -ndx bin/` (dry run first) then `-fdx` --
+safe because the 6 static data files (`condlib.dat`, `heatlib.dat`,
+`init.lua`, `license.txt`, `matlib.dat`, `statlib.dat`) are git-tracked
+and `git clean` never touches tracked files, so it's the right tool for
+"wipe build output, keep source assets" in this repo specifically.
+**Rule going forward**: never trust `bin\` after killing a build
+mid-flight -- `git clean -fdx bin/` before the next build, every time.
+
+**GPU regression test results this round** (see
+[[gpu_speedup_investigation]] for full detail and the older, conflicting
+DC-speedup numbers): full plain-build suite clean (15 passed, 2 correctly
+skipped, run in isolation -- no concurrent build). CUDA build's own
+correctness checks pass perfectly on both DC and AC problems; AC/harmonic
+GPU solve genuinely 3.16x faster, but DC/real-valued GPU solve measured
+3x *slower* than CPU this round -- left as an honest failing assertion,
+not investigated further (out of scope), not worked around.

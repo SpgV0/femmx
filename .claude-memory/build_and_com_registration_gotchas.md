@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
+  modified: 2026-07-19T22:16:37.734Z
 ---
 
 **`build.ps1` hangs forever if run non-interactively without
@@ -46,3 +47,31 @@ check `bin\plain\femmx.exe`'s timestamp actually moved before trusting
 a test result. If genuinely unsure which exe COM will launch, check the
 registry directly: `Get-ItemProperty
 "Registry::HKEY_CLASSES_ROOT\CLSID\<clsid-from-femm.ActiveFEMM>\LocalServer32"`.
+
+**Killing a `build_plain.bat`/`build_cuda.bat` run mid-compile leaves
+`bin\` contaminated, and the next build (even a different variant)
+silently inherits the mess.** `build.ps1` writes straight into
+top-level `bin\` throughout the build (CUDA runtime DLLs in particular
+get staged there early, well before final linking, once
+`-DENABLE_CUDA_SOLVER=ON`) and only moves things into `bin\plain\`/
+`bin\cuda\` at the very end, on success. Killing the process (e.g. via
+`TaskStop` on a background task) skips that move entirely and leaves
+whatever was already written sitting in top-level `bin\` indefinitely —
+there's no cleanup-on-interrupt. **Why this matters:** confirmed
+directly (2026-07-19/20 session) — a killed `build_cuda.bat` left
+~900MB of `cudart64_*.dll`/`cublas64_*.dll`/etc. in top-level `bin\`;
+the *next* `build_plain.bat` run's move-to-`bin\plain\` step swept them
+in too, producing a 664MB "plain" installer (should be ~32MB) that
+bundled CUDA libraries a CPU-only build has no business shipping, and
+separately made `test/gpu_solver_test.py`'s CUDA-detection heuristic
+(which globs top-level `bin\`, see [[gpu_speedup_investigation]]) wrongly
+flag the plain build as CUDA-capable, causing a spurious speedup-test
+failure against a build that was never actually GPU-accelerated.
+**How to apply:** after killing any `build_plain.bat`/`build_cuda.bat`
+run, run `git clean -ndx bin/` (dry run) then `git clean -fdx bin/`
+before the next build — safe in this repo specifically because the 6
+static data files (`condlib.dat`, `heatlib.dat`, `init.lua`,
+`license.txt`, `matlib.dat`, `statlib.dat`) are git-tracked and `git
+clean` never touches tracked files, so this wipes exactly the build
+output and nothing else. Never assume a killed build left `bin\` as it
+was before — verify with `du -sh bin/*` if anything looks oversized.

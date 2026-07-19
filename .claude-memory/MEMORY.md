@@ -1,10 +1,10 @@
 - [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femmx (formerly femm_mods, then femm_plus, now SpgV0/femmx) for review
-- [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA-accelerated linear solve shipped (commit f19a90e): 0% error, 1.32x speedup on 70K nodes, opt-in via mi_setgpuaccel
+- [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA solve opt-in via mi_setgpuaccel; AC/harmonic reliably faster, but DC/real-valued speedup is unconfirmed/conflicting as of 2026-07-20 — verify before citing either number
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
 - [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged
 - [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, merge --no-ff to rc+main, push all
-- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs non-interactively on failure; COM launches bin\plain\femmx.exe, not top-level bin\femmx.exe
+- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs non-interactively; COM uses bin\plain\ or bin\cuda\; git clean -fdx bin/ after any killed build
 - [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
-- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — new magnetics-only Qt6 GUI shipped as default, .ansx/.femx fast binary caches, classic GUI kept as option
+- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — v2.0.0: Qt is now the ONLY Start Menu shortcut; classic GUI still installed (COM, non-magnetics), reachable via bin\femmx.exe
 - [Validate numerical ports empirically](validate_numerical_ports_empirically.md) — don't trust a from-scratch re-derivation of a classic-FEMM formula; check against the classic GUI's real output

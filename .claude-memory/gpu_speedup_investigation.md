@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 0645e6ab-f4a7-4004-a39e-44c28675f293
+  modified: 2026-07-19T22:15:13.677Z
 ---
 
 Investigated (2026-07-07), then implemented and shipped (2026-07-08).
@@ -167,3 +168,51 @@ Hermitian) instead of real-symmetric.
   (many baked-in kernel variants) — expect `bin/` to grow by roughly
   900MB when CUDA support is bundled. Fine since `bin/` is gitignored,
   but worth knowing before being surprised by disk usage.
+- **Local dev builds hide the CUDA DLLs from `test/gpu_solver_test.py`'s
+  own detection heuristic.** `build_plain.bat`/`build_cuda.bat`
+  (`build_femmx.ps1`) move everything out of top-level `bin\` into
+  `bin\plain\`/`bin\cuda\` after each build, but
+  `_cuda_build_available()` in both `gpu_solver_test.py` and
+  `ac_gpu_solver_test.py` only globs top-level `bin\` for
+  `cudart64_*.dll` (matching CI's flat-`bin\` layout, which never uses
+  the variant-folder scheme). Net effect: running the speedup assertion
+  locally against a `bin\cuda\` build needs `cudart64_*.dll` (just that
+  one small file is enough) temporarily copied into top-level `bin\`
+  first, or the test silently skips instead of actually validating
+  speedup — confirmed directly (2026-07-19/20 session): building CUDA
+  concurrently with an unrelated plain-build pytest run left stray CUDA
+  DLLs sitting in top-level `bin\` mid-compile, which made the *plain*
+  (non-CUDA) `femmx.exe` under test look CUDA-enabled to the heuristic
+  and produced a false test failure (asserted a speedup a non-CUDA build
+  obviously can't deliver) — root-caused to the concurrent build, not a
+  real regression. Lesson: never run `build_cuda.bat`/`build_plain.bat`
+  concurrently with a pytest run that might touch `gpu_solver_test.py`/
+  `ac_gpu_solver_test.py`, and rebuild fully (both variants) with a
+  `git clean -fdx bin/` in between if a build gets interrupted, or the
+  next build's move-to-variant step can silently mix in a killed
+  in-progress build's leftover files (confirmed same session: a killed
+  `build_cuda.bat` left ~900MB of CUDA DLLs sitting in top-level `bin\`,
+  which the next `build_plain.bat`'s "plain" installer happily bundled
+  in too, producing a 664MB "plain" installer instead of the normal
+  ~32MB one).
+
+## Conflicting DC/real-solver speedup measurement (2026-07-20) -- needs investigation
+
+A from-scratch, fully isolated rerun of `test/gpu_solver_test.py` (no
+concurrent build, freshly built + verified CUDA binary, COM registered
+directly at the CUDA `femmx.exe`) measured the **DC/magnetostatic** GPU
+solve as **3x *slower*** than CPU (14.5s CPU vs 43.6s GPU, speedup
+0.33x) on the test's own ~tens-of-thousands-of-node wire+ABC problem --
+correctness still perfect (0.0000% difference), just not faster. This
+directly conflicts with the "Validated results" section above (1.32x on
+~70K nodes, 3.49x on ~700K nodes, measured 2026-07-09). The **AC/
+harmonic** solver, tested back-to-back in the same session on a
+similarly-sized problem, *did* show a genuine 3.16x speedup, so this
+isn't a broken GPU/driver/build -- something specific to the DC/real
+`PCGSolveGPU` path (or this specific problem's conditioning/iteration
+count) regressed, or was never as fast as claimed for this exact problem
+shape. Not investigated further that session (out of scope for what was
+being worked on) -- worth a fresh profiling pass before trusting the
+older DC speedup numbers above at face value. Left as an honest failing
+`test_gpu_is_faster_when_available` assertion in
+`test/results/gpu_solver_test/gpu_solver.txt` rather than papered over.
