@@ -28,21 +28,28 @@
 ; window widened to 1000s, and a redraw-corruption fix for pan/zoom
 ; during large-mesh drawing -- see CHANGELOG.md).
 ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+; stepped to v2.0.0 -- femmqt.exe (Qt GUI) becomes the sole Start Menu
+; shortcut, see the FEMMX.lnk comment below (see CHANGELOG.md).
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
 ; packaged the new femmqt.exe (Qt GUI, magnetics-only Phase 1) and its Qt6
 ; runtime (DLLs + plugin subfolders, deployed into flat bin\ by
 ; femmqt/CMakeLists.txt's windeployqt install(CODE ...) step -- see that
 ; file for why it's flat bin\, not bin\plain\: this whole installer build
 ; runs as part of the same `cmake --build . --target install` invocation
 ; that populates bin\ in the first place, before build_femmx.ps1's later
-; bin\ -> bin\plain\/bin\cuda\ move ever happens). Made it the default
-; Start Menu shortcut target (FEMMX.lnk); the classic MFC GUI stays
-; installed and reachable via a second shortcut (FEMMX (Classic).lnk),
-; per "keep the existing GUI as an option". femm.ActiveFEMM's COM
-; automation registration deliberately still points at femmx.exe (below,
-; unchanged) -- femmqt.exe has no COM automation support yet, so pointing
-; COM at it would break existing pyfemm/Octave/Mathematica/Scilab scripts.
-; All the new File lines are /nonfatal, matching this file's existing CUDA
-; DLL precedent, so a build with SKIP_femmqt set still packages cleanly.
+; bin\ -> bin\plain\/bin\cuda\ move ever happens). Made it the only Start
+; Menu shortcut target (FEMMX.lnk); the classic MFC GUI stays fully
+; installed to bin\ (still load-bearing -- see below) but no longer gets
+; its own Start Menu entry, per user request: a user who followed the
+; earlier "FEMMX (Classic)" shortcut out of habit landed in the MFC app
+; and hit a real bug there (FemmviewView.cpp's OnSwitchToQtGui was never
+; wired into its message map, so its own "Switch to Qt GUI" menu item
+; silently did nothing). femm.ActiveFEMM's COM automation registration
+; deliberately still points at femmx.exe (below, unchanged) -- femmqt.exe
+; has no COM automation support yet, so pointing COM at it would break
+; existing pyfemm/Octave/Mathematica/Scilab scripts. All the new File
+; lines are /nonfatal, matching this file's existing CUDA DLL precedent,
+; so a build with SKIP_femmqt set still packages cleanly.
 Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -50,7 +57,7 @@ Unicode True
 ; Single source of truth for the installer's own display/file version --
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
-!define PROJECT_VERSION "1.2.0"
+!define PROJECT_VERSION "2.0.0"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
@@ -183,13 +190,17 @@ Section
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     SetOutPath "$STARTMENU\Programs\${PROJECT_NAME}"
-    ; FEMMX.lnk is the primary/default icon -- Qt GUI, per user request
-    ; ("make the qt gui the default gui when starting the program"). The
-    ; classic MFC GUI remains fully installed and reachable via its own
-    ; shortcut, matching "keep the existing GUI as an option" -- this is
-    ; purely a Start Menu default, not a removal.
+    ; FEMMX.lnk launches the Qt GUI exclusively -- per user request, no
+    ; separate "(Classic)" Start Menu entry for the MFC GUI anymore (a
+    ; user who followed it ended up in the MFC app by habit and hit a
+    ; real bug there -- see FemmviewView.cpp's OnSwitchToQtGui message-map
+    ; fix). femmx.exe (the MFC app) is still installed to bin\ below --
+    ; it's still load-bearing for femm.ActiveFEMM COM automation and for
+    ; electrostatics/heat-flow/current-flow, which the Qt GUI doesn't
+    ; support yet (magnetics-only) -- it's just not pinned to the Start
+    ; Menu. Reachable via bin\femmx.exe directly, or the Qt GUI's own
+    ; "Switch to Classic GUI" menu item.
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmqt.exe"
-    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Classic).lnk" "$INSTDIR\bin\femmx.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
@@ -216,6 +227,10 @@ Section "uninstall"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Classic).lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk"
+    ; the FEMMX (Classic).lnk Delete above is kept even though the
+    ; installer no longer creates that shortcut -- harmlessly no-ops on a
+    ; fresh install, but still cleans it up for anyone upgrading from an
+    ; older install that did create it.
     RMDir "$STARTMENU\Programs\${PROJECT_NAME}"
 
     # remove the installdir

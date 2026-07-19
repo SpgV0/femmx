@@ -71,8 +71,15 @@
 // the 4 numbers below. script.nsi's PROJECT_VERSION also remains a
 // separate, manually-synced value: NSIS has its own preprocessor and
 // can't read a C header.
-#define FEMMX_VERSION_MAJOR 1
-#define FEMMX_VERSION_MINOR 2
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+// bumped to v2.0.0 -- major version, not just a patch: femmqt.exe (the
+// new Qt6 GUI, magnetics-only) is now the exclusive Start Menu shortcut
+// (script.nsi no longer creates a separate "FEMMX (Classic)" entry), so
+// this is the release where the Qt GUI stops being an opt-in extra and
+// becomes what a fresh install actually launches by default. Not tagged
+// yet -- version bump only, per explicit instruction.
+#define FEMMX_VERSION_MAJOR 2
+#define FEMMX_VERSION_MINOR 0
 #define FEMMX_VERSION_PATCH 0
 #define FEMMX_VERSION_BUILD 0
 #define FEMMX_STRINGIZE2(x) #x
@@ -1336,7 +1343,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "About FEMMX"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "FEMMX v1.2.0",IDC_STATIC,55,10,119,10,SS_NOPREFIX
+    LTEXT           "FEMMX v2.0.0",IDC_STATIC,55,10,119,10,SS_NOPREFIX
     LTEXT           "Copyright (C) 1998-2022",IDC_STATIC,55,60,119,8
     DEFPUSHBUTTON   "OK",IDOK,144,70,50,14,WS_GROUP
     LTEXT           "David Meeker",IDC_STATIC,55,40,119,8
@@ -5563,7 +5570,7 @@ END
 
 STRINGTABLE 
 BEGIN
-    IDR_MAINFRAME           "FEMMX v1.2.0"
+    IDR_MAINFRAME           "FEMMX v2.0.0"
     IDR_FEMMETYPE           "femme\n\nMagnetics Problem\nFemme Files (*.fem)\n.FEM\nFemme.Document\nFemme Document"
     IDR_BELADRAWTYPE        "beladraw\n\nElectrostatics Problem\nBeladraw Files (*.fee)\n.FEE\nBeladraw.Document\nBeladraw Document"
     IDR_HDRAWTYPE           "hdraw\n\nHeat Flow Problem\nhdraw Files (*.feh)\n.FEH\nhdraw.Document\nhdraw Document"
