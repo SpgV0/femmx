@@ -3,6 +3,7 @@
 #include "AnsFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
+#include "CircuitAnalysis.h"
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
@@ -12,6 +13,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -70,6 +72,16 @@ bool pointInTriangle(QPointF p, QPointF a, QPointF b, QPointF c, double& u, doub
 double triangleArea(QPointF a, QPointF b, QPointF c)
 {
   return 0.5 * std::abs((b.x() - a.x()) * (c.y() - a.y()) - (c.x() - a.x()) * (b.y() - a.y()));
+}
+
+// Matches femm/CircDlg.cpp's CComplex::ToStringAlt display convention
+// closely enough for this dialog's purposes: a bare number for a
+// (numerically) real value, "re + jim" otherwise.
+QString complexToString(std::complex<double> z)
+{
+  if (std::abs(z.imag()) < 1e-12 * std::max(1.0, std::abs(z.real())))
+    return QString::number(z.real(), 'g', 6);
+  return QString("%1 %2 j%3").arg(QString::number(z.real(), 'g', 6), z.imag() < 0 ? "-" : "+", QString::number(std::abs(z.imag()), 'g', 6));
 }
 } // namespace
 
@@ -433,6 +445,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   showPointsAction->setCheckable(true);
   connect(showPointsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowPoints(on); });
   viewMenu->addSeparator();
+  viewMenu->addAction("&Circuit Props...", this, &SolutionWindow::onCircuitPropsTriggered);
   viewMenu->addAction("Problem &Info...", this, &SolutionWindow::onProblemInfoTriggered);
   viewMenu->addSeparator();
   QAction* outputWindowAction = viewMenu->addAction("&Output Window");
@@ -909,6 +922,77 @@ void SolutionWindow::onProblemInfoTriggered()
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   form->addRow(buttons);
+  dlg.exec();
+}
+
+void SolutionWindow::onCircuitPropsTriggered()
+{
+  if (m_currentPath.isEmpty()) {
+    QMessageBox::information(this, "Circuit Properties", "No solution loaded.");
+    return;
+  }
+  FemmProblem problem;
+  QString error;
+  if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
+    QMessageBox::warning(this, "Circuit Properties", error);
+    return;
+  }
+  if (problem.circuitProps.isEmpty()) {
+    QMessageBox::information(this, "Circuit Properties", "This problem has no circuits defined.");
+    return;
+  }
+  QVector<CircuitAnalysis::BlockCircuitInfo> blockCircuitInfo;
+  if (!CircuitAnalysis::readBlockCircuitInfo(m_currentPath, blockCircuitInfo, error)) {
+    QMessageBox::warning(this, "Circuit Properties", error);
+    return;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Circuit Properties");
+  dlg.resize(420, 320);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  auto* form = new QFormLayout;
+  auto* nameCombo = new QComboBox(&dlg);
+  for (const FemmCircuitProp& c : problem.circuitProps)
+    nameCombo->addItem(c.name);
+  form->addRow("Circuit Name:", nameCombo);
+  layout->addLayout(form);
+
+  auto* resultLabel = new QLabel(&dlg);
+  resultLabel->setWordWrap(true);
+  resultLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  resultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  layout->addWidget(resultLabel, 1);
+
+  auto updateResult = [this, &problem, blockCircuitInfo, resultLabel](int index) {
+    CircuitAnalysis::Result r = CircuitAnalysis::compute(problem, m_solution, blockCircuitInfo, index + 1);
+    if (!r.ok) {
+      resultLabel->setText(QString("Total current = %1 Amps\n\n%2")
+                                .arg(problem.circuitProps[index].ampsRe, 0, 'g', 6)
+                                .arg(r.error));
+      return;
+    }
+    QString text = QString("Total current = %1 Amps\nVoltage Drop = %2 Volts\nFlux Linkage = %3 Webers\n")
+                       .arg(complexToString(r.amps), complexToString(r.voltsDrop), complexToString(r.fluxLinkage));
+    text += QString("Flux/Current = %1 Henries\nVoltage/Current = %2 Ohms\n")
+                .arg(complexToString(r.fluxLinkage / r.amps), complexToString(r.voltsDrop / r.amps));
+    if (problem.frequency == 0) {
+      text += QString("Power = %1 Watts").arg(std::real(r.amps * r.voltsDrop), 0, 'g', 6);
+    } else {
+      text += QString("Real Power = %1 Watts\nReactive Power = %2 VAr\nApparent Power = %3 VA")
+                  .arg(std::real(r.voltsDrop * std::conj(r.amps)) / 2.0, 0, 'g', 6)
+                  .arg(std::imag(r.voltsDrop * std::conj(r.amps)) / 2.0, 0, 'g', 6)
+                  .arg(std::abs(r.voltsDrop) * std::abs(r.amps) / 2.0, 0, 'g', 6);
+    }
+    resultLabel->setText(text);
+  };
+  connect(nameCombo, &QComboBox::currentIndexChanged, &dlg, updateResult);
+  updateResult(0);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
   dlg.exec();
 }
 

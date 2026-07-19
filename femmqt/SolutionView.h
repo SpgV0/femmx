@@ -119,6 +119,7 @@ class SolutionWindow : public QMainWindow {
   void onPlotXYTriggered();
   void onIntegrateTriggered();
   void onProblemInfoTriggered();
+  void onCircuitPropsTriggered();
   void onZoomIn();
   void onZoomOut();
   void onZoomNatural();

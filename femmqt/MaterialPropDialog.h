@@ -8,13 +8,12 @@ class QLineEdit;
 class QComboBox;
 class QLabel;
 
-// Edits a single FemmMaterialProp in place. BH curve points (nonlinear
-// materials) are read/written untouched -- editing them isn't in this
-// phase's scope (see the plan doc) -- but muX/muY are still shown and
-// editable even for a material with BH data, since a note next to them
-// clarifies they're ignored by the solver whenever bhData is non-empty
-// (matching fkn.exe's own precedence), rather than hiding fields a saved
-// file might already have meaningful values in.
+// Edits a single FemmMaterialProp in place. muX/muY are still shown and
+// editable even for a material with BH data (edited via "Edit BH
+// Curve..." -> BHCurveDialog), since a note next to them clarifies
+// they're ignored by the solver whenever bhData is non-empty (matching
+// fkn.exe's own precedence), rather than hiding fields a saved file might
+// already have meaningful values in.
 class MaterialPropDialog : public QDialog {
   Q_OBJECT
 
@@ -23,8 +22,11 @@ class MaterialPropDialog : public QDialog {
 
   private slots:
   void onAccept();
+  void onEditBhCurve();
 
   private:
+  void updateBhNote();
+
   FemmMaterialProp& m_prop;
 
   QLineEdit* m_name = nullptr;

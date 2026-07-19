@@ -118,6 +118,10 @@ qt_add_executable(femmqt WIN32
   OpenBoundaryDialog.cpp
   DxfIO.h
   DxfIO.cpp
+  BHCurveDialog.h
+  BHCurveDialog.cpp
+  CircuitAnalysis.h
+  CircuitAnalysis.cpp
   icons.qrc
 )
 

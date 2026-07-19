@@ -1,13 +1,17 @@
 #include "MaterialPropDialog.h"
 
+#include "BHCurveDialog.h"
+
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleValidator>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QIntValidator>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 namespace {
@@ -32,15 +36,14 @@ MaterialPropDialog::MaterialPropDialog(FemmMaterialProp& prop, QWidget* parent)
 
   m_muX = makeDoubleField(this, form, "Mu x (relative):", prop.muX);
   m_muY = makeDoubleField(this, form, "Mu y (relative):", prop.muY);
-  if (!prop.bhData.isEmpty()) {
-    m_bhNote = new QLabel(QString("This material has a %1-point BH curve, which takes precedence over "
-                                   "Mu x/y above during solving. Editing the BH curve isn't supported by "
-                                   "this dialog yet -- it's preserved as-is on save.")
-                               .arg(prop.bhData.size()),
-        this);
-    m_bhNote->setWordWrap(true);
-    form->addRow(QString(), m_bhNote);
-  }
+
+  m_bhNote = new QLabel(this);
+  m_bhNote->setWordWrap(true);
+  form->addRow(QString(), m_bhNote);
+  auto* bhButton = new QPushButton("Edit BH Curve...", this);
+  connect(bhButton, &QPushButton::clicked, this, &MaterialPropDialog::onEditBhCurve);
+  form->addRow(QString(), bhButton);
+  updateBhNote();
 
   m_hc = makeDoubleField(this, form, "Hc (A/m):", prop.Hc);
   m_hcAngle = makeDoubleField(this, form, "Hc Angle (deg):", prop.HcAngle);
@@ -97,4 +100,20 @@ void MaterialPropDialog::onAccept()
   m_prop.nStrands = m_nStrands->text().toInt();
   m_prop.wireD = m_wireD->text().toDouble();
   accept();
+}
+
+void MaterialPropDialog::onEditBhCurve()
+{
+  BHCurveDialog dlg(m_prop, this);
+  if (dlg.exec() == QDialog::Accepted)
+    updateBhNote();
+}
+
+void MaterialPropDialog::updateBhNote()
+{
+  m_bhNote->setText(m_prop.bhData.isEmpty()
+          ? "No BH curve defined -- Mu x/y above are used directly (linear material)."
+          : QString("This material has a %1-point BH curve, which takes precedence over "
+                     "Mu x/y above during solving.")
+                .arg(m_prop.bhData.size()));
 }
