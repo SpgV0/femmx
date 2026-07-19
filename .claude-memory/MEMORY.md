@@ -3,3 +3,7 @@
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
 - [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged
+- [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, merge --no-ff to rc+main, push all
+- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs non-interactively on failure; COM launches bin\plain\femmx.exe, not top-level bin\femmx.exe
+- [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
+- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — new magnetics-only Qt6 GUI shipped as default, .ansx/.femx fast binary caches, classic GUI kept as option

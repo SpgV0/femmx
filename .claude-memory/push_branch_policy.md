@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 0645e6ab-f4a7-4004-a39e-44c28675f293
+  modified: 2026-07-19T07:19:54.857Z
 ---
 
 Do not push commits directly to `main` in this repo. Create/use a
@@ -30,6 +31,25 @@ and they want to batch work rather than trigger a build per commit.
 still expected), but stop before the `git push` step and tell the user
 what's queued locally instead of pushing automatically. Push only once
 they give explicit go-ahead in that session.
+
+**Update (2026-07-19): superseded by a daily push cadence.** The user
+asked to push to `new_features` on `origin` once a day, explicitly framed
+as backing up work ("push... for backing up your work"), during a long
+session building a large new feature (a Qt-based GUI, femmqt/) entirely
+in the working tree with nothing pushed for many hours.
+**Why:** long sessions can accumulate a large amount of uncommitted/
+unpushed work that only exists on this one machine — a daily push is
+insurance against losing it, separate from the earlier "batch it up"
+preference about not spamming CI.
+**How to apply:** once per day (per session/day of work, not literally
+every 24h if idle), commit locally-completed, verified work on
+`new_features` and push to `origin` without waiting for an explicit
+"push now" — this takes priority over the 2026-07-09 "hold until told"
+default. Still only ever push `new_features` (never `main` without
+explicit instruction, see above), and still only push work that's been
+verified/tested, not mid-edit/broken states — "backup" doesn't mean
+push-on-every-keystroke, it means don't let a full day of finished,
+working progress sit unpushed.
 
 **Repo note (2026-07-08):** The project was ported from its earlier
 GitHub host to `https://github.com/SpgV0/femmx` — this is now the sole
