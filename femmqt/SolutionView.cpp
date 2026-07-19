@@ -9,6 +9,7 @@
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
 #include "GuiSwitch.h"
+#include "IconTheme.h"
 #include "MainWindow.h"
 
 #include <QActionGroup>
@@ -46,6 +47,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -347,6 +349,13 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
   setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
   setMouseTracking(true); // needed for hoveredAt() to fire without a button held
+
+  m_cursorTooltip = new QLabel(viewport());
+  m_cursorTooltip->setStyleSheet(
+      "QLabel { background-color: rgba(20, 20, 20, 200); color: white; "
+      "padding: 2px 5px; border-radius: 3px; font-size: 11px; }");
+  m_cursorTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
+  m_cursorTooltip->hide();
 }
 
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
@@ -358,8 +367,32 @@ void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 
 void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
 {
-  emit hoveredAt(mapToScene(event->pos()));
   QGraphicsView::mouseMoveEvent(event);
+
+  // Position tracks every move (cheap); the text is refreshed separately
+  // by setTooltipText(), called from SolutionWindow::onCanvasHovered
+  // once it's finished its own (throttled -- a mesh-element lookup, not
+  // free) field-value computation for this same position.
+  QPoint pos = event->pos() + QPoint(16, 16);
+  pos.setX(std::min(pos.x(), viewport()->width() - m_cursorTooltip->width()));
+  pos.setY(std::min(pos.y(), viewport()->height() - m_cursorTooltip->height()));
+  m_cursorTooltip->move(pos);
+  m_cursorTooltip->show();
+  m_cursorTooltip->raise();
+
+  emit hoveredAt(mapToScene(event->pos()));
+}
+
+void SolutionGraphicsView::leaveEvent(QEvent* event)
+{
+  m_cursorTooltip->hide();
+  QGraphicsView::leaveEvent(event);
+}
+
+void SolutionGraphicsView::setTooltipText(const QString& text)
+{
+  m_cursorTooltip->setText(text);
+  m_cursorTooltip->adjustSize();
 }
 
 void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
@@ -491,6 +524,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
     prefs.save();
     m_scene->setBackgroundBrush(AppTheme::background());
     m_scene->update();
+    refreshToolbarIcons();
   });
 
   // Matches femm.rc's post-processor "Operation" menu (Point properties /
@@ -517,6 +551,43 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   opMenu->addAction("&Clear Contour", this, &SolutionWindow::onClearContourTriggered);
   menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
   menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
+
+  // Matches femm.rc's IDR_FEMMVIEWTYPE toolbar -- every one of these
+  // already exists as a menu item above; per direct user request (the
+  // Solution Viewer had no toolbar icons at all, text menus only) this
+  // gives them toolbar buttons too, reusing the exact same checkable
+  // QAction objects the menu items above already created (not copies)
+  // where one exists, so the toolbar and the menu never disagree about
+  // which tool/plot mode is active.
+  QToolBar* toolBar = addToolBar("Operation");
+  toolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  toolBar->setIconSize(QSize(20, 20));
+  toolBar->addAction(m_pointToolAction);
+  m_pointToolAction->setIcon(IconTheme::themedToolIcon(":/icons/point_properties.svg"));
+  m_themedActions.push_back({ m_pointToolAction, ":/icons/point_properties.svg" });
+  toolBar->addAction(m_contourToolAction);
+  m_contourToolAction->setIcon(IconTheme::themedToolIcon(":/icons/contours.svg"));
+  m_themedActions.push_back({ m_contourToolAction, ":/icons/contours.svg" });
+  toolBar->addAction(m_areaToolAction);
+  m_areaToolAction->setIcon(IconTheme::themedToolIcon(":/icons/areas.svg"));
+  m_themedActions.push_back({ m_areaToolAction, ":/icons/areas.svg" });
+  toolBar->addSeparator();
+  addThemedAction(toolBar, ":/icons/plot_xy.svg", "Plot X-Y", &SolutionWindow::onPlotXYTriggered);
+  addThemedAction(toolBar, ":/icons/integrate.svg", "Integrate", &SolutionWindow::onIntegrateTriggered);
+  addThemedAction(toolBar, ":/icons/circuit_props.svg", "Circuit Props", &SolutionWindow::onCircuitPropsTriggered);
+  toolBar->addSeparator();
+  toolBar->addAction(showMeshAction);
+  showMeshAction->setIcon(IconTheme::themedToolIcon(":/icons/mesh.svg"));
+  m_themedActions.push_back({ showMeshAction, ":/icons/mesh.svg" });
+  toolBar->addAction(contourAction);
+  contourAction->setIcon(IconTheme::themedToolIcon(":/icons/contour_plot.svg"));
+  m_themedActions.push_back({ contourAction, ":/icons/contour_plot.svg" });
+  toolBar->addAction(densityAction);
+  densityAction->setIcon(IconTheme::themedToolIcon(":/icons/density_plot.svg"));
+  m_themedActions.push_back({ densityAction, ":/icons/density_plot.svg" });
+  toolBar->addAction(vectorAction);
+  vectorAction->setIcon(IconTheme::themedToolIcon(":/icons/vector_plot.svg"));
+  m_themedActions.push_back({ vectorAction, ":/icons/vector_plot.svg" });
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &SolutionWindow::onHelpTopicsTriggered);
@@ -656,19 +727,21 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
   m_hoverThrottle.restart();
 
   int elem = findContainingElement(scenePos);
+  QString text;
   if (elem < 0) {
-    m_positionLabel->setText(QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
-    return;
+    text = QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6);
+  } else {
+    std::complex<double> A = interpolateA(scenePos, elem);
+    const MeshSolutionElement& e = m_solution.elements[elem];
+    double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    text = QString("x = %1, y = %2   |B| = %3 T   A = %4")
+               .arg(scenePos.x(), 0, 'g', 6)
+               .arg(scenePos.y(), 0, 'g', 6)
+               .arg(bMag, 0, 'g', 4)
+               .arg(A.real(), 0, 'g', 4);
   }
-
-  std::complex<double> A = interpolateA(scenePos, elem);
-  const MeshSolutionElement& e = m_solution.elements[elem];
-  double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-  m_positionLabel->setText(QString("x = %1, y = %2   |B| = %3 T   A = %4")
-                                .arg(scenePos.x(), 0, 'g', 6)
-                                .arg(scenePos.y(), 0, 'g', 6)
-                                .arg(bMag, 0, 'g', 4)
-                                .arg(A.real(), 0, 'g', 4));
+  m_positionLabel->setText(text);
+  m_view->setTooltipText(text);
 }
 
 void SolutionWindow::onPointToolTriggered()
@@ -1243,6 +1316,19 @@ void SolutionWindow::updateRecentFilesMenu()
     action->setData(path);
     connect(action, &QAction::triggered, this, &SolutionWindow::onOpenRecentFile);
   }
+}
+
+QAction* SolutionWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (SolutionWindow::*slot)())
+{
+  QAction* action = bar->addAction(IconTheme::themedToolIcon(iconPath), text, this, slot);
+  m_themedActions.push_back({ action, iconPath });
+  return action;
+}
+
+void SolutionWindow::refreshToolbarIcons()
+{
+  for (const auto& entry : m_themedActions)
+    entry.first->setIcon(IconTheme::themedToolIcon(entry.second));
 }
 
 void SolutionWindow::onOpenRecentFile()

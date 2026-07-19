@@ -256,6 +256,65 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
 
+  // Matches femm.rc's IDR_FEMMETYPE toolbar's edit/mesh/analyze section --
+  // every one of these already exists as a menu item above; this just
+  // gives the common ones a toolbar button too (per direct user request:
+  // the classic GUI's toolbars are icon-driven, not text-menu-only).
+  QToolBar* editToolBar = addToolBar("Edit");
+  editToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  editToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", &MainWindow::onUndoTriggered);
+  addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", &MainWindow::onOpenSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", &MainWindow::onDeleteSelectedTriggered);
+  editToolBar->addSeparator();
+  addThemedAction(editToolBar, ":/icons/move.svg", "Move", &MainWindow::onMoveSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/copy.svg", "Copy", &MainWindow::onCopySelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/scale.svg", "Scale", &MainWindow::onScaleSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/mirror.svg", "Mirror", &MainWindow::onMirrorSelectedTriggered);
+  addThemedAction(editToolBar, ":/icons/create_radius.svg", "Create Radius", &MainWindow::onCreateRadiusTriggered);
+  addThemedAction(editToolBar, ":/icons/open_boundary.svg", "Create Open Boundary", &MainWindow::onCreateOpenBoundaryTriggered);
+  editToolBar->addSeparator();
+  addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", &MainWindow::onSelectByGroupTriggered);
+
+  QToolBar* meshToolBar = addToolBar("Mesh");
+  meshToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  meshToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(meshToolBar, ":/icons/mesh.svg", "Create Mesh", &MainWindow::onCreateMeshTriggered);
+  addThemedAction(meshToolBar, ":/icons/solve.svg", "Solve", &MainWindow::onSolveTriggered);
+  addThemedAction(meshToolBar, ":/icons/view_results.svg", "View Results", &MainWindow::onViewResultsTriggered);
+
+  // Matches femm.rc's separate IDR_LEFTBAR (zoom/pan/grid, docked on the
+  // left in classic FEMM) -- kept as its own left-docked toolbar here
+  // too, rather than folding it into the top ones, for the same reason:
+  // it's a distinct, frequently-used group.
+  QToolBar* navToolBar = addToolBar("Navigate");
+  addToolBar(Qt::LeftToolBarArea, navToolBar);
+  navToolBar->setOrientation(Qt::Vertical);
+  navToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  navToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(navToolBar, ":/icons/zoom_in.svg", "Zoom In", &MainWindow::onZoomIn);
+  addThemedAction(navToolBar, ":/icons/zoom_out.svg", "Zoom Out", &MainWindow::onZoomOut);
+  addThemedAction(navToolBar, ":/icons/zoom_natural.svg", "Natural", &MainWindow::onZoomNatural);
+  addThemedAction(navToolBar, ":/icons/zoom_window.svg", "Window", &MainWindow::onZoomWindowTriggered);
+  navToolBar->addSeparator();
+  addThemedAction(navToolBar, ":/icons/pan_up.svg", "Scroll Up", &MainWindow::onPanUp);
+  addThemedAction(navToolBar, ":/icons/pan_down.svg", "Scroll Down", &MainWindow::onPanDown);
+  addThemedAction(navToolBar, ":/icons/pan_left.svg", "Scroll Left", &MainWindow::onPanLeft);
+  addThemedAction(navToolBar, ":/icons/pan_right.svg", "Scroll Right", &MainWindow::onPanRight);
+  navToolBar->addSeparator();
+  // Reuses the exact same QAction objects the Grid menu above already
+  // created (not copies) so the toolbar buttons and menu checkmarks for
+  // Show/Snap Grid never drift out of sync with each other. Icons are
+  // re-tinted by refreshToolbarIcons() too (added to m_themedActions
+  // manually here since addThemedAction() always creates a fresh action).
+  navToolBar->addAction(showGridAction);
+  showGridAction->setIcon(IconTheme::themedToolIcon(":/icons/show_grid.svg"));
+  m_themedActions.push_back({ showGridAction, ":/icons/show_grid.svg" });
+  navToolBar->addAction(snapGridAction);
+  snapGridAction->setIcon(IconTheme::themedToolIcon(":/icons/snap_grid.svg"));
+  m_themedActions.push_back({ snapGridAction, ":/icons/snap_grid.svg" });
+  addThemedAction(navToolBar, ":/icons/set_grid.svg", "Set Grid", &MainWindow::onSetGridTriggered);
+
   m_positionLabel = new QLabel(this);
   m_positionLabel->setMinimumWidth(160);
   statusBar()->addPermanentWidget(m_positionLabel);
@@ -1321,6 +1380,13 @@ void MainWindow::updateTitle()
   setWindowTitle(QString("FEMMX (Qt) - Magnetics - %1%2").arg(name, m_dirty ? "*" : ""));
 }
 
+QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (MainWindow::*slot)())
+{
+  QAction* action = bar->addAction(IconTheme::themedToolIcon(iconPath), text, this, slot);
+  m_themedActions.push_back({ action, iconPath });
+  return action;
+}
+
 void MainWindow::refreshToolbarIcons()
 {
   // IconTheme::themedToolIcon() bakes in whatever QApplication::palette()
@@ -1328,13 +1394,13 @@ void MainWindow::refreshToolbarIcons()
   // already right by then, see main.cpp's AppTheme::setDark() call before
   // any window is created) but stale once AppTheme::setDark() flips it
   // afterward, since QAction doesn't re-query its icon automatically.
-  // Re-generates all 5 toolbar icons from the same fixed svgResourcePath
-  // set used in the constructor.
   m_selectToolAction->setIcon(IconTheme::themedToolIcon(":/icons/select.svg"));
   m_addNodeToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_node.svg"));
   m_addSegmentToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_segment.svg"));
   m_addArcToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_arc.svg"));
   m_addBlockLabelToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_block_label.svg"));
+  for (const auto& entry : m_themedActions)
+    entry.first->setIcon(IconTheme::themedToolIcon(entry.second));
 }
 
 bool MainWindow::confirmDiscardUnsavedChanges()

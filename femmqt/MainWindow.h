@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPair>
+#include <QVector>
 
 #include "FemmProblem.h"
 #include "GeometryScene.h"
@@ -9,6 +11,7 @@
 class QAction;
 class QLabel;
 class QMenu;
+class QToolBar;
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -90,6 +93,10 @@ class MainWindow : public QMainWindow {
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
   void refreshToolbarIcons();
+  // Adds a toolbar action wired to `slot` and remembers its icon path so
+  // refreshToolbarIcons() can re-tint it after a theme change -- see that
+  // function's comment for why a plain addAction() isn't enough.
+  QAction* addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, void (MainWindow::*slot)());
 
   GeometryScene* m_scene = nullptr;
   GeometryView* m_view = nullptr;
@@ -111,6 +118,12 @@ class MainWindow : public QMainWindow {
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;
+  // Every toolbar action added via addThemedAction(), paired with the SVG
+  // path it was built from -- refreshToolbarIcons() walks this to re-tint
+  // all of them after a dark/light toggle, not just the original 5 draw
+  // tools (m_selectToolAction etc., which stay separate members since
+  // they're also referenced elsewhere for their checked state).
+  QVector<QPair<QAction*, QString>> m_themedActions;
 
   class SolutionWindow* m_solutionWindow = nullptr;
   class LoadMonitorDialog* m_loadMonitor = nullptr;

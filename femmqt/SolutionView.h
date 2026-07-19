@@ -4,6 +4,8 @@
 #include <QGraphicsItem>
 #include <QGraphicsView>
 #include <QMainWindow>
+#include <QPair>
+#include <QVector>
 
 #include "MeshSolution.h"
 
@@ -12,6 +14,7 @@
 class QGraphicsScene;
 class QAction;
 class QDockWidget;
+class QToolBar;
 class QPlainTextEdit;
 
 // Paints the whole solved mesh (potentially millions of triangles) in a
@@ -85,6 +88,13 @@ class SolutionGraphicsView : public QGraphicsView {
   // Call after any operation that changes the view's scale.
   void updateAntialiasingForScale();
 
+  // Updates the floating cursor-following tooltip's text (position is
+  // maintained internally, following the last mouse move) -- called by
+  // SolutionWindow::onCanvasHovered once it's computed the field value,
+  // which is throttled (see that function's comment), unlike the
+  // tooltip's own position tracking below, which isn't.
+  void setTooltipText(const QString& text);
+
   signals:
   void clickedAt(QPointF scenePos);
   // Emitted on every mouse move over the canvas (setMouseTracking is on),
@@ -96,7 +106,11 @@ class SolutionGraphicsView : public QGraphicsView {
   protected:
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
+  void leaveEvent(QEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
+
+  private:
+  class QLabel* m_cursorTooltip = nullptr;
 };
 
 enum class SolutionToolMode {
@@ -156,6 +170,8 @@ class SolutionWindow : public QMainWindow {
   void updateContourVisual();
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
+  QAction* addThemedAction(class QToolBar* bar, const QString& iconPath, const QString& text, void (SolutionWindow::*slot)());
+  void refreshToolbarIcons();
   void showContourIntegral();
   // Echoes a Point/Contour/Area result into the persistent Output Window
   // dock, mirroring femm/FemmviewView.cpp's OutputWindowText/IDC_OUTBOX --
@@ -184,4 +200,5 @@ class SolutionWindow : public QMainWindow {
   class QLabel* m_positionLabel = nullptr;
   QElapsedTimer m_hoverThrottle; // see onCanvasHovered's comment
   class QPrinter* m_printer = nullptr; // lazily created, shared by Print/Print Preview/Print Setup
+  QVector<QPair<QAction*, QString>> m_themedActions; // see MainWindow's identically-named member/refreshToolbarIcons for why
 };

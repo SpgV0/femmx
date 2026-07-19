@@ -6,6 +6,11 @@
 
 namespace {
 bool g_dark = false;
+// Captured lazily on the very first setDark() call, before this ever
+// touches the active style -- lets light mode restore exactly whatever
+// native style (typically "windowsvista" or "windows11" on Windows) was
+// active at startup, rather than hardcoding a guess.
+QString g_originalStyleName;
 }
 
 bool AppTheme::isDark()
@@ -18,8 +23,22 @@ void AppTheme::setDark(bool dark)
   g_dark = dark;
   if (!qApp)
     return;
+  if (g_originalStyleName.isEmpty())
+    g_originalStyleName = qApp->style()->objectName();
 
   if (dark) {
+    // Windows' native styles (windowsvista/windows11) render QLineEdit/
+    // QComboBox backgrounds from OS theme chrome rather than fully
+    // honoring a custom QPalette::Base -- confirmed directly: with only
+    // the palette below applied (no style change), every text-entry
+    // field in Problem Properties/Preferences/etc. stayed a light native
+    // gray with barely-visible near-white text on top, while palette-
+    // driven widgets elsewhere (labels, checkboxes) went dark correctly.
+    // Fusion is Qt's own recommended style for custom palettes -- it
+    // honors every role below, including Base -- so dark mode switches
+    // to it explicitly rather than fighting the native style.
+    qApp->setStyle(QStyleFactory::create("Fusion"));
+
     // Standard Qt dark palette recipe (the same one Qt's own examples and
     // most third-party "instant dark mode" snippets use) -- not trying to
     // pixel-match classic FEMM's own DarkMode::SetEnabled() (that's Win32
@@ -43,6 +62,8 @@ void AppTheme::setDark(bool dark)
     p.setColor(QPalette::HighlightedText, Qt::black);
     qApp->setPalette(p);
   } else {
+    if (!g_originalStyleName.isEmpty())
+      qApp->setStyle(QStyleFactory::create(g_originalStyleName));
     qApp->setPalette(qApp->style()->standardPalette());
   }
 }
