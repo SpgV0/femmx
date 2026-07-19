@@ -7,3 +7,4 @@
 - [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs non-interactively on failure; COM launches bin\plain\femmx.exe, not top-level bin\femmx.exe
 - [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
 - [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — new magnetics-only Qt6 GUI shipped as default, .ansx/.femx fast binary caches, classic GUI kept as option
+- [Validate numerical ports empirically](validate_numerical_ports_empirically.md) — don't trust a from-scratch re-derivation of a classic-FEMM formula; check against the classic GUI's real output

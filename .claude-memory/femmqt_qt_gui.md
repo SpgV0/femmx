@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T14:54:57.368Z
+  modified: 2026-07-19T16:00:26.997Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -285,3 +285,79 @@ fall back to raw `win32gui.EnumWindows` + `win32process.
 GetWindowThreadProcessId` to find its real HWND, then drive it via
 `win32gui`/`win32api` directly (or `app.window(handle=...)` once the
 HWND is known) instead of pywinauto's own window-finding.
+
+**Round 6 (2026-07-19, same day, "continue with the rest"): Circuit
+Props and BH Curve editing, committed `5cc2ca5` on `new_features`
+(pushed).** User pushed past Round 5's Circuit Props/BH Curves deferral;
+delivered both. Lua Console stays deferred -- and got a second, sharper
+reason while investigating: `liblua/CMakeLists.txt` calls
+`find_package(MFC REQUIRED)` (`CMAKE_MFC_FLAG 2`), so femmqt (which
+deliberately avoids MFC -- see this file's very first paragraph) can't
+link the existing liblua target as-is; embedding Lua would mean building
+a second, non-MFC variant of it first, on top of the ~200-function
+`femmeLua.cpp` binding surface already flagged as its own project.
+
+**BH Curve editing** (`BHCurveDialog.h/.cpp`): straightforward --
+`FemmMaterialProp::bhData` was already read/written by `FemmFileIO.cpp`,
+just not exposed for editing. A `QTableWidget` (B, H columns) plus a
+Qt-painted linear/log chart, wired into `MaterialPropDialog` via a new
+"Edit BH Curve..." button. Verified live: added rows, typed in a real
+saturation-curve-shaped point set via raw coordinate clicks (pywinauto
+couldn't address `QTableWidgetItem`s as `Edit` controls until a cell is
+double-clicked into edit mode -- raw `win32api.mouse_event` double-click
+at the cell's screen coordinates worked instead), and the chart rendered
+the correct curve shape.
+
+**Circuit Props** (`CircuitAnalysis.h/.cpp`) -- the one worth reading
+carefully before touching again. Ported `femm/FemmviewDoc.cpp`'s
+`GetVoltageDrop`/`GetFluxLinkage`/`GetJA`, solid-conductor branches only
+(stranded/litz needs `GetFillFactor`'s frequency-dependent curve fits,
+not ported; zero-current circuits need a separate mutual-inductance
+cascade, not ported -- both rejected with a clear `Result::error` rather
+than guessed at). The real story is the validation method, not the
+formulas themselves:
+
+1. First pass: derived the solid-conductor voltage/current relationship
+   from first principles (Kirchhoff's current law over the block, solving
+   for the unknown terminal voltage) rather than trusting a literal
+   source port, out of concern that classic FEMM's own length-unit
+   conventions (`LengthConv[LengthUnits]`) might not be applied
+   consistently across the functions involved.
+2. That derivation was WRONG -- off by exactly the length-conversion
+   factor (1000x for a millimeters file) -- caught only by an empirical
+   check: opened the *same* real solved file
+   (`test/results/straight_wire_field/straight_wire_field.ans` -- a 10A
+   DC single-solid-conductor series circuit, currently untracked/
+   uncommitted local test data, not yet in git) in the classic GUI
+   (`bin/plain/femmx.exe`) via the same UI-automation approach used
+   throughout this session, read its actual Circuit Properties dialog
+   output (Voltage Drop = 5.48984e-05 V, Flux Linkage = 1.1653e-08 Wb),
+   and cross-checked a standalone Python re-implementation against it.
+3. Root cause: `Depth` (planar) DOES need `LengthConv` to meters in the
+   final `Volts = -Depth*dVolts` formula, but the raw `dVolts` value read
+   directly from `.ans`'s block-label circuit-info section (right after
+   the node/element lists in `[Solution]`, written by
+   `fkn/prob1big.cpp`'s `WriteStatic2D`) is used as-is, NOT further
+   converted -- an inconsistency-looking mix that's exactly what the real
+   source does, and exactly what an "obviously correct" reasoned
+   re-derivation got wrong.
+4. After fixing, re-verified BOTH the standalone Python calc AND the
+   actual built Qt app's Circuit Properties dialog against the same
+   file -- byte-identical to the classic GUI's displayed values (Total
+   current, Voltage Drop, Flux Linkage, Flux/Current, Voltage/Current,
+   Power all matched).
+
+**Lesson, worth remembering beyond this one feature**: when a classic-
+FEMM formula involves `LengthConv`/unit conversions, do not trust a
+"this looks dimensionally sensible" re-derivation over a literal port --
+this codebase's internal unit conventions are inconsistent enough
+(confirmed directly: the same physical quantity is converted in one call
+site and left raw in another, apparently deliberately, not a typo) that
+only two things are reliable: (a) a literal, line-by-line port of the
+actual source, or (b) empirical validation against the classic GUI's own
+output on a real file. Prefer having both, as this round ended up doing.
+The `bin/plain/femmx.exe` + UI-automation-screenshot technique (already
+established this session for other verification) is directly reusable as
+an oracle for any future post-processing/numerical feature ported from
+`femm/FemmviewDoc.cpp` -- worth reaching for immediately rather than
+trusting a from-scratch derivation, given this session's experience.
