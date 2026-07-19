@@ -32,17 +32,32 @@ class MeshSolutionItem : public QGraphicsItem {
   // full configurability (band count, arrow scale, etc.).
   enum class PlotMode { Density, Contour, Vector };
   void setPlotMode(PlotMode mode);
-  void setSmoothing(bool smooth) { m_smooth = smooth; }
+  void setSmoothing(bool smooth);
+  void setShowMesh(bool show);
+  void setShowPoints(bool show);
 
   private:
   void paintDensity(QPainter* painter);
   void paintContour(QPainter* painter);
   void paintVector(QPainter* painter);
+  void paintMeshOverlay(QPainter* painter);
 
   const MeshSolution* m_solution;
   QRectF m_bounds;
   PlotMode m_mode = PlotMode::Density;
   bool m_smooth = true;
+  bool m_showMesh = false;
+  bool m_showPoints = false;
+
+  // Per-node average of touching elements' |B| -- femm/FemmviewView.cpp's
+  // "Smooth" option colors each triangle using its 3 corner nodes' values
+  // (via GDI's GradientFill) instead of one flat per-element value; Qt's
+  // QPainter has no equivalent triangle-gradient primitive, so this
+  // approximates it by banding on the *average* of the 3 corner nodes'
+  // values instead of the element's own single value -- softens the
+  // element-to-element steps at shared edges without needing per-pixel
+  // rasterization. Computed once in the constructor.
+  QVector<double> m_nodeBMagAvg;
 };
 
 // Routes plain left-clicks (used by the Point/Contour/Area analysis
@@ -54,6 +69,18 @@ class SolutionGraphicsView : public QGraphicsView {
 
   public:
   explicit SolutionGraphicsView(QGraphicsScene* scene, QWidget* parent = nullptr);
+
+  // Antialiasing is off by default (large meshes: rasterizing millions of
+  // triangles with AA on is real, measurable extra cost) -- but disabled
+  // AA leaves faint 1px seams between adjacent triangles at their shared
+  // edges, invisible at typical zoom where each triangle is a handful of
+  // pixels, but a real, ugly "swiss cheese" artifact once zoomed in far
+  // enough that a triangle covers only a few screen pixels (confirmed
+  // directly: zooming in on a real solved mesh showed exactly this).
+  // Re-enable AA once zoomed in past a threshold where few enough
+  // triangles are ever on screen at once that AA's cost stops mattering.
+  // Call after any operation that changes the view's scale.
+  void updateAntialiasingForScale();
 
   signals:
   void clickedAt(QPointF scenePos);
@@ -80,6 +107,7 @@ class SolutionWindow : public QMainWindow {
 
   private slots:
   void onOpenTriggered();
+  void onReloadTriggered();
   void onCanvasClicked(QPointF scenePos);
   void onPointToolTriggered();
   void onContourToolTriggered();
@@ -87,7 +115,20 @@ class SolutionWindow : public QMainWindow {
   void onFinishContourTriggered();
   void onClearContourTriggered();
   void onPlotXYTriggered();
+  void onIntegrateTriggered();
   void onProblemInfoTriggered();
+  void onZoomIn();
+  void onZoomOut();
+  void onZoomNatural();
+  void onPanLeft();
+  void onPanRight();
+  void onPanUp();
+  void onPanDown();
+  void onCopyBitmapTriggered();
+  void onSwitchToClassicTriggered();
+  void onOpenRecentFile();
+  void onHelpTopicsTriggered();
+  void onLicenseTriggered();
   void onAboutTriggered();
 
   private:
@@ -96,9 +137,11 @@ class SolutionWindow : public QMainWindow {
   int findContainingElement(QPointF pt) const;
   // Barycentric-interpolates nodal A within element `elementIndex`
   // (assumed to already contain `pt`, i.e. from findContainingElement).
-
   std::complex<double> interpolateA(QPointF pt, int elementIndex) const;
   void updateContourVisual();
+  void addToRecentFiles(const QString& path);
+  void updateRecentFilesMenu();
+  void showContourIntegral();
 
   QGraphicsScene* m_scene = nullptr;
   SolutionGraphicsView* m_view = nullptr;
@@ -113,4 +156,5 @@ class SolutionWindow : public QMainWindow {
   QVector<QPointF> m_contourPoints;
   QGraphicsItem* m_contourVisual = nullptr;
   QString m_currentPath;
+  QMenu* m_recentFilesMenu = nullptr;
 };

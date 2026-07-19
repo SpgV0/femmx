@@ -4,11 +4,17 @@
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
+#include "GuiSwitch.h"
+#include "MainWindow.h"
 
 #include <QActionGroup>
+#include <QApplication>
+#include <QClipboard>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -21,8 +27,11 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QSettings>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -79,6 +88,25 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     }
   }
   m_bounds = QRectF(QPointF(xmin, ymin), QPointF(xmax, ymax));
+
+  // Precompute each node's average |B| across every element touching it
+  // -- see this member's header comment for why (approximates "Smooth"
+  // shading). Done once here rather than per-paint, since paint() can run
+  // many times (every pan/zoom) but the mesh itself never changes.
+  m_nodeBMagAvg.fill(0.0, solution->nodes.size());
+  QVector<int> touchCount(solution->nodes.size(), 0);
+  for (const MeshSolutionElement& e : solution->elements) {
+    double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    for (int p : { e.p0, e.p1, e.p2 }) {
+      if (p >= 0 && p < m_nodeBMagAvg.size()) {
+        m_nodeBMagAvg[p] += bMag;
+        touchCount[p]++;
+      }
+    }
+  }
+  for (int i = 0; i < m_nodeBMagAvg.size(); i++)
+    if (touchCount[i] > 0)
+      m_nodeBMagAvg[i] /= touchCount[i];
 }
 
 QRectF MeshSolutionItem::boundingRect() const
@@ -92,6 +120,24 @@ void MeshSolutionItem::setPlotMode(PlotMode mode)
   update();
 }
 
+void MeshSolutionItem::setSmoothing(bool smooth)
+{
+  m_smooth = smooth;
+  update();
+}
+
+void MeshSolutionItem::setShowMesh(bool show)
+{
+  m_showMesh = show;
+  update();
+}
+
+void MeshSolutionItem::setShowPoints(bool show)
+{
+  m_showPoints = show;
+  update();
+}
+
 void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
 {
   if (!m_solution || m_solution->elements.isEmpty())
@@ -101,6 +147,8 @@ void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*,
   case PlotMode::Contour: paintContour(painter); break;
   case PlotMode::Vector: paintVector(painter); break;
   }
+  if (m_showMesh || m_showPoints)
+    paintMeshOverlay(painter);
 }
 
 void MeshSolutionItem::paintDensity(QPainter* painter)
@@ -116,7 +164,12 @@ void MeshSolutionItem::paintDensity(QPainter* painter)
   for (const MeshSolutionElement& e : m_solution->elements) {
     if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
       continue;
-    double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    // Smooth: band on the average of the 3 corners' node-averaged |B|
+    // instead of this element's own single value -- see m_nodeBMagAvg's
+    // header comment.
+    double bMag = m_smooth
+        ? (m_nodeBMagAvg[e.p0] + m_nodeBMagAvg[e.p1] + m_nodeBMagAvg[e.p2]) / 3.0
+        : std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
     int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
     if (band >= kNumBands)
       band = kNumBands - 1;
@@ -234,6 +287,39 @@ void MeshSolutionItem::paintVector(QPainter* painter)
   }
 }
 
+void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
+{
+  // Drawn on top of whichever plot mode is active (femm.rc's Show Mesh/
+  // Show Points are independent toggles, not plot modes of their own).
+  if (m_showMesh) {
+    QPainterPath path;
+    for (const MeshSolutionElement& e : m_solution->elements) {
+      if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
+        continue;
+      const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+      const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+      const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+      path.moveTo(n0.x, n0.y);
+      path.lineTo(n1.x, n1.y);
+      path.lineTo(n2.x, n2.y);
+      path.lineTo(n0.x, n0.y);
+    }
+    QPen pen(QColor(80, 80, 80));
+    pen.setCosmetic(true);
+    painter->setPen(pen);
+    painter->drawPath(path);
+  }
+
+  if (m_showPoints) {
+    double diag = std::hypot(m_bounds.width(), m_bounds.height());
+    double r = diag * 0.0015;
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(Qt::black);
+    for (const MeshSolutionNode& n : m_solution->nodes)
+      painter->drawEllipse(QPointF(n.x, n.y), r, r);
+  }
+}
+
 SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* parent)
     : QGraphicsView(scene, parent)
 {
@@ -252,7 +338,21 @@ void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
 {
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;
   scale(factor, factor);
+  updateAntialiasingForScale();
   event->accept();
+}
+
+void SolutionGraphicsView::updateAntialiasingForScale()
+{
+  // m11() is the transform's horizontal scale factor -- the y-flip
+  // (scale(1,-1) applied once at construction) makes m22() negative, so
+  // m11() alone is the right one to threshold on. 8x was picked
+  // empirically: comfortably past the zoom level where the seam artifact
+  // became visible in testing, comfortably before it costs anything on a
+  // multi-million-element mesh (at 8x+, the visible viewport can no
+  // longer contain more than a small fraction of a typical mesh).
+  bool zoomedInEnough = std::abs(transform().m11()) >= 8.0;
+  setRenderHint(QPainter::Antialiasing, zoomedInEnough);
 }
 
 SolutionWindow::SolutionWindow(QWidget* parent)
@@ -272,6 +372,26 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&Open Solution...", this, &SolutionWindow::onOpenTriggered, QKeySequence::Open);
+  fileMenu->addAction("&Reload", this, &SolutionWindow::onReloadTriggered);
+  fileMenu->addSeparator();
+  m_recentFilesMenu = fileMenu->addMenu("Recent Files");
+  fileMenu->addSeparator();
+  fileMenu->addAction("Switch to &Classic GUI...", this, &SolutionWindow::onSwitchToClassicTriggered);
+  fileMenu->addSeparator();
+  fileMenu->addAction("E&xit", this, &QWidget::close);
+
+  QMenu* editMenu = menuBar()->addMenu("&Edit");
+  editMenu->addAction("Copy as &Bitmap", this, &SolutionWindow::onCopyBitmapTriggered);
+
+  QMenu* zoomMenu = menuBar()->addMenu("&Zoom");
+  zoomMenu->addAction("Zoom &In", this, &SolutionWindow::onZoomIn, QKeySequence(Qt::Key_PageUp));
+  zoomMenu->addAction("Zoom &Out", this, &SolutionWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
+  zoomMenu->addAction("&Natural", this, &SolutionWindow::onZoomNatural, QKeySequence(Qt::Key_Home));
+  zoomMenu->addSeparator();
+  zoomMenu->addAction("Scroll &Left", this, &SolutionWindow::onPanLeft, QKeySequence(Qt::Key_Left));
+  zoomMenu->addAction("Scroll &Right", this, &SolutionWindow::onPanRight, QKeySequence(Qt::Key_Right));
+  zoomMenu->addAction("Scroll &Up", this, &SolutionWindow::onPanUp, QKeySequence(Qt::Key_Up));
+  zoomMenu->addAction("Scroll &Down", this, &SolutionWindow::onPanDown, QKeySequence(Qt::Key_Down));
 
   QMenu* viewMenu = menuBar()->addMenu("&View");
   auto* plotGroup = new QActionGroup(this);
@@ -289,13 +409,29 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   vectorAction->setCheckable(true);
   plotGroup->addAction(vectorAction);
   connect(vectorAction, &QAction::triggered, this, [this]() { if (m_item) m_item->setPlotMode(MeshSolutionItem::PlotMode::Vector); });
+  QAction* smoothAction = viewMenu->addAction("&Smoothing");
+  smoothAction->setCheckable(true);
+  smoothAction->setChecked(true);
+  connect(smoothAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setSmoothing(on); });
+  viewMenu->addSeparator();
+  QAction* showMeshAction = viewMenu->addAction("Show &Mesh");
+  showMeshAction->setCheckable(true);
+  connect(showMeshAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowMesh(on); });
+  QAction* showPointsAction = viewMenu->addAction("Show &Points");
+  showPointsAction->setCheckable(true);
+  connect(showPointsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowPoints(on); });
   viewMenu->addSeparator();
   viewMenu->addAction("Problem &Info...", this, &SolutionWindow::onProblemInfoTriggered);
+  viewMenu->addSeparator();
+  QAction* statusBarAction = viewMenu->addAction("&Status Bar");
+  statusBarAction->setCheckable(true);
+  statusBarAction->setChecked(true);
+  connect(statusBarAction, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
 
   // Matches femm.rc's post-processor "Operation" menu (Point properties /
-  // Contours / Areas) -- Plot X-Y and Integrate are folded into the
-  // contour tool's own result dialog here rather than being separate
-  // modal commands, since they both operate on "the contour just drawn."
+  // Contours / Areas). Plot X-Y and Integrate are both separate top-level
+  // commands there too (not nested in Operation) -- matched here the same
+  // way, both operating on "the contour currently drawn."
   QMenu* opMenu = menuBar()->addMenu("&Operation");
   m_pointToolAction = opMenu->addAction("&Point Properties");
   m_pointToolAction->setCheckable(true);
@@ -314,10 +450,16 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   opMenu->addSeparator();
   opMenu->addAction("&Finish Contour", this, &SolutionWindow::onFinishContourTriggered);
   opMenu->addAction("&Clear Contour", this, &SolutionWindow::onClearContourTriggered);
-  opMenu->addAction("&Plot X-Y along Contour...", this, &SolutionWindow::onPlotXYTriggered);
+  menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
+  menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
+  helpMenu->addAction("&Help Topics", this, &SolutionWindow::onHelpTopicsTriggered);
+  helpMenu->addSeparator();
+  helpMenu->addAction("&License", this, &SolutionWindow::onLicenseTriggered);
   helpMenu->addAction("&About FEMMX...", this, &SolutionWindow::onAboutTriggered);
+
+  updateRecentFilesMenu();
 
   statusBar()->showMessage("Ready");
 }
@@ -383,6 +525,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_item = new MeshSolutionItem(&m_solution);
   m_scene->addItem(m_item);
   m_view->fitInView(m_item->boundingRect(), Qt::KeepAspectRatio);
+  m_view->updateAntialiasingForScale();
   m_currentPath = ansPath;
 
   statusBar()->showMessage(QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")
@@ -394,6 +537,7 @@ void SolutionWindow::openAnsFile(const QString& path)
                                 .arg(loadedFromAnsx ? ".ansx" : ".ans")
                                 .arg(elapsedMs));
   setWindowTitle(QString("FEMMX (Qt) - Solution Viewer - %1").arg(path));
+  addToRecentFiles(path);
 }
 
 int SolutionWindow::findContainingElement(QPointF pt) const
@@ -549,8 +693,13 @@ void SolutionWindow::updateContourVisual()
 
 void SolutionWindow::onFinishContourTriggered()
 {
+  showContourIntegral();
+}
+
+void SolutionWindow::showContourIntegral()
+{
   if (m_contourPoints.size() < 2) {
-    QMessageBox::information(this, "Finish Contour", "Click at least two points first.");
+    QMessageBox::information(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
     return;
   }
   double length = 0;
@@ -650,6 +799,29 @@ void SolutionWindow::onPlotXYTriggered()
   dlg.exec();
 }
 
+void SolutionWindow::onIntegrateTriggered()
+{
+  // femm.rc's "Integrate" is a standalone command distinct from "Finish
+  // Contour" (which also shows the same result) -- kept as a thin alias
+  // onto the same contour-integral logic rather than a second
+  // implementation, since both operate on "the contour currently drawn."
+  // The classic GUI's own Integrate additionally supports integrating
+  // over an Area selection (energy, force, etc.) -- not implemented here
+  // yet, since that needs per-element J/sigma data this app doesn't
+  // currently extract from .ans (see the Areas tool's own simpler
+  // area+avg-|B| scope).
+  showContourIntegral();
+}
+
+void SolutionWindow::onReloadTriggered()
+{
+  if (m_currentPath.isEmpty()) {
+    QMessageBox::information(this, "Reload", "No solution loaded.");
+    return;
+  }
+  openAnsFile(m_currentPath);
+}
+
 void SolutionWindow::onProblemInfoTriggered()
 {
   if (m_currentPath.isEmpty()) {
@@ -690,4 +862,178 @@ void SolutionWindow::onProblemInfoTriggered()
 void SolutionWindow::onAboutTriggered()
 {
   QMessageBox::about(this, "About FEMMX", "<b>FEMMX (Qt)</b> -- Solution Viewer<br><br>Density/Contour/Vector plots, Point/Contour/Area analysis tools.");
+}
+
+// Zoom/Pan -- see MainWindow::onZoomIn's equivalent comment; same
+// relative-transform approach, just against this window's own view.
+void SolutionWindow::onZoomIn()
+{
+  m_view->scale(2.0, 2.0);
+  m_view->updateAntialiasingForScale();
+}
+
+void SolutionWindow::onZoomOut()
+{
+  m_view->scale(0.5, 0.5);
+  m_view->updateAntialiasingForScale();
+}
+
+void SolutionWindow::onZoomNatural()
+{
+  if (m_item)
+    m_view->fitInView(m_item->boundingRect(), Qt::KeepAspectRatio);
+  m_view->updateAntialiasingForScale();
+}
+
+void SolutionWindow::onPanLeft()
+{
+  auto* bar = m_view->horizontalScrollBar();
+  bar->setValue(bar->value() - m_view->viewport()->width() / 4);
+}
+
+void SolutionWindow::onPanRight()
+{
+  auto* bar = m_view->horizontalScrollBar();
+  bar->setValue(bar->value() + m_view->viewport()->width() / 4);
+}
+
+void SolutionWindow::onPanUp()
+{
+  auto* bar = m_view->verticalScrollBar();
+  bar->setValue(bar->value() - m_view->viewport()->height() / 4);
+}
+
+void SolutionWindow::onPanDown()
+{
+  auto* bar = m_view->verticalScrollBar();
+  bar->setValue(bar->value() + m_view->viewport()->height() / 4);
+}
+
+void SolutionWindow::onCopyBitmapTriggered()
+{
+  if (!m_item) {
+    QMessageBox::information(this, "Copy as Bitmap", "No solution loaded.");
+    return;
+  }
+  QPixmap pixmap = m_view->viewport()->grab();
+  QApplication::clipboard()->setPixmap(pixmap);
+  statusBar()->showMessage("Copied view to clipboard as a bitmap.");
+}
+
+void SolutionWindow::onSwitchToClassicTriggered()
+{
+  if (m_currentPath.isEmpty()) {
+    QMessageBox::information(this, "Switch GUI", "No solution loaded.");
+    return;
+  }
+  GuiSwitch::writePreferredGui(GuiSwitch::PreferredGui::Classic);
+  if (!GuiSwitch::launchClassicGui(m_currentPath)) {
+    QMessageBox::warning(this, "Switch Failed", "Couldn't find or start femmx.exe next to femmqt.exe.");
+    return;
+  }
+  close();
+}
+
+void SolutionWindow::addToRecentFiles(const QString& path)
+{
+  // Shares the same "recentFiles" QSettings key as MainWindow -- one
+  // unified recent-files list across both windows this process can open,
+  // rather than two independently-tracked ones a user would need to
+  // remember apart.
+  QSettings settings;
+  QStringList recent = settings.value("recentFiles").toStringList();
+  recent.removeAll(path);
+  recent.prepend(path);
+  while (recent.size() > 8)
+    recent.removeLast();
+  settings.setValue("recentFiles", recent);
+  updateRecentFilesMenu();
+}
+
+void SolutionWindow::updateRecentFilesMenu()
+{
+  m_recentFilesMenu->clear();
+  QSettings settings;
+  QStringList recent = settings.value("recentFiles").toStringList();
+  if (recent.isEmpty()) {
+    QAction* empty = m_recentFilesMenu->addAction("(none)");
+    empty->setEnabled(false);
+    return;
+  }
+  for (const QString& path : recent) {
+    QAction* action = m_recentFilesMenu->addAction(path);
+    action->setData(path);
+    connect(action, &QAction::triggered, this, &SolutionWindow::onOpenRecentFile);
+  }
+}
+
+void SolutionWindow::onOpenRecentFile()
+{
+  auto* action = qobject_cast<QAction*>(sender());
+  if (!action)
+    return;
+  QString path = action->data().toString();
+  if (!QFileInfo::exists(path)) {
+    QMessageBox::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
+    QSettings settings;
+    QStringList recent = settings.value("recentFiles").toStringList();
+    recent.removeAll(path);
+    settings.setValue("recentFiles", recent);
+    updateRecentFilesMenu();
+    return;
+  }
+  // A recent-files entry might be a .fem (geometry, from MainWindow's own
+  // shared list) rather than a .ans/.ansx -- route it back to a geometry
+  // editor window instead of trying to open it here.
+  QString suffix = QFileInfo(path).suffix();
+  if (suffix.compare("ans", Qt::CaseInsensitive) != 0 && suffix.compare("ansx", Qt::CaseInsensitive) != 0) {
+    auto* window = new MainWindow();
+    window->show();
+    window->openFile(path);
+    return;
+  }
+  openAnsFile(path);
+}
+
+void SolutionWindow::onHelpTopicsTriggered()
+{
+  // See MainWindow::onHelpTopicsTriggered's identical reasoning.
+  QString exeDir = QCoreApplication::applicationDirPath();
+  QStringList candidates = {
+    exeDir + "/manual.pdf",
+    exeDir + "/../manual/manual.pdf",
+    exeDir + "/../../manual/manual.pdf",
+  };
+  for (const QString& candidate : candidates) {
+    if (QFileInfo::exists(candidate)) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(candidate).absoluteFilePath()));
+      return;
+    }
+  }
+  QMessageBox::information(this, "Help Topics",
+      "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
+      "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+void SolutionWindow::onLicenseTriggered()
+{
+  QString exeDir = QCoreApplication::applicationDirPath();
+  QFile file(exeDir + "/license.txt");
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QMessageBox::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
+    return;
+  }
+  QString text = QString::fromUtf8(file.readAll());
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("License");
+  dlg.resize(600, 500);
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* view = new QPlainTextEdit(text, &dlg);
+  view->setReadOnly(true);
+  layout->addWidget(view);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
 }

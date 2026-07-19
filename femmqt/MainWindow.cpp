@@ -157,6 +157,11 @@ MainWindow::MainWindow(QWidget* parent)
   showNamesAction->setCheckable(true);
   connect(showNamesAction, &QAction::toggled, m_scene, &GeometryScene::setShowBlockNames);
   viewMenu->addAction("Show &Orphans", this, &MainWindow::onShowOrphansTriggered);
+  viewMenu->addSeparator();
+  QAction* statusBarAction = viewMenu->addAction("&Status Bar");
+  statusBarAction->setCheckable(true);
+  statusBarAction->setChecked(true);
+  connect(statusBarAction, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
 
   QMenu* gridMenu = menuBar()->addMenu("&Grid");
   QAction* showGridAction = gridMenu->addAction("&Show Grid");

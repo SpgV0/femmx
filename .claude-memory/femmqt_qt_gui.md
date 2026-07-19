@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T12:21:05.431Z
+  modified: 2026-07-19T13:30:04.793Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -141,6 +141,37 @@ same verified interpolation code but weren't independently click-tested
 use during this round, confirmed via `win32gui.GetForegroundWindow()`
 changing mid-script, so heavy interactive automation was deliberately
 scaled back in favor of code review + build verification).
+
+**Update (2026-07-19, later still): user asked directly whether Round 3
+covered the analysis (post-processor) window -- it hadn't.** Checking
+`femm.rc`'s `IDR_FEMMVIEWTYPE` menu directly (rather than trusting my own
+earlier summary) showed Zoom/Edit/several View items had only been added
+to the geometry editor, not the Solution Viewer. Also caught a dead stub
+in my own prior work: `MeshSolutionItem::setSmoothing()` was wired to a
+member no paint method ever read. Filled in: Zoom menu, Copy as Bitmap,
+real Smoothing (bands on node-averaged |B| -- `QPainter` has no native
+triangle-gradient primitive so this approximates true Gouraud shading,
+see `m_nodeBMagAvg`), Show Mesh/Points overlays, Status Bar toggle (added
+to both windows -- missing from the geometry editor too), Reload, Recent
+Files (shares `MainWindow`'s `QSettings` key), Switch to Classic GUI,
+Help Topics/License, Integrate. Full accounting of what's still missing
+(Circuit Props/BH Curves/Print/Preferences/Dark Theme/Lua Console/Output
+Window) is in the plan doc's "Round 4" section.
+
+**Real bug found via my own testing of this round's work**: zooming in
+past ~8x on a real solved mesh showed black gaps between triangles in
+the density plot. Root-caused (by toggling Smoothing on/off -- no
+change -- and reloading fresh at low zoom -- clean) to `QPainter::
+Antialiasing` being off (a pre-existing large-mesh-performance choice)
+combined with triangles shrinking to a few screen pixels at high zoom --
+a case only newly reachable because this round added zoom controls that
+didn't exist before. Fixed with a scale-dependent AA toggle
+(`SolutionGraphicsView::updateAntialiasingForScale()`, threshold 8x)
+called after every zoom-changing operation. Worth remembering: adding a
+new capability (zoom) can expose a latent issue in *unrelated*,
+already-shipped code that was fine under the old, narrower reachable
+state space -- re-test old features after adding new ways to reach them,
+not just the new feature itself.
 
 **`.qrc` resource paths and `CMAKE_AUTORCC` gotchas** (from the toolbar
 icons work earlier the same day): a `.qrc`'s runtime resource path is
