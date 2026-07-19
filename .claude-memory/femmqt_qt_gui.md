@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T16:33:02.906Z
+  modified: 2026-07-19T17:02:52.457Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -372,6 +372,56 @@ Curves" viewer distinct from the geometry editor's editable one).
 - Verified live for both: screenshotted the status bar mid-hover over the
   straight-wire test file -- showed live x/y plus `|B|`/`A` matching the
   known-correct field pattern at that point.
+
+**Round 8 (2026-07-19, same day, 3 direct fixes: dark-theme text
+contrast, cursor-following coordinates "like Fusion 360", and toolbar
+icons), committed `f191e1a` on `new_features` (pushed).**
+- **Dark theme text-field bug, found and fixed**: `QLineEdit`/
+  `QComboBox` backgrounds stayed a light native gray with barely-visible
+  near-white text in every dialog, even though the custom `QPalette` was
+  applied and OTHER widgets (labels, checkboxes) went dark correctly.
+  Root cause, confirmed by screenshotting Problem Properties before/
+  after: Windows' native styles (windowsvista/windows11) render those
+  two controls from OS theme chrome rather than fully honoring a custom
+  `QPalette::Base`. Fix: `AppTheme::setDark(true)` now also switches to
+  the Fusion style (Qt's own recommended style for custom palettes --
+  the ONLY style that reliably honors every palette role), restoring
+  whatever native style was active at startup on light mode. **Lesson
+  for any future Qt dark-mode work on Windows**: a custom `QPalette`
+  alone is not sufficient for full theming on native Windows styles --
+  pair it with `QStyleFactory::create("Fusion")` or expect exactly this
+  kind of silently-wrong-contrast bug in text-entry widgets specifically.
+- **Cursor-following coordinate/value readout** ("like Fusion 360"): a
+  floating `QLabel` parented to the viewport, repositioned on every
+  mouse move (offset down-right of the cursor, clamped to the viewport
+  edges) -- `GeometryView` shows the live model-space coordinate while
+  drawing, `SolutionGraphicsView` shows coordinate + interpolated `|B|`/
+  `A`. Additive to the fixed status-bar readouts added in Round 7, not a
+  replacement -- both now show the same live text.
+- **Toolbar icons**: searched `femm.rc`'s actual `TOOLBAR` resource
+  blocks (`IDR_FEMMETYPE`, `IDR_LEFTBAR`, `IDR_FEMMVIEWTYPE`) for the
+  authoritative icon list per direct user request ("list all the icons
+  used... by searching in the old GUI") rather than guessing -- found
+  the Solution Viewer had **no toolbar at all** (text menus only) and
+  the geometry editor only had its original 5 drawing-tool icons.
+  ~32 new SVGs added to `toolbar_icons/` (same `CURRENTCOLOR`-
+  placeholder convention as the existing 5). Wired into 4 new toolbars
+  total: geometry editor gets Edit (Undo/Open Selected/Delete/Move/Copy/
+  Scale/Mirror/Create Radius/Create Open Boundary/Select by Group), Mesh
+  (Create Mesh/Solve/View Results), and a left-docked Navigate toolbar
+  (Zoom/Pan/Grid, matching `femm.rc`'s own separate `IDR_LEFTBAR`
+  layout); Solution Viewer gets one Operation toolbar (Point/Contours/
+  Areas/Plot X-Y/Integrate/Circuit Props/Show Mesh/Contour/Density/
+  Vector Plot). Checkable actions reuse the exact same `QAction` objects
+  their menu items already created (not copies) so toolbar buttons and
+  menu checkmarks never drift apart -- `MainWindow`/`SolutionWindow` each
+  got an `addThemedAction()` helper that remembers every new action's
+  icon path in `m_themedActions` so `refreshToolbarIcons()` re-tints all
+  of them (not just the original 5) after a dark/light toggle.
+- Verified live: screenshotted both windows' toolbars in light and dark
+  mode (icons correctly re-tint), the floating tooltips tracking the
+  cursor with live text in both windows, and the fixed dark-theme dialog
+  fields (white-on-dark, confirmed before/after the Fusion-style fix).
 
 **Lesson, worth remembering beyond this one feature**: when a classic-
 FEMM formula involves `LengthConv`/unit conversions, do not trust a
