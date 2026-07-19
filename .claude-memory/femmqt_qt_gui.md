@@ -1,10 +1,10 @@
 ---
 name: femmqt-qt-gui
-description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI, magnetics-only Phase 1, shipped and made the default -- what it covers, what it doesn't, and where the design decisions live"
+description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI, magnetics-only Phase 1 plus full property editing, shipped and made the default -- what it covers, what it doesn't, and where the design decisions live"
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T08:18:20.250Z
+  modified: 2026-07-19T11:15:54.591Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -77,3 +77,54 @@ unrelated pre-existing stray folder.
 
 See also [[push_branch_policy]] (updated same day: now push to
 `new_features` once a day as a work backup, not just when told).
+
+**Update (2026-07-19, same day): full property editing added, committed
+`e2cad69`.** Problem Properties dialog; Material/Boundary/Circuit/
+PointProp libraries via a shared `PropertyListDialog` (Add/Duplicate/
+Edit/Delete callbacks) + a per-type field editor, under a new Problem
+menu; per-entity (node/segment/arc/block-label) dialogs on double-click
+in Select mode; an Add Arc tool; index-renumbering helpers
+(`FemmProblemEdit::delete*Prop`) so deleting a still-referenced property
+resets/renumbers cleanly instead of corrupting indices. Toolbar is now
+icon-only (`femmqt/toolbar_icons/*.svg`), recolored at runtime from
+`QPalette::ButtonText` (`IconTheme.cpp`) so it's correct in both light
+and dark modes without shipping two asset sets.
+
+**Real bug found and fixed**: `FemmNode`'s third `.fem` column was
+modeled as a `boundaryProps` reference (matching Segment/Arc's own
+`boundaryMarker`) but the classic GUI's writer (`femm/FemmeDoc.cpp:
+2596-2601`) actually resolves it against `nodeproplist`/`pointProps` --
+individual nodes only ever carry a *point* property in classic FEMM,
+never a standalone boundary condition. Renamed to `pointPropIndex`
+everywhere (FemmProblem.h, FemmFileIO.cpp, FemxFileIO.cpp,
+MeshBuilder.cpp). Round-tripping was already correct by accident (the
+raw integer just passed through untouched, nothing dereferenced it), so
+this stayed latent until building the point-property assignment UI
+required getting the semantics right. Worth checking for if this data
+model is extended further.
+
+**Other gotchas found this round**: `qt_standard_project_setup()` does
+NOT reliably enable `CMAKE_AUTORCC` -- a `.qrc` listed in
+`qt_add_executable()`'s sources silently never got compiled until
+`set(CMAKE_AUTORCC ON)` was added explicitly before the `qt_add_executable`
+call. `.gitignore`'s standalone `Icon?` line (for macOS's cursed
+`Icon\r` custom-folder-icon files) collides case-insensitively with any
+5-letter directory named `icons` on Windows git (`core.ignorecase`) --
+new icon assets went in `femmqt/toolbar_icons/` instead, not
+`femmqt/icons/`, to dodge it (don't touch the `Icon?` rule itself, it's
+legitimate elsewhere). A `.qrc`'s resource path is `prefix + "/" +
+alias` (default alias = the `<file>` text verbatim) -- `<file>icons/
+foo.svg</file>` under `prefix="/icons"` resolves to `:/icons/icons/
+foo.svg`, not `:/icons/foo.svg`; use an explicit `alias="foo.svg"` to
+get the shorter runtime path.
+
+**Double-click UI-automation gotcha (test methodology, not an app bug)**:
+`pywinauto.mouse.double_click()` / `click_input(double=True)` did not
+reproduce a genuine Qt double-click in this environment no matter the
+timing -- confirmed via a temporary `mouseDoubleClickEvent` stderr trace
+that Qt never received a coalesced double-click event, only two separate
+single presses. A raw `ctypes`/`user32.SendInput`-style sequence
+(`SetCursorPos` + `mouse_event(LEFTDOWN)` + 20ms + `mouse_event(LEFTUP)`,
+~50ms gap, repeat) reliably registers as a real double-click. Reach for
+this first next time double-click automation is needed against this app
+rather than re-discovering it.
