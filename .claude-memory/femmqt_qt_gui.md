@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T13:30:04.793Z
+  modified: 2026-07-19T14:54:57.368Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -201,3 +201,87 @@ single presses. A raw `ctypes`/`user32.SendInput`-style sequence
 ~50ms gap, repeat) reliably registers as a real double-click. Reach for
 this first next time double-click automation is needed against this app
 rather than re-discovering it.
+
+**Round 5 (2026-07-19, "implement these too"): the rest of Round 3/4's
+deferred list, committed `c9f7e8d` on `new_features` (pushed).** User
+explicitly rejected an `Agent`/subagent tool call for this round's
+research -- all of it was done via direct `Read`/`Grep`, a hard
+constraint for any further work on this codebase unless told otherwise.
+Implemented, each a faithful port of the classic algorithm (not an
+approximation) unless noted:
+- **Create Radius**: all 3 cases (two segments/two arcs/one of each)
+  ported from `femm/FemmeDoc.cpp`'s `CreateRadius` -- the tangent-circle
+  geometry (up to 8 candidate solutions via `std::complex`, filtered by
+  which actually touch both original entities) is in
+  `FemmProblemEdit::createRadius`.
+- **Create Open Boundary (ABC)**: `bin/init.lua`'s `mi_makeABC`, including
+  the exact `u2D0`/`u2D1`/`uAx0`/`uAx1` permeability tables (n=1..12),
+  transcribed verbatim into `OpenBoundaryDialog.cpp`.
+- **Materials Library**: `MaterialLibraryIO` parses `bin/matlib.dat`'s
+  `<BeginFolder>`/`<BeginBlock>` tree (same tags as `.fem`'s own
+  `BlockProps`) into a browsable dialog.
+- **DXF import/export** (`DxfIO.h/.cpp`): ports `femm/MOVECOPY.CPP`'s
+  `ReadDXF`/`WriteDXF` line-for-line (POINT/LINE/ARC/CIRCLE/LWPOLYLINE/
+  POLYLINE+VERTEX, bulge-factor arc splitting). One deliberate
+  simplification, documented in the header: node merging is coincident-
+  point dedup only, not classic's full `FancyEnforcePSLG`
+  intersection-splitting -- a DXF with genuinely crossing, non-coincident
+  geometry imports with those crossings unresolved.
+- **Preferences + Dark Theme**: `AppPreferences` mirrors `GuiSwitch`'s
+  tag-preserving femm.cfg read/write (the classic GUI's 5 keys +
+  `<QtDarkTheme>`). `AppTheme` drives both `QApplication::setPalette()`
+  and named scene colors that `GeometryScene`/`SolutionView` now read
+  instead of hardcoded `Qt::black` etc. -- toggling calls `refreshTheme()`
+  (a full `rebuild()`) since item colors are baked in at creation, not
+  read live per-paint. Verified live: canvas, menus, and toolbar icons all
+  repaint correctly on toggle.
+- **CPU/GPU/RAM Load Monitor**: Qt-painted port of
+  `femm/LoadMonitorDlg` (GetSystemTimes/NVML-dynamic-load/
+  GlobalMemoryStatusEx same as the original). Exposed a real architecture
+  gap while wiring it in: `SolveRunner::solve()`/`mesh()` used to call
+  `QProcess::waitForFinished(-1)`, which blocks the event loop entirely --
+  fine on its own, but it meant the Load Monitor's `QTimer` could never
+  fire during a solve. Fixed by polling in short bursts and pumping
+  `QCoreApplication::processEvents()` between them; `MainWindow` now
+  disables its menu bar for the duration (that pumping makes a second
+  concurrent solve/mesh reachable, which isn't safe -- both would write
+  the same `.poly`/`.pbc`/`.ans` files).
+- **Output Window**: a persistent dock in the Solution Viewer echoing
+  every Point/Contour/Area result (classic FEMM only ever shows the
+  *last* one in its docked `IDC_OUTBOX`; keeping a scrollback is strictly
+  more useful and no harder).
+- **Exterior Region dialog**, **Print/Print Preview** (Qt's built-in
+  `QPrintDialog`/`QPrintPreviewDialog`), **Copy as Bitmap** for the
+  geometry editor.
+
+**Still deliberately deferred, with reasons** (not silently dropped):
+Circuit Props and BH Curves need per-element J/sigma data (a
+`GetJA`-equivalent current density calc, multi-turn `LocalEnergy`
+correction, `PlnInt`/`AxiInt` integration) that `.ans`/`.ansx`/
+`MeshSolutionElement` don't currently carry at all -- confirmed by
+reading `femm/CircDlg.cpp` and `femm/FemmviewDoc.cpp`'s
+`GetVoltageDrop`/`GetFluxLinkage` in full; this is a real numerical
+feature on the order of the original `.ans` reader itself, not a
+menu-item-sized task. Lua Console remains out of proportion
+(`femmeLua.cpp` is thousands of lines). Copy as Metafile still skipped
+(no clean cross-platform EMF path in Qt).
+
+**Verification this round**: full local rebuild via `build_qt` (direct
+`cmake --build . --target femmqt`, not the full `build.ps1`, for faster
+iteration -- caught two real compile errors this way: `windows.h`'s
+`max`/`min` macros clobbering `std::max`/`std::min` in
+`LoadMonitorDialog.cpp`, needing `#define NOMINMAX` before the
+`#include <windows.h>`). Then live-tested: launched the built exe,
+force-foregrounded it (the established `keybd_event(VK_MENU)` +
+`SetForegroundWindow` trick), and screenshotted the Edit/Problem/View
+menus (all new items present), the Dark Theme toggle (canvas + toolbar
+icons repainted correctly), the Preferences dialog, and the Load Monitor
+dialog (GPU trace detected via NVML on this machine) -- all opened and
+rendered correctly with no crash. Note for next time: pywinauto's
+`Application.windows()`/`app.window(title=...)` did NOT enumerate a
+QDialog as a top-level window in this environment (returned only the
+main window) even though it was genuinely open and visible -- had to
+fall back to raw `win32gui.EnumWindows` + `win32process.
+GetWindowThreadProcessId` to find its real HWND, then drive it via
+`win32gui`/`win32api` directly (or `app.window(handle=...)` once the
+HWND is known) instead of pywinauto's own window-finding.
