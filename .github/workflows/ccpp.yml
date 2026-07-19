@@ -99,9 +99,15 @@
 # without Qt6, which is every CI runner as of this change).
 name: FEMMX Continuous Integration
 
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+# switched from running on every push/pull_request to manual-only
+# (workflow_dispatch). This workflow now builds femm+femmqt+fkn+triangle
+# and installs Qt6 on every run, which is a real amount of CI minutes for
+# a repo that's currently getting frequent commits -- manual triggering
+# avoids burning that on every intermediate push, at the cost of needing
+# to remember to run it (from the Actions tab, or `gh workflow run`)
+# before relying on its result, e.g. before a release.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
