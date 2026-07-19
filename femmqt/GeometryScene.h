@@ -37,6 +37,12 @@ class GeometryScene : public QGraphicsScene {
 
   void setProblem(FemmProblem* problem);
 
+  // Re-reads AppTheme's current colors into the scene background and every
+  // existing item (via rebuild()) -- called after AppTheme::setDark()
+  // toggles, since item colors are baked in at creation time rather than
+  // read live from AppTheme on every paint.
+  void refreshTheme();
+
   // Full rebuild from the current problem state -- clears and re-adds
   // every item. Used after structural edits (add/delete) where an
   // incremental patch isn't worth the bookkeeping; drag-move instead

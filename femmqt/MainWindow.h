@@ -37,6 +37,18 @@ class MainWindow : public QMainWindow {
   void onBoundaryPropsTriggered();
   void onCircuitsTriggered();
   void onPointPropsTriggered();
+  void onExteriorRegionTriggered();
+  void onMaterialsLibraryTriggered();
+  void onPreferencesTriggered();
+  void onDarkThemeToggled(bool dark);
+  void onLoadMonitorToggled(bool show);
+  void onCreateOpenBoundaryTriggered();
+  void onCreateRadiusTriggered();
+  void onImportDxfTriggered();
+  void onExportDxfTriggered();
+  void onPrintTriggered();
+  void onPrintPreviewTriggered();
+  void onCopyBitmapTriggered();
   void onEntityDoubleClicked(FemmItemKind kind, int index);
   void onZoomIn();
   void onZoomOut();
@@ -72,6 +84,7 @@ class MainWindow : public QMainWindow {
   void snapshotForUndo();
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
+  void refreshToolbarIcons();
 
   GeometryScene* m_scene = nullptr;
   GeometryView* m_view = nullptr;
@@ -94,4 +107,5 @@ class MainWindow : public QMainWindow {
   QMenu* m_recentFilesMenu = nullptr;
 
   class SolutionWindow* m_solutionWindow = nullptr;
+  class LoadMonitorDialog* m_loadMonitor = nullptr;
 };

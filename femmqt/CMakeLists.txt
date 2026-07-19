@@ -31,7 +31,7 @@ list(APPEND CMAKE_PREFIX_PATH "${FEMMQT_QT6_DIR}")
 # not take down femm/fkn/triangle/the installer with it. QUIET + an
 # explicit found-check + early return() achieves that; REQUIRED does not
 # offer a way to make just the package-not-found case non-fatal.
-find_package(Qt6 QUIET COMPONENTS Widgets Svg)
+find_package(Qt6 QUIET COMPONENTS Widgets Svg PrintSupport)
 # qt_standard_project_setup() (below) enables AUTOMOC but, confirmed this
 # session, not reliably AUTORCC -- icons.qrc silently never got compiled
 # into a qrc_icons.cpp without this, so IconTheme::themedToolIcon's
@@ -41,7 +41,7 @@ find_package(Qt6 QUIET COMPONENTS Widgets Svg)
 # relying on it being a qt_standard_project_setup() default.
 set(CMAKE_AUTORCC ON)
 if (NOT Qt6_FOUND)
-  message(WARNING "femmqt: Qt6 (Widgets, Svg) not found under CMAKE_PREFIX_PATH or FEMMQT_QT6_DIR="
+  message(WARNING "femmqt: Qt6 (Widgets, Svg, PrintSupport) not found under CMAKE_PREFIX_PATH or FEMMQT_QT6_DIR="
     "\"${FEMMQT_QT6_DIR}\" -- skipping the femmqt (Qt GUI) target. "
     "Install Qt6 there, or pass -DFEMMQT_QT6_DIR=<path to a Qt6 MSVC kit>, to build it.")
   return()
@@ -100,11 +100,29 @@ qt_add_executable(femmqt WIN32
   GeometryView.cpp
   MeshOverlay.h
   MeshOverlay.cpp
+  AppTheme.h
+  AppTheme.cpp
+  AppPreferences.h
+  AppPreferences.cpp
+  PreferencesDialog.h
+  PreferencesDialog.cpp
+  ExteriorRegionDialog.h
+  ExteriorRegionDialog.cpp
+  LoadMonitorDialog.h
+  LoadMonitorDialog.cpp
+  MaterialLibraryIO.h
+  MaterialLibraryIO.cpp
+  MaterialLibraryDialog.h
+  MaterialLibraryDialog.cpp
+  OpenBoundaryDialog.h
+  OpenBoundaryDialog.cpp
+  DxfIO.h
+  DxfIO.cpp
   icons.qrc
 )
 
 target_compile_options(femmqt PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
-target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg)
+target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 
 install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")
 

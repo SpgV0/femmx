@@ -10,6 +10,8 @@
 
 class QGraphicsScene;
 class QAction;
+class QDockWidget;
+class QPlainTextEdit;
 
 // Paints the whole solved mesh (potentially millions of triangles) in a
 // handful of QPainter calls -- one filled QPainterPath per color band,
@@ -142,6 +144,12 @@ class SolutionWindow : public QMainWindow {
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
   void showContourIntegral();
+  // Echoes a Point/Contour/Area result into the persistent Output Window
+  // dock, mirroring femm/FemmviewView.cpp's OutputWindowText/IDC_OUTBOX --
+  // classic FEMM keeps the *last* result visible in a docked bar instead
+  // of only a popup dialog; this keeps a scrollback of all of them, which
+  // is strictly more useful and no harder to implement.
+  void appendOutput(const QString& text);
 
   QGraphicsScene* m_scene = nullptr;
   SolutionGraphicsView* m_view = nullptr;
@@ -157,4 +165,7 @@ class SolutionWindow : public QMainWindow {
   QGraphicsItem* m_contourVisual = nullptr;
   QString m_currentPath;
   QMenu* m_recentFilesMenu = nullptr;
+
+  QDockWidget* m_outputDock = nullptr;
+  QPlainTextEdit* m_outputText = nullptr;
 };

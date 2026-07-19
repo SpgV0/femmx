@@ -3,6 +3,8 @@
 
 #include "AnsFileIO.h"
 #include "AnsxFileIO.h"
+#include "AppPreferences.h"
+#include "AppTheme.h"
 #include "FemmProblem.h"
 #include "MainWindow.h"
 #include "MeshSolution.h"
@@ -49,6 +51,13 @@ int main(int argc, char* argv[])
   // could find on purpose.
   QCoreApplication::setOrganizationName("FEMMX");
   QCoreApplication::setApplicationName("femmqt");
+
+  // Must happen before any window is constructed -- IconTheme::
+  // themedToolIcon() and GeometryScene/SolutionWindow's background brush
+  // both bake in whatever AppTheme::isDark()/qApp->palette() is current
+  // at construction time.
+  AppTheme::setDark(AppPreferences::load().darkTheme);
+
   const QStringList args = app.arguments();
 
   if (args.size() >= 3 && args.at(1) == "--convert-ansx")

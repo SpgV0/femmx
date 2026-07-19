@@ -1,18 +1,26 @@
 #include "MainWindow.h"
 
+#include "AppPreferences.h"
+#include "AppTheme.h"
 #include "ArcPropDialog.h"
 #include "BlockLabelPropDialog.h"
 #include "BoundaryPropDialog.h"
 #include "CircuitPropDialog.h"
+#include "DxfIO.h"
+#include "ExteriorRegionDialog.h"
 #include "FemmFileIO.h"
 #include "FemmProblemEdit.h"
 #include "FemxFileIO.h"
 #include "GuiSwitch.h"
 #include "IconTheme.h"
+#include "LoadMonitorDialog.h"
+#include "MaterialLibraryDialog.h"
 #include "MaterialPropDialog.h"
 #include "MeshOverlay.h"
 #include "NodePropDialog.h"
+#include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
+#include "PreferencesDialog.h"
 #include "ProblemPropertiesDialog.h"
 #include "PropertyListDialog.h"
 #include "SegmentPropDialog.h"
@@ -21,6 +29,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDialog>
@@ -32,7 +41,11 @@
 #include <QInputDialog>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
+#include <QPrintDialog>
+#include <QPrintPreviewDialog>
+#include <QPrinter>
 #include <QScrollBar>
 #include <QSet>
 #include <QSettings>
@@ -93,6 +106,12 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addAction("&Save", this, &MainWindow::onSaveTriggered, QKeySequence::Save);
   fileMenu->addAction("Save &As...", this, &MainWindow::onSaveAsTriggered, QKeySequence::SaveAs);
   fileMenu->addSeparator();
+  fileMenu->addAction("&Import DXF...", this, &MainWindow::onImportDxfTriggered);
+  fileMenu->addAction("&Export DXF...", this, &MainWindow::onExportDxfTriggered);
+  fileMenu->addSeparator();
+  fileMenu->addAction("Print Pre&view...", this, &MainWindow::onPrintPreviewTriggered);
+  fileMenu->addAction("&Print...", this, &MainWindow::onPrintTriggered, QKeySequence::Print);
+  fileMenu->addSeparator();
   m_recentFilesMenu = fileMenu->addMenu("Recent Files");
   fileMenu->addSeparator();
   fileMenu->addAction("Switch to &Classic GUI...", this, &MainWindow::onSwitchToClassicTriggered);
@@ -100,8 +119,9 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addAction("E&xit", this, &QWidget::close);
 
   // Matches femm.rc's IDR_FEMMETYPE Edit menu's geometry-transform subset
-  // (Undo, Move, Copy, Scale, Mirror) -- Create Radius/Create Open
-  // Boundary/Preferences/Copy as Bitmap-Metafile are separate todo items.
+  // (Undo, Move, Copy, Scale, Mirror) plus Create Open Boundary and
+  // Preferences -- Create Radius stays a separate todo item (see its own
+  // note near onCreateOpenBoundaryTriggered's implementation).
   QMenu* editMenu = menuBar()->addMenu("&Edit");
   editMenu->addAction("&Undo", this, &MainWindow::onUndoTriggered, QKeySequence::Undo);
   editMenu->addSeparator();
@@ -110,12 +130,19 @@ MainWindow::MainWindow(QWidget* parent)
   editMenu->addAction("Sc&ale...", this, &MainWindow::onScaleSelectedTriggered);
   editMenu->addAction("M&irror...", this, &MainWindow::onMirrorSelectedTriggered);
   editMenu->addSeparator();
+  editMenu->addAction("Create &Radius...", this, &MainWindow::onCreateRadiusTriggered);
+  editMenu->addAction("Create &Open Boundary...", this, &MainWindow::onCreateOpenBoundaryTriggered);
+  editMenu->addSeparator();
+  editMenu->addAction("Copy as &Bitmap", this, &MainWindow::onCopyBitmapTriggered);
+  editMenu->addSeparator();
   // Simplified, instant-action equivalent of femm.rc's "Operation > Group"
   // mode (which requires switching modes, then pressing Tab to prompt for
   // a group number) -- same underlying inGroup field, just two direct
   // commands instead of a persistent tool mode.
   editMenu->addAction("Select by &Group...", this, &MainWindow::onSelectByGroupTriggered);
   editMenu->addAction("Set &Group...", this, &MainWindow::onSetGroupTriggered);
+  editMenu->addSeparator();
+  editMenu->addAction("&Preferences...", this, &MainWindow::onPreferencesTriggered);
 
   // Matches femm.rc's separate Mesh (Create/Show/Purge) and Analysis
   // (Analyze/View Results) menus, just combined under one "Mesh" menu
@@ -133,15 +160,17 @@ MainWindow::MainWindow(QWidget* parent)
 
   QMenu* problemMenu = menuBar()->addMenu("&Problem");
   problemMenu->addAction("&Problem Properties...", this, &MainWindow::onProblemPropertiesTriggered);
+  problemMenu->addAction("&Exterior Region...", this, &MainWindow::onExteriorRegionTriggered);
   problemMenu->addSeparator();
   problemMenu->addAction("&Materials...", this, &MainWindow::onMaterialsTriggered);
+  problemMenu->addAction("Materials &Library...", this, &MainWindow::onMaterialsLibraryTriggered);
   problemMenu->addAction("&Boundary Properties...", this, &MainWindow::onBoundaryPropsTriggered);
   problemMenu->addAction("&Circuits...", this, &MainWindow::onCircuitsTriggered);
   problemMenu->addAction("Poi&nt Properties...", this, &MainWindow::onPointPropsTriggered);
 
   // Matches femm.rc's IDR_FEMMETYPE View menu (Zoom/Pan/Show Block Names
-  // subset -- Show Orphans/Lua Console/Load Monitor are separate todo
-  // items, not part of this group).
+  // subset), plus Dark Theme and the Load Monitor -- Lua Console is a
+  // separate todo item (see the plan's scope note on it).
   QMenu* viewMenu = menuBar()->addMenu("&View");
   viewMenu->addAction("Zoom &In", this, &MainWindow::onZoomIn, QKeySequence(Qt::Key_PageUp));
   viewMenu->addAction("Zoom &Out", this, &MainWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
@@ -162,6 +191,14 @@ MainWindow::MainWindow(QWidget* parent)
   statusBarAction->setCheckable(true);
   statusBarAction->setChecked(true);
   connect(statusBarAction, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
+  viewMenu->addSeparator();
+  QAction* darkThemeAction = viewMenu->addAction("&Dark Theme");
+  darkThemeAction->setCheckable(true);
+  darkThemeAction->setChecked(AppTheme::isDark());
+  connect(darkThemeAction, &QAction::toggled, this, &MainWindow::onDarkThemeToggled);
+  QAction* loadMonitorAction = viewMenu->addAction("&Load Monitor");
+  loadMonitorAction->setCheckable(true);
+  connect(loadMonitorAction, &QAction::toggled, this, &MainWindow::onLoadMonitorToggled);
 
   QMenu* gridMenu = menuBar()->addMenu("&Grid");
   QAction* showGridAction = gridMenu->addAction("&Show Grid");
@@ -371,8 +408,22 @@ void MainWindow::onSolveTriggered()
 
   statusBar()->showMessage("Meshing and solving...");
   QApplication::setOverrideCursor(Qt::WaitCursor);
+  // SolveRunner::solve() now pumps the event loop while it waits on
+  // triangle.exe/fkn.exe (see SolveRunner.cpp's own comment) so the Load
+  // Monitor's timer can actually sample during a solve -- but that also
+  // means this window would otherwise still respond to menu clicks
+  // mid-solve, and a second concurrent solve/mesh isn't safe (both would
+  // write the same .poly/.pbc/.ans files). Disabling the menu bar for the
+  // duration blocks that without blocking repaints/timers the way a full
+  // setEnabled(false) on the whole window would.
+  if (m_loadMonitor)
+    m_loadMonitor->markSolveStart(QStringLiteral("magnetics: %1").arg(QFileInfo(m_currentPath).fileName()));
+  menuBar()->setEnabled(false);
   QString error;
   bool ok = SolveRunner::solve(m_problem, m_currentPath, error);
+  menuBar()->setEnabled(true);
+  if (m_loadMonitor)
+    m_loadMonitor->markSolveEnd();
   QApplication::restoreOverrideCursor();
 
   if (!ok) {
@@ -476,6 +527,189 @@ void MainWindow::onProblemPropertiesTriggered()
   ProblemPropertiesDialog dlg(m_problem, this);
   if (dlg.exec() == QDialog::Accepted)
     markEdited();
+}
+
+void MainWindow::onExteriorRegionTriggered()
+{
+  ExteriorRegionDialog dlg(m_problem, this);
+  if (dlg.exec() == QDialog::Accepted)
+    markEdited();
+}
+
+void MainWindow::onMaterialsLibraryTriggered()
+{
+  MaterialLibraryDialog dlg(m_problem, this);
+  dlg.exec();
+  // The dialog only ever appends (never edits/removes) materials, so
+  // there's nothing to roll back if the user just browsed without adding
+  // anything -- but mark dirty unconditionally rather than tracking
+  // whether "Add to Problem" actually fired, since a spurious dirty flag
+  // costs nothing (worst case: an extra prompt to save unchanged data)
+  // while a missed one could silently lose an added material.
+  markEdited();
+}
+
+void MainWindow::onPreferencesTriggered()
+{
+  bool wasDark = AppTheme::isDark();
+  PreferencesDialog dlg(this);
+  if (dlg.exec() == QDialog::Accepted && AppTheme::isDark() != wasDark) {
+    m_scene->refreshTheme();
+    refreshToolbarIcons();
+  }
+}
+
+void MainWindow::onDarkThemeToggled(bool dark)
+{
+  AppTheme::setDark(dark);
+  AppPreferences prefs = AppPreferences::load();
+  prefs.darkTheme = dark;
+  prefs.save();
+  m_scene->refreshTheme();
+  refreshToolbarIcons();
+}
+
+void MainWindow::onLoadMonitorToggled(bool show)
+{
+  if (!m_loadMonitor)
+    m_loadMonitor = new LoadMonitorDialog(this);
+  m_loadMonitor->setMonitoring(show);
+}
+
+void MainWindow::onCreateRadiusTriggered()
+{
+  // Requires exactly one selected node touching either two segments, two
+  // arcs, or one of each -- femm/FemmeDoc.cpp's CanCreateRadius (the
+  // classic GUI enforces this the same way, via its own node-selection
+  // requirement before enabling this command).
+  m_scene->syncSelectionToProblem();
+  int nodeIndex = -1;
+  for (int i = 0; i < m_problem.nodes.size(); i++) {
+    if (m_problem.nodes[i].isSelected) {
+      if (nodeIndex >= 0) {
+        QMessageBox::information(this, "Create Radius", "Select exactly one node first.");
+        return;
+      }
+      nodeIndex = i;
+    }
+  }
+  if (nodeIndex < 0) {
+    QMessageBox::information(this, "Create Radius", "Select a node first (one shared by two segments, two arcs, or one of each).");
+    return;
+  }
+  if (!FemmProblemEdit::canCreateRadius(m_problem, nodeIndex)) {
+    QMessageBox::information(this, "Create Radius",
+        "That node isn't a valid corner to fillet -- it needs to be shared by exactly two segments, two arcs, or one segment and one arc.");
+    return;
+  }
+
+  bool ok = false;
+  double r = QInputDialog::getDouble(this, "Create Radius", "Radius:", 0.0, 0.0, 1.0e300, 6, &ok);
+  if (!ok)
+    return;
+
+  snapshotForUndo();
+  if (!FemmProblemEdit::createRadius(m_problem, nodeIndex, r)) {
+    QMessageBox::warning(this, "Create Radius",
+        "Couldn't fit a radius of that size at that corner (too large, a near-straight corner, or no valid tangent solution).");
+    return;
+  }
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onCreateOpenBoundaryTriggered()
+{
+  OpenBoundaryDialog dlg(m_problem, this);
+  snapshotForUndo();
+  if (dlg.exec() == QDialog::Accepted) {
+    m_scene->rebuild();
+    markEdited();
+  }
+}
+
+void MainWindow::onImportDxfTriggered()
+{
+  QString path = QFileDialog::getOpenFileName(this, "Import DXF", QString(), "DXF Files (*.dxf)");
+  if (path.isEmpty())
+    return;
+
+  FemmProblem parsed;
+  double suggestedTolerance = 0;
+  QString error;
+  if (!DxfIO::parseDxf(path, parsed, suggestedTolerance, error)) {
+    QMessageBox::warning(this, "Import DXF", error);
+    return;
+  }
+
+  bool ok = false;
+  double tolerance = QInputDialog::getDouble(this, "Import DXF",
+      "Merge nodes within this distance of each other:", suggestedTolerance, 0.0, 1.0e300, 10, &ok);
+  if (!ok)
+    return;
+  DxfIO::mergeCoincidentNodes(parsed, tolerance);
+
+  snapshotForUndo();
+  int nodeOffset = m_problem.nodes.size();
+  for (const FemmNode& n : parsed.nodes)
+    m_problem.nodes.push_back(n);
+  for (FemmSegment s : parsed.segments) {
+    s.n0 += nodeOffset;
+    s.n1 += nodeOffset;
+    m_problem.segments.push_back(s);
+  }
+  for (FemmArcSegment a : parsed.arcSegments) {
+    a.n0 += nodeOffset;
+    a.n1 += nodeOffset;
+    m_problem.arcSegments.push_back(a);
+  }
+  m_scene->rebuild();
+  markEdited();
+  statusBar()->showMessage(QString("Imported %1 nodes, %2 segments, %3 arcs from %4")
+                                .arg(parsed.nodes.size())
+                                .arg(parsed.segments.size())
+                                .arg(parsed.arcSegments.size())
+                                .arg(path));
+}
+
+void MainWindow::onExportDxfTriggered()
+{
+  QString path = QFileDialog::getSaveFileName(this, "Export DXF", QString(), "DXF Files (*.dxf)");
+  if (path.isEmpty())
+    return;
+  QString error;
+  if (!DxfIO::exportDxf(path, m_problem, error))
+    QMessageBox::warning(this, "Export DXF", error);
+  else
+    statusBar()->showMessage(QString("Exported %1").arg(path));
+}
+
+void MainWindow::onPrintTriggered()
+{
+  QPrinter printer(QPrinter::HighResolution);
+  QPrintDialog dlg(&printer, this);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+  QPainter painter(&printer);
+  m_view->render(&painter);
+}
+
+void MainWindow::onPrintPreviewTriggered()
+{
+  QPrinter printer(QPrinter::HighResolution);
+  QPrintPreviewDialog dlg(&printer, this);
+  connect(&dlg, &QPrintPreviewDialog::paintRequested, this, [this](QPrinter* p) {
+    QPainter painter(p);
+    m_view->render(&painter);
+  });
+  dlg.exec();
+}
+
+void MainWindow::onCopyBitmapTriggered()
+{
+  QPixmap pixmap = m_view->viewport()->grab();
+  QApplication::clipboard()->setPixmap(pixmap);
+  statusBar()->showMessage("Copied view to clipboard as a bitmap.");
 }
 
 void MainWindow::onMaterialsTriggered()
@@ -852,8 +1086,14 @@ void MainWindow::onCreateMeshTriggered()
 
   statusBar()->showMessage("Meshing...");
   QApplication::setOverrideCursor(Qt::WaitCursor);
+  // See onSolveTriggered's matching comment -- SolveRunner::mesh() also
+  // pumps events now, so the menu bar is disabled for the same
+  // re-entrancy reason (triangle.exe here writes the same rootPath.* files
+  // a concurrent Solve would).
+  menuBar()->setEnabled(false);
   QString error;
   bool ok = SolveRunner::mesh(m_problem, m_currentPath, error);
+  menuBar()->setEnabled(true);
   QApplication::restoreOverrideCursor();
   if (!ok) {
     statusBar()->showMessage("Meshing failed");
@@ -1037,6 +1277,22 @@ void MainWindow::updateTitle()
 {
   QString name = m_currentPath.isEmpty() ? QStringLiteral("Untitled") : m_currentPath;
   setWindowTitle(QString("FEMMX (Qt) - Magnetics - %1%2").arg(name, m_dirty ? "*" : ""));
+}
+
+void MainWindow::refreshToolbarIcons()
+{
+  // IconTheme::themedToolIcon() bakes in whatever QApplication::palette()
+  // is active at call time -- fine for construction (the palette is
+  // already right by then, see main.cpp's AppTheme::setDark() call before
+  // any window is created) but stale once AppTheme::setDark() flips it
+  // afterward, since QAction doesn't re-query its icon automatically.
+  // Re-generates all 5 toolbar icons from the same fixed svgResourcePath
+  // set used in the constructor.
+  m_selectToolAction->setIcon(IconTheme::themedToolIcon(":/icons/select.svg"));
+  m_addNodeToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_node.svg"));
+  m_addSegmentToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_segment.svg"));
+  m_addArcToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_arc.svg"));
+  m_addBlockLabelToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_block_label.svg"));
 }
 
 bool MainWindow::confirmDiscardUnsavedChanges()

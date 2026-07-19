@@ -1,6 +1,8 @@
 #include "SolutionView.h"
 
 #include "AnsFileIO.h"
+#include "AppPreferences.h"
+#include "AppTheme.h"
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
@@ -13,6 +15,7 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDockWidget>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
@@ -244,7 +247,7 @@ void MeshSolutionItem::paintContour(QPainter* painter)
     }
   }
 
-  QPen pen(Qt::black);
+  QPen pen(AppTheme::meshPointColor());
   pen.setCosmetic(true);
   painter->setPen(pen);
   painter->drawPath(path);
@@ -262,7 +265,7 @@ void MeshSolutionItem::paintVector(QPainter* painter)
   if (arrowLen <= 0)
     return;
 
-  QPen pen(Qt::black);
+  QPen pen(AppTheme::meshPointColor());
   pen.setCosmetic(true);
   painter->setPen(pen);
 
@@ -304,7 +307,7 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
       path.lineTo(n2.x, n2.y);
       path.lineTo(n0.x, n0.y);
     }
-    QPen pen(QColor(80, 80, 80));
+    QPen pen(AppTheme::meshLineColor());
     pen.setCosmetic(true);
     painter->setPen(pen);
     painter->drawPath(path);
@@ -314,7 +317,7 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
     double diag = std::hypot(m_bounds.width(), m_bounds.height());
     double r = diag * 0.0015;
     painter->setPen(Qt::NoPen);
-    painter->setBrush(Qt::black);
+    painter->setBrush(AppTheme::meshPointColor());
     for (const MeshSolutionNode& n : m_solution->nodes)
       painter->drawEllipse(QPointF(n.x, n.y), r, r);
   }
@@ -362,6 +365,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   resize(1024, 768);
 
   m_scene = new QGraphicsScene(this);
+  m_scene->setBackgroundBrush(AppTheme::background());
   m_view = new SolutionGraphicsView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing, false); // large meshes: skip AA for speed
   // Matches MainWindow's view->scale(1,-1): .ans geometry is in the same
@@ -369,6 +373,14 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   m_view->scale(1, -1);
   setCentralWidget(m_view);
   connect(m_view, &SolutionGraphicsView::clickedAt, this, &SolutionWindow::onCanvasClicked);
+
+  m_outputDock = new QDockWidget("Output Window", this);
+  m_outputText = new QPlainTextEdit(m_outputDock);
+  m_outputText->setReadOnly(true);
+  m_outputText->setMaximumBlockCount(2000);
+  m_outputDock->setWidget(m_outputText);
+  addDockWidget(Qt::BottomDockWidgetArea, m_outputDock);
+  m_outputDock->setVisible(AppPreferences::load().showOutputWindow);
 
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&Open Solution...", this, &SolutionWindow::onOpenTriggered, QKeySequence::Open);
@@ -423,10 +435,27 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   viewMenu->addSeparator();
   viewMenu->addAction("Problem &Info...", this, &SolutionWindow::onProblemInfoTriggered);
   viewMenu->addSeparator();
+  QAction* outputWindowAction = viewMenu->addAction("&Output Window");
+  outputWindowAction->setCheckable(true);
+  outputWindowAction->setChecked(AppPreferences::load().showOutputWindow);
+  connect(outputWindowAction, &QAction::toggled, m_outputDock, &QDockWidget::setVisible);
+  viewMenu->addSeparator();
   QAction* statusBarAction = viewMenu->addAction("&Status Bar");
   statusBarAction->setCheckable(true);
   statusBarAction->setChecked(true);
   connect(statusBarAction, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
+  viewMenu->addSeparator();
+  QAction* darkThemeAction = viewMenu->addAction("&Dark Theme");
+  darkThemeAction->setCheckable(true);
+  darkThemeAction->setChecked(AppTheme::isDark());
+  connect(darkThemeAction, &QAction::toggled, this, [this](bool dark) {
+    AppTheme::setDark(dark);
+    AppPreferences prefs = AppPreferences::load();
+    prefs.darkTheme = dark;
+    prefs.save();
+    m_scene->setBackgroundBrush(AppTheme::background());
+    m_scene->update();
+  });
 
   // Matches femm.rc's post-processor "Operation" menu (Point properties /
   // Contours / Areas). Plot X-Y and Integrate are both separate top-level
@@ -621,6 +650,16 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
+    appendOutput(QString("Point: x=%1, y=%2  A=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T")
+                      .arg(scenePos.x(), 0, 'g', 6)
+                      .arg(scenePos.y(), 0, 'g', 6)
+                      .arg(A.real(), 0, 'g', 6)
+                      .arg(A.imag(), 0, 'g', 6)
+                      .arg(e.B1re, 0, 'g', 6)
+                      .arg(e.B1im, 0, 'g', 6)
+                      .arg(e.B2re, 0, 'g', 6)
+                      .arg(e.B2im, 0, 'g', 6)
+                      .arg(bMag, 0, 'g', 6));
     dlg.exec();
     break;
   }
@@ -664,6 +703,11 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
+    appendOutput(QString("Area: block label %1  elements=%2  area=%3  avg|B|=%4 T")
+                      .arg(lbl)
+                      .arg(count)
+                      .arg(totalArea, 0, 'g', 6)
+                      .arg(avgB, 0, 'g', 6));
     dlg.exec();
     break;
   }
@@ -727,7 +771,16 @@ void SolutionWindow::showContourIntegral()
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   form->addRow(buttons);
+  appendOutput(QString("Contour: points=%1  length=%2  deltaA=%3")
+                    .arg(m_contourPoints.size())
+                    .arg(length, 0, 'g', 6)
+                    .arg(deltaAText));
   dlg.exec();
+}
+
+void SolutionWindow::appendOutput(const QString& text)
+{
+  m_outputText->appendPlainText(text);
 }
 
 void SolutionWindow::onClearContourTriggered()

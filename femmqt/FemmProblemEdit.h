@@ -69,4 +69,24 @@ void scaleSelected(FemmProblem& p, double baseX, double baseY, double factor);
 // Reflects across the line through (x0,y0)-(x1,y1).
 void mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1);
 
+// True if node `n` is a valid corner to fillet -- exactly one of: two
+// segments, two arcs, or one segment and one arc, sharing that node as a
+// common endpoint (femm/FemmeDoc.cpp's CanCreateRadius).
+bool canCreateRadius(const FemmProblem& p, int nodeIndex);
+
+// Replaces node `n` with a fillet of radius `r`: computes the tangency
+// points on each of the two adjacent entities, adds nodes there, deletes
+// the original corner node (and the two original entities, which
+// deleteNode() already does since they reference it), and adds a new arc
+// segment connecting the tangency points, inheriting the boundary
+// condition from one of the two original entities. Direct port of
+// femm/FemmeDoc.cpp's CreateRadius, including all three cases (two
+// segments, two arcs, or one of each) -- see that function's comments for
+// the underlying tangent-circle geometry, replicated here rather than
+// approximated. Returns false (no change made) if `r` isn't a valid
+// fillet radius for this corner -- too large to fit, a near-straight
+// corner (two segments case), or no tangent-circle solution actually
+// touches both original entities within their own extents (arc cases).
+bool createRadius(FemmProblem& p, int nodeIndex, double r);
+
 } // namespace FemmProblemEdit

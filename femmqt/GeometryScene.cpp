@@ -2,6 +2,7 @@
 
 #include "GeometryScene.h"
 
+#include "AppTheme.h"
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
 #include "MeshOverlay.h"
@@ -169,6 +170,7 @@ GeometryScene::GeometryScene(QObject* parent)
   // real geometry is always tiny compared to this range for any
   // LengthUnits this app supports, so it's not a meaningful limit.
   setSceneRect(-1.0e6, -1.0e6, 2.0e6, 2.0e6);
+  setBackgroundBrush(AppTheme::background());
 }
 
 void GeometryScene::setProblem(FemmProblem* problem)
@@ -205,6 +207,13 @@ void GeometryScene::rebuild()
     addBlockLabelItem(i);
 }
 
+void GeometryScene::refreshTheme()
+{
+  setBackgroundBrush(AppTheme::background());
+  rebuild();
+  update();
+}
+
 void GeometryScene::setToolMode(GeometryToolMode mode)
 {
   m_toolMode = mode;
@@ -214,20 +223,20 @@ void GeometryScene::setToolMode(GeometryToolMode mode)
 void GeometryScene::addNodeItem(int index)
 {
   const FemmNode& n = m_problem->nodes[index];
-  QPen pen(Qt::black);
+  QPen pen(AppTheme::nodeColor());
   pen.setCosmetic(true);
   auto* item = new NodeItem(index, m_problem, this,
       QRectF(-kNodeHandlePixelRadius, -kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius));
   item->setPos(n.x, n.y);
   item->setPen(pen);
-  item->setBrush(QBrush(Qt::black));
+  item->setBrush(QBrush(AppTheme::nodeColor()));
   addItem(item);
   m_nodeItems[index] = item;
 }
 
 void GeometryScene::addSegmentItem(int index)
 {
-  QPen pen(Qt::blue);
+  QPen pen(AppTheme::segmentColor());
   pen.setCosmetic(true);
   auto* item = addLine(QLineF(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -242,7 +251,7 @@ void GeometryScene::addSegmentItem(int index)
 
 void GeometryScene::addArcItem(int index)
 {
-  QPen pen(QColor(0, 128, 0));
+  QPen pen(AppTheme::arcColor());
   pen.setCosmetic(true);
   auto* item = addPath(QPainterPath(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -260,7 +269,7 @@ void GeometryScene::addBlockLabelItem(int index)
   const FemmBlockLabel& b = m_problem->blockLabels[index];
   bool isHole = b.blockTypeIndex < 0;
   double r = kBlockLabelPixelRadius;
-  QPen pen(isHole ? QColor(160, 160, 160) : QColor(200, 0, 0));
+  QPen pen(isHole ? AppTheme::holeColor() : QColor(200, 0, 0));
   pen.setCosmetic(true);
 
   QPainterPath path;
@@ -290,7 +299,7 @@ void GeometryScene::addBlockLabelItem(int index)
       : QStringLiteral("<None>");
   auto* text = addSimpleText(labelText);
   text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
-  text->setBrush(isHole ? QColor(160, 160, 160) : QColor(120, 0, 0));
+  text->setBrush(isHole ? AppTheme::holeColor() : AppTheme::blockLabelNameColor());
   text->setPos(b.x, b.y);
   text->setVisible(m_showBlockNames);
   m_blockNameItems[index] = text;
@@ -616,7 +625,7 @@ void GeometryScene::setMeshOverlay(const MeshOverlay& mesh)
     path.lineTo(a.x, a.y);
   }
 
-  QPen pen(QColor(180, 180, 180));
+  QPen pen(AppTheme::meshLineColor());
   pen.setCosmetic(true);
   auto* item = addPath(path, pen);
   item->setZValue(-1.0); // beneath geometry (nodes/segments/arcs/labels)
@@ -741,7 +750,7 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
   if ((qint64)nx * (qint64)ny > 200000)
     return;
 
-  QPen pen(QColor(200, 200, 220));
+  QPen pen(AppTheme::gridLine());
   pen.setCosmetic(true);
   painter->setPen(pen);
   for (int i = 0; i < nx; i++) {

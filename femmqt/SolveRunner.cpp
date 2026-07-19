@@ -20,6 +20,25 @@ QString solverDir()
   return QCoreApplication::applicationDirPath();
 }
 
+// Plain QProcess::waitForFinished(-1) blocks this thread's event loop
+// entirely for however long triangle.exe/fkn.exe take -- fine on its own,
+// but it means nothing else in the app can run meanwhile either: no
+// repaints, and no QTimer ever fires. That silently broke the Load
+// Monitor (LoadMonitorDialog.cpp's sampling is timer-driven) and made the
+// whole window appear frozen/"Not Responding" during a long solve.
+// Polling in short bursts and pumping the event loop between them keeps
+// both working, at the cost of solve() no longer being safely
+// re-entrant -- callers must disable whatever UI could start a second
+// solve/mesh concurrently while this runs (see MainWindow::
+// onSolveTriggered/onCreateMeshTriggered).
+void waitPumpingEvents(QProcess& proc)
+{
+  while (proc.state() != QProcess::NotRunning) {
+    proc.waitForFinished(50);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+  }
+}
+
 } // namespace
 
 bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
@@ -46,7 +65,7 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
     errorMessage = "Couldn't spawn triangle.exe.";
     return false;
   }
-  triangle.waitForFinished(-1);
+  waitPumpingEvents(triangle);
   if (triangle.exitStatus() != QProcess::NormalExit || triangle.exitCode() != 0) {
     errorMessage = "Call to triangle was unsuccessful. Check for small angles.";
     return false;
@@ -70,7 +89,7 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QStr
     errorMessage = "Problem executing the solver.";
     return false;
   }
-  fkn.waitForFinished(-1);
+  waitPumpingEvents(fkn);
 
   if (fkn.exitStatus() != QProcess::NormalExit) {
     errorMessage = "fkn.exe terminated abnormally.";
