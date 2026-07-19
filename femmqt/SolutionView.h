@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QGraphicsItem>
 #include <QGraphicsView>
 #include <QMainWindow>
@@ -86,9 +87,15 @@ class SolutionGraphicsView : public QGraphicsView {
 
   signals:
   void clickedAt(QPointF scenePos);
+  // Emitted on every mouse move over the canvas (setMouseTracking is on),
+  // for the status bar's live field-value-under-cursor readout -- unlike
+  // clickedAt, this isn't gated on the current tool mode; SolutionWindow
+  // decides whether/how to use it.
+  void hoveredAt(QPointF scenePos);
 
   protected:
   void mousePressEvent(QMouseEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
 };
 
@@ -111,6 +118,7 @@ class SolutionWindow : public QMainWindow {
   void onOpenTriggered();
   void onReloadTriggered();
   void onCanvasClicked(QPointF scenePos);
+  void onCanvasHovered(QPointF scenePos);
   void onPointToolTriggered();
   void onContourToolTriggered();
   void onAreaToolTriggered();
@@ -120,6 +128,7 @@ class SolutionWindow : public QMainWindow {
   void onIntegrateTriggered();
   void onProblemInfoTriggered();
   void onCircuitPropsTriggered();
+  void onBhCurvesTriggered();
   void onZoomIn();
   void onZoomOut();
   void onZoomNatural();
@@ -128,6 +137,9 @@ class SolutionWindow : public QMainWindow {
   void onPanUp();
   void onPanDown();
   void onCopyBitmapTriggered();
+  void onPrintTriggered();
+  void onPrintPreviewTriggered();
+  void onPrintSetupTriggered();
   void onSwitchToClassicTriggered();
   void onOpenRecentFile();
   void onHelpTopicsTriggered();
@@ -169,4 +181,7 @@ class SolutionWindow : public QMainWindow {
 
   QDockWidget* m_outputDock = nullptr;
   QPlainTextEdit* m_outputText = nullptr;
+  class QLabel* m_positionLabel = nullptr;
+  QElapsedTimer m_hoverThrottle; // see onCanvasHovered's comment
+  class QPrinter* m_printer = nullptr; // lazily created, shared by Print/Print Preview/Print Setup
 };

@@ -7,6 +7,10 @@ GeometryView::GeometryView(QGraphicsScene* scene, QWidget* parent)
 {
   setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
+  // Without this, QGraphicsScene::mouseMoveEvent only fires while a
+  // button is held (dragging) -- the status bar's live coordinate
+  // readout needs it on every hover move too.
+  setMouseTracking(true);
 }
 
 void GeometryView::wheelEvent(QWheelEvent* event)

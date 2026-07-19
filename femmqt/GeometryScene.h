@@ -80,6 +80,13 @@ class GeometryScene : public QGraphicsScene {
   void syncSelectionToProblem();
   bool hasSelection() const { return !selectedItems().isEmpty(); }
 
+  // Fills `kind`/`index` and returns true if exactly one entity is
+  // currently selected -- for femm.rc's "Open Selected" (opens the same
+  // property dialog a double-click would, without needing to double-
+  // click). Keeps the QGraphicsItem::data() role encoding this scene
+  // uses internally out of MainWindow.
+  bool selectedEntity(FemmItemKind& kind, int& index) const;
+
   // Mesh > Create/Show/Purge Mesh overlay (femm.rc's Mesh menu split --
   // separate from Solve, which meshes internally via SolveRunner::solve
   // without ever touching this overlay).
@@ -103,6 +110,11 @@ class GeometryScene : public QGraphicsScene {
   void selectByGroup(int groupNumber);
   void applyGroupToSelected(int groupNumber);
 
+  // Deletes one selected item (matching femm.rc's "Delete" -- see the
+  // .cpp's comment on why this is one-item-per-call, same as the Delete
+  // key's own handling in keyPressEvent, which now just forwards here).
+  void deleteSelectedItem();
+
   signals:
   void problemEdited();
 
@@ -119,6 +131,13 @@ class GeometryScene : public QGraphicsScene {
   // etc.), so this scene only reports what was clicked rather than
   // depending on those dialog classes itself.
   void entityDoubleClicked(FemmItemKind kind, int index);
+
+  // Emitted on every mouse move over the canvas, in scene (model)
+  // coordinates -- MainWindow shows this in a permanent status bar label
+  // (femm.rc's status bar shows the same "current cursor position" while
+  // drawing). Emitted with the already-grid-snapped position when
+  // snapping is on, matching what a click would actually place.
+  void mousePositionChanged(QPointF scenePos);
 
   // Emitted when a ZoomWindow drag completes -- MainWindow owns the
   // QGraphicsView and does the actual fitInView().
@@ -140,7 +159,6 @@ class GeometryScene : public QGraphicsScene {
   void addBlockLabelItem(int index);
   void updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex);
   void updateArcItemGeometry(QGraphicsItem* item, int arcIndex);
-  void deleteSelectedItem();
 
   FemmProblem* m_problem = nullptr;
   GeometryToolMode m_toolMode = GeometryToolMode::Select;

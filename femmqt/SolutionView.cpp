@@ -3,6 +3,7 @@
 #include "AnsFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
+#include "BHCurveDialog.h"
 #include "CircuitAnalysis.h"
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
@@ -12,6 +13,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -29,9 +31,13 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPageSetupDialog>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPlainTextEdit>
+#include <QPrintDialog>
+#include <QPrintPreviewDialog>
+#include <QPrinter>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -340,6 +346,7 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
 {
   setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
+  setMouseTracking(true); // needed for hoveredAt() to fire without a button held
 }
 
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
@@ -347,6 +354,12 @@ void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
   if (event->button() == Qt::LeftButton)
     emit clickedAt(mapToScene(event->pos()));
   QGraphicsView::mousePressEvent(event);
+}
+
+void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
+{
+  emit hoveredAt(mapToScene(event->pos()));
+  QGraphicsView::mouseMoveEvent(event);
 }
 
 void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
@@ -385,6 +398,11 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   m_view->scale(1, -1);
   setCentralWidget(m_view);
   connect(m_view, &SolutionGraphicsView::clickedAt, this, &SolutionWindow::onCanvasClicked);
+  connect(m_view, &SolutionGraphicsView::hoveredAt, this, &SolutionWindow::onCanvasHovered);
+
+  m_positionLabel = new QLabel(this);
+  m_positionLabel->setMinimumWidth(360);
+  statusBar()->addPermanentWidget(m_positionLabel);
 
   m_outputDock = new QDockWidget("Output Window", this);
   m_outputText = new QPlainTextEdit(m_outputDock);
@@ -397,6 +415,10 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&Open Solution...", this, &SolutionWindow::onOpenTriggered, QKeySequence::Open);
   fileMenu->addAction("&Reload", this, &SolutionWindow::onReloadTriggered);
+  fileMenu->addSeparator();
+  fileMenu->addAction("Print Pre&view...", this, &SolutionWindow::onPrintPreviewTriggered);
+  fileMenu->addAction("&Print...", this, &SolutionWindow::onPrintTriggered, QKeySequence::Print);
+  fileMenu->addAction("P&rint Setup...", this, &SolutionWindow::onPrintSetupTriggered);
   fileMenu->addSeparator();
   m_recentFilesMenu = fileMenu->addMenu("Recent Files");
   fileMenu->addSeparator();
@@ -446,6 +468,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   connect(showPointsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowPoints(on); });
   viewMenu->addSeparator();
   viewMenu->addAction("&Circuit Props...", this, &SolutionWindow::onCircuitPropsTriggered);
+  viewMenu->addAction("&BH Curves...", this, &SolutionWindow::onBhCurvesTriggered);
   viewMenu->addAction("Problem &Info...", this, &SolutionWindow::onProblemInfoTriggered);
   viewMenu->addSeparator();
   QAction* outputWindowAction = viewMenu->addAction("&Output Window");
@@ -614,6 +637,38 @@ std::complex<double> SolutionWindow::interpolateA(QPointF pt, int elementIndex) 
   double re = u * n0.Are + v * n1.Are + w * n2.Are;
   double im = u * n0.Aim + v * n1.Aim + w * n2.Aim;
   return { re, im };
+}
+
+void SolutionWindow::onCanvasHovered(QPointF scenePos)
+{
+  if (!m_item) {
+    m_positionLabel->clear();
+    return;
+  }
+
+  // findContainingElement() is a linear scan over every mesh element (see
+  // its own comment) -- fine for a single deliberate click, but this
+  // slot fires on every pixel of mouse movement, so throttle to roughly
+  // 20 updates/sec. Still feels live to a human; keeps a multi-million-
+  // element mesh from doing a full scan hundreds of times a second.
+  if (m_hoverThrottle.isValid() && m_hoverThrottle.elapsed() < 50)
+    return;
+  m_hoverThrottle.restart();
+
+  int elem = findContainingElement(scenePos);
+  if (elem < 0) {
+    m_positionLabel->setText(QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
+    return;
+  }
+
+  std::complex<double> A = interpolateA(scenePos, elem);
+  const MeshSolutionElement& e = m_solution.elements[elem];
+  double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+  m_positionLabel->setText(QString("x = %1, y = %2   |B| = %3 T   A = %4")
+                                .arg(scenePos.x(), 0, 'g', 6)
+                                .arg(scenePos.y(), 0, 'g', 6)
+                                .arg(bMag, 0, 'g', 4)
+                                .arg(A.real(), 0, 'g', 4));
 }
 
 void SolutionWindow::onPointToolTriggered()
@@ -996,6 +1051,61 @@ void SolutionWindow::onCircuitPropsTriggered()
   dlg.exec();
 }
 
+void SolutionWindow::onBhCurvesTriggered()
+{
+  // Read-only viewer -- femm.rc's IDR_FEMMVIEWTYPE "BH Curves"
+  // (FemmviewView.cpp's OnViewBHcurves), distinct from the geometry
+  // editor's own "Edit BH Curve..." (BHCurveDialog opened from
+  // MaterialPropDialog): this just re-displays whichever nonlinear
+  // materials this *solved* problem used, for reference, not editing.
+  if (m_currentPath.isEmpty()) {
+    QMessageBox::information(this, "BH Curves", "No solution loaded.");
+    return;
+  }
+  FemmProblem problem;
+  QString error;
+  if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
+    QMessageBox::warning(this, "BH Curves", error);
+    return;
+  }
+  QVector<int> nonlinear;
+  for (int i = 0; i < problem.materialProps.size(); i++)
+    if (!problem.materialProps[i].bhData.isEmpty())
+      nonlinear.push_back(i);
+  if (nonlinear.isEmpty()) {
+    QMessageBox::information(this, "BH Curves", "No nonlinear materials in this solution.");
+    return;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("BH Curves");
+  dlg.resize(480, 480);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  auto* form = new QFormLayout;
+  auto* combo = new QComboBox(&dlg);
+  for (int idx : nonlinear)
+    combo->addItem(problem.materialProps[idx].name);
+  form->addRow("Material:", combo);
+  layout->addLayout(form);
+
+  auto* chart = new BHCurveChartWidget(&dlg);
+  layout->addWidget(chart, 1);
+  auto* logCheck = new QCheckBox("Log-log scale", &dlg);
+  connect(logCheck, &QCheckBox::toggled, chart, &BHCurveChartWidget::setLogScale);
+  layout->addWidget(logCheck);
+
+  connect(combo, &QComboBox::currentIndexChanged, &dlg, [&problem, nonlinear, chart](int i) {
+    chart->setPoints(problem.materialProps[nonlinear[i]].bhData);
+  });
+  chart->setPoints(problem.materialProps[nonlinear[0]].bhData);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
+}
+
 void SolutionWindow::onAboutTriggered()
 {
   QMessageBox::about(this, "About FEMMX", "<b>FEMMX (Qt)</b> -- Solution Viewer<br><br>Density/Contour/Vector plots, Point/Contour/Area analysis tools.");
@@ -1055,6 +1165,37 @@ void SolutionWindow::onCopyBitmapTriggered()
   QPixmap pixmap = m_view->viewport()->grab();
   QApplication::clipboard()->setPixmap(pixmap);
   statusBar()->showMessage("Copied view to clipboard as a bitmap.");
+}
+
+void SolutionWindow::onPrintTriggered()
+{
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPrintDialog dlg(m_printer, this);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+  QPainter painter(m_printer);
+  m_view->render(&painter);
+}
+
+void SolutionWindow::onPrintPreviewTriggered()
+{
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPrintPreviewDialog dlg(m_printer, this);
+  connect(&dlg, &QPrintPreviewDialog::paintRequested, this, [this](QPrinter* p) {
+    QPainter painter(p);
+    m_view->render(&painter);
+  });
+  dlg.exec();
+}
+
+void SolutionWindow::onPrintSetupTriggered()
+{
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPageSetupDialog dlg(m_printer, this);
+  dlg.exec();
 }
 
 void SolutionWindow::onSwitchToClassicTriggered()

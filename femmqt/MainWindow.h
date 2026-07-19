@@ -7,6 +7,7 @@
 #include "GeometryView.h"
 
 class QAction;
+class QLabel;
 class QMenu;
 
 class MainWindow : public QMainWindow {
@@ -48,6 +49,9 @@ class MainWindow : public QMainWindow {
   void onExportDxfTriggered();
   void onPrintTriggered();
   void onPrintPreviewTriggered();
+  void onPrintSetupTriggered();
+  void onDeleteSelectedTriggered();
+  void onOpenSelectedTriggered();
   void onCopyBitmapTriggered();
   void onEntityDoubleClicked(FemmItemKind kind, int index);
   void onZoomIn();
@@ -74,6 +78,7 @@ class MainWindow : public QMainWindow {
   void onLicenseTriggered();
   void onAboutTriggered();
   void onOpenRecentFile();
+  void onMousePositionChanged(QPointF scenePos);
 
   private:
   bool saveAs(const QString& path);
@@ -105,7 +110,9 @@ class MainWindow : public QMainWindow {
   QAction* m_addBlockLabelToolAction = nullptr;
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
+  QLabel* m_positionLabel = nullptr;
 
   class SolutionWindow* m_solutionWindow = nullptr;
   class LoadMonitorDialog* m_loadMonitor = nullptr;
+  class QPrinter* m_printer = nullptr; // lazily created, shared by Print/Print Preview/Print Setup so settings persist across them
 };

@@ -39,8 +39,10 @@
 #include <QFileInfo>
 #include <QGraphicsView>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPageSetupDialog>
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPrintDialog>
@@ -111,6 +113,7 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addSeparator();
   fileMenu->addAction("Print Pre&view...", this, &MainWindow::onPrintPreviewTriggered);
   fileMenu->addAction("&Print...", this, &MainWindow::onPrintTriggered, QKeySequence::Print);
+  fileMenu->addAction("P&rint Setup...", this, &MainWindow::onPrintSetupTriggered);
   fileMenu->addSeparator();
   m_recentFilesMenu = fileMenu->addMenu("Recent Files");
   fileMenu->addSeparator();
@@ -118,12 +121,11 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addSeparator();
   fileMenu->addAction("E&xit", this, &QWidget::close);
 
-  // Matches femm.rc's IDR_FEMMETYPE Edit menu's geometry-transform subset
-  // (Undo, Move, Copy, Scale, Mirror) plus Create Open Boundary and
-  // Preferences -- Create Radius stays a separate todo item (see its own
-  // note near onCreateOpenBoundaryTriggered's implementation).
+  // Matches femm.rc's IDR_FEMMETYPE Edit menu.
   QMenu* editMenu = menuBar()->addMenu("&Edit");
   editMenu->addAction("&Undo", this, &MainWindow::onUndoTriggered, QKeySequence::Undo);
+  editMenu->addAction("&Open Selected", this, &MainWindow::onOpenSelectedTriggered);
+  editMenu->addAction("&Delete", this, &MainWindow::onDeleteSelectedTriggered, QKeySequence::Delete);
   editMenu->addSeparator();
   editMenu->addAction("&Move...", this, &MainWindow::onMoveSelectedTriggered);
   editMenu->addAction("&Copy...", this, &MainWindow::onCopySelectedTriggered);
@@ -254,8 +256,18 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
 
+  m_positionLabel = new QLabel(this);
+  m_positionLabel->setMinimumWidth(160);
+  statusBar()->addPermanentWidget(m_positionLabel);
+  connect(m_scene, &GeometryScene::mousePositionChanged, this, &MainWindow::onMousePositionChanged);
+
   statusBar()->showMessage("Ready");
   updateTitle();
+}
+
+void MainWindow::onMousePositionChanged(QPointF scenePos)
+{
+  m_positionLabel->setText(QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
 }
 
 void MainWindow::onNewTriggered()
@@ -686,22 +698,32 @@ void MainWindow::onExportDxfTriggered()
 
 void MainWindow::onPrintTriggered()
 {
-  QPrinter printer(QPrinter::HighResolution);
-  QPrintDialog dlg(&printer, this);
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPrintDialog dlg(m_printer, this);
   if (dlg.exec() != QDialog::Accepted)
     return;
-  QPainter painter(&printer);
+  QPainter painter(m_printer);
   m_view->render(&painter);
 }
 
 void MainWindow::onPrintPreviewTriggered()
 {
-  QPrinter printer(QPrinter::HighResolution);
-  QPrintPreviewDialog dlg(&printer, this);
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPrintPreviewDialog dlg(m_printer, this);
   connect(&dlg, &QPrintPreviewDialog::paintRequested, this, [this](QPrinter* p) {
     QPainter painter(p);
     m_view->render(&painter);
   });
+  dlg.exec();
+}
+
+void MainWindow::onPrintSetupTriggered()
+{
+  if (!m_printer)
+    m_printer = new QPrinter(QPrinter::HighResolution);
+  QPageSetupDialog dlg(m_printer, this);
   dlg.exec();
 }
 
@@ -710,6 +732,26 @@ void MainWindow::onCopyBitmapTriggered()
   QPixmap pixmap = m_view->viewport()->grab();
   QApplication::clipboard()->setPixmap(pixmap);
   statusBar()->showMessage("Copied view to clipboard as a bitmap.");
+}
+
+void MainWindow::onDeleteSelectedTriggered()
+{
+  if (!m_scene->hasSelection()) {
+    QMessageBox::information(this, "Delete", "Nothing selected.");
+    return;
+  }
+  m_scene->deleteSelectedItem();
+}
+
+void MainWindow::onOpenSelectedTriggered()
+{
+  FemmItemKind kind;
+  int index;
+  if (!m_scene->selectedEntity(kind, index)) {
+    QMessageBox::information(this, "Open Selected", "Select exactly one item first.");
+    return;
+  }
+  onEntityDoubleClicked(kind, index);
 }
 
 void MainWindow::onMaterialsTriggered()

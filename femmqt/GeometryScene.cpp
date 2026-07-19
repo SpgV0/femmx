@@ -371,6 +371,8 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
+  emit mousePositionChanged(snapPoint(event->scenePos()));
+
   if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
     m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, event->scenePos()).normalized());
     event->accept();
@@ -574,6 +576,16 @@ void GeometryScene::syncSelectionToProblem()
       break;
     }
   }
+}
+
+bool GeometryScene::selectedEntity(FemmItemKind& kind, int& index) const
+{
+  const auto sel = selectedItems();
+  if (sel.size() != 1)
+    return false;
+  kind = static_cast<FemmItemKind>(sel.first()->data(KindKey).toInt());
+  index = sel.first()->data(IndexKey).toInt();
+  return true;
 }
 
 void GeometryScene::setShowGrid(bool show)
