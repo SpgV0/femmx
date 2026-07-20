@@ -104,6 +104,16 @@
 # (C:\Qt\6.11.1\msvc2022_64) -- just needs *a* working Qt6 MSVC kit with
 # those two components. Revisit once Qt's mirrors catch up on 6.11.x+.
 #
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# also dropped `modules: 'qtsvg'` -- that was needed for 6.11.1 (QtSvg is
+# a separate addon module there), but for 6.9.3 it's the opposite problem:
+# `aqt list-qt windows desktop --archives 6.9.3 win64_msvc2022_64` shows
+# qtsvg as part of the *base* desktop kit's own archive list, not
+# `--modules`' addon list, so requesting it via `-m qtsvg` fails outright
+# ("packages ['qtsvg'] were not found while parsing XML of package
+# information"). Confirmed directly via aqt locally. No modules: line
+# needed at all now -- Svg comes bundled automatically.
+#
 # Marked continue-on-error: true, matching the LaTeX-install reasoning
 # just above -- a flaky Qt download/network hiccup in a fresh runner is
 # a real, likely failure mode, and should only ever cost femmqt's build
@@ -148,7 +158,6 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
-        modules: 'qtsvg'
         cache: true
 
     - name: 'Build FEMM'
@@ -275,7 +284,6 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
-        modules: 'qtsvg'
         cache: true
 
     - name: 'Install CUDA Toolkit'
