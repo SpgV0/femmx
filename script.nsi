@@ -136,11 +136,20 @@ Section
     # reasoning as the CUDA DLLs above. /nonfatal throughout: a build with
     # SKIP_femmqt set (or a Qt-less machine) has none of this in bin\, and
     # the installer should still package everything else cleanly.
-    File /nonfatal "bin\Qt6Core.dll"
-    File /nonfatal "bin\Qt6Gui.dll"
-    File /nonfatal "bin\Qt6Widgets.dll"
-    File /nonfatal "bin\Qt6Network.dll"
-    File /nonfatal "bin\Qt6Svg.dll"
+    #
+    # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+    # this used to individually name each Qt6*.dll, which silently fell out
+    # of sync with reality: Qt6PrintSupport.dll (needed once femmqt gained
+    # Print/Print Preview support) was never added to this list, so every
+    # installed copy shipped without it -- femmqt.exe would launch, load 41
+    # DLLs, then hang indefinitely (0% CPU, zero windows, confirmed via
+    # dumpbin/module-list diffing against a working dev build) rather than
+    # failing loudly, since the missing dependency wasn't in the platform
+    # plugin's own direct import table. Switched to an actual wildcard,
+    # matching what the comment above already claimed and what every
+    # plugin-subfolder File line below already does -- the next new Qt
+    # module femmqt links against won't need this list touched by hand.
+    File /nonfatal "bin\Qt6*.dll"
     File /nonfatal "bin\opengl32sw.dll"
     File /nonfatal "bin\D3Dcompiler_47.dll"
     File /nonfatal "bin\dxcompiler.dll"
