@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T22:16:10.493Z
+  modified: 2026-07-20T11:13:44.619Z
 ---
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
@@ -580,3 +580,32 @@ correctness checks pass perfectly on both DC and AC problems; AC/harmonic
 GPU solve genuinely 3.16x faster, but DC/real-valued GPU solve measured
 3x *slower* than CPU this round -- left as an honest failing assertion,
 not investigated further (out of scope), not worked around.
+
+## Round 11: real installer bug behind "the shortcut doesn't work" -- missing Qt6PrintSupport.dll (2026-07-20)
+
+Committed `47b3414` on `new_features` (pushed), plus two CI-only commits
+(`65d9a67`, `4bc1b38`) fixing an unrelated Qt6-install-in-CI mirror/module
+issue found along the way (see [[build_and_com_registration_gotchas]] for
+that one). User reported the installed app's Start Menu shortcut "doesn't
+work" after installing the real `bin\cuda\FEMMX_v2.0.0_installer.exe` --
+this turned out to be a second, genuine bug, unrelated to Round 10's
+message-map fix: `script.nsi` bundled `femmqt.exe`'s Qt6 DLLs via
+individually-named `File` lines, and `Qt6PrintSupport.dll` (added when
+femmqt gained Print/Print Preview support) was never added to that list.
+Every installed copy silently shipped without it. Symptom was NOT a loud
+"DLL missing" dialog -- `femmqt.exe` would start, load 41 DLLs, then hang
+forever (0% CPU, zero windows, `qwindows.dll` never loaded) -- see
+[[build_and_com_registration_gotchas]] for the full diagnostic play-by-
+play (module-count polling, CPU-delta deadlock check, `Compare-Object`
+directory diffing, `dumpbin /dependents`) and the fix (switched to a
+`Qt6*.dll` wildcard). Verified end-to-end this round: clean uninstall,
+fresh silent install from the rebuilt installer, launched via the real
+`FEMMX.lnk` Start Menu shortcut, screenshotted working.
+**Also worth remembering**: ~13 failed test launches from before the fix
+each left an undismissed native "System Error" dialog on screen (owned by
+`csrss.exe`, not the failed app's own PID) -- a *later*, genuinely-working
+launch's screenshot (a screen-region capture, not a true per-window
+capture) visually picked up one of those stale overlapping dialogs,
+making the fix look broken until the stale dialogs were found via
+`EnumWindows` and closed. Don't trust a "still broken" screenshot without
+checking what's actually still on screen from earlier test runs.

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-19T22:16:37.734Z
+  modified: 2026-07-20T11:13:08.618Z
 ---
 
 **`build.ps1` hangs forever if run non-interactively without
@@ -75,3 +75,55 @@ static data files (`condlib.dat`, `heatlib.dat`, `init.lua`,
 clean` never touches tracked files, so this wipes exactly the build
 output and nothing else. Never assume a killed build left `bin\` as it
 was before — verify with `du -sh bin/*` if anything looks oversized.
+
+**A missing runtime DLL for a Qt6 app doesn't always fail loudly —
+`script.nsi`'s individually-named `Qt6*.dll` File lines silently drifted
+out of sync and caused a real, hard-to-diagnose bug (2026-07-20
+session).** `Qt6PrintSupport.dll` (needed once Print/Print Preview was
+added to femmqt) was never added to that hand-maintained list, so every
+installed copy shipped without it. **Symptom was NOT a loud "DLL not
+found" dialog** — `femmqt.exe` would start, successfully load 41 other
+DLLs, then hang indefinitely: 0% CPU (confirmed via `Get-Process ...`
+CPU delta over several seconds — a real deadlock, not a spin-loop or
+slow AV scan), zero windows ever created (`EnumWindows` filtered to the
+PID returned nothing), `qwindows.dll` (the Qt platform plugin) never
+even appeared in the loaded-module list. This is a materially different
+failure mode than a direct/implicit dependency going missing (which
+Windows' loader normally refuses to start the process for, with an
+immediate, loud "code execution cannot proceed" dialog) — worth
+remembering that a *transitively*-needed DLL for Qt's plugin-loading
+machinery can instead manifest as a silent hang.
+**Diagnostic technique that found it, in order:** (1) reproduce with the
+exact installed binary, not just the dev-tree copy — the same exe ran
+fine from the repo's `bin\cuda\` but hung from `C:\FEMMX\bin\`, which is
+what proved it was a packaging gap, not a code bug; (2)
+`(Get-Process ...).Modules.Count` polled twice a few seconds apart
+distinguishes "still initializing" from "genuinely stuck" — ours never
+moved past 41; (3) `Get-Process ... CPU` delta over a few seconds at 0
+confirms a true blocking wait, not a spin-loop, which would instead show
+rising CPU; (4) `Compare-Object` on `Get-ChildItem -Recurse -File` file
+lists between a known-working directory and the broken one is the
+fastest way to spot "one file is just missing" once you suspect
+packaging rather than logic; (5) `dumpbin /dependents` (MSVC toolset,
+`VC\Tools\MSVC\<ver>\bin\Hostx64\x64\dumpbin.exe`) on both the plugin
+DLL and the suspected-missing DLL to rule out *their* transitive deps
+being the real gap, before testing the fix by just copying the one file
+in and relaunching.
+**Also found while testing this**: a genuinely misleading side effect —
+after ~13 failed test launches (from before the fix) each left an
+undismissed native "`<exe>.exe` - System Error" dialog on screen (owned
+by `csrss.exe` on the OS's behalf, not by the failed app's own PID,
+confirmed via `EnumWindows` + `GetWindowThreadProcessId` — these are
+OS-level process-launch-failure notices, not owned by the never-fully-
+created application process), a *later*, genuinely-successful launch's
+screenshot (a screen-region capture, not a true per-window capture) can
+visually include one of those stale overlapping dialogs, making a
+working fix look broken in the screenshot. Always enumerate all windows
+titled like an error dialog and check they're actually gone (or note
+their real owning PID) before trusting a "it's still broken" screenshot.
+**Fix applied**: switched the hand-maintained `Qt6*.dll` File lines in
+`script.nsi` to a single `File /nonfatal "bin\Qt6*.dll"` wildcard,
+matching what the section's own pre-existing comment already claimed it
+did and what every plugin-subfolder `File` line below it already does —
+the next new Qt module femmqt links against won't need this list edited
+by hand.

@@ -4,7 +4,7 @@
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
 - [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged
 - [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, merge --no-ff to rc+main, push all
-- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs non-interactively; COM uses bin\plain\ or bin\cuda\; git clean -fdx bin/ after any killed build
+- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs; COM uses bin\plain\/bin\cuda\; git clean -fdx bin/ after a killed build; missing DLL can silently hang, not error
 - [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
-- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — v2.0.0: Qt is now the ONLY Start Menu shortcut; classic GUI still installed (COM, non-magnetics), reachable via bin\femmx.exe
+- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — v2.0.0: Qt is now the ONLY Start Menu shortcut; installer once shipped without Qt6PrintSupport.dll (fixed, verified)
 - [Validate numerical ports empirically](validate_numerical_ports_empirically.md) — don't trust a from-scratch re-derivation of a classic-FEMM formula; check against the classic GUI's real output
