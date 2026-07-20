@@ -7,6 +7,7 @@
 #include "FemmProblemEdit.h"
 #include "MeshOverlay.h"
 
+#include <QGraphicsDropShadowEffect>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPathItem>
@@ -20,7 +21,9 @@
 #include <QPainterPath>
 #include <QPen>
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace {
 
@@ -171,6 +174,30 @@ GeometryScene::GeometryScene(QObject* parent)
   // LengthUnits this app supports, so it's not a meaningful limit.
   setSceneRect(-1.0e6, -1.0e6, 2.0e6, 2.0e6);
   setBackgroundBrush(AppTheme::background());
+  connect(this, &QGraphicsScene::selectionChanged, this, &GeometryScene::onSelectionChanged);
+}
+
+void GeometryScene::onSelectionChanged()
+{
+  // Remove the effect from anything that's no longer selected first -- a
+  // QGraphicsEffect is owned by its item (setGraphicsEffect(nullptr) is
+  // how you take it off, not selectedItems() diffing against itself).
+  // m_shadowedItems is guaranteed to hold only still-alive items here --
+  // rebuild() clears it explicitly before its clear() call, specifically
+  // so this loop never has to guess whether a pointer survived a bulk
+  // item deletion.
+  for (QGraphicsItem* item : std::as_const(m_shadowedItems))
+    item->setGraphicsEffect(nullptr);
+  m_shadowedItems.clear();
+
+  for (QGraphicsItem* item : selectedItems()) {
+    auto* effect = new QGraphicsDropShadowEffect;
+    effect->setColor(AppTheme::selectedColor());
+    effect->setBlurRadius(12);
+    effect->setOffset(0, 0);
+    item->setGraphicsEffect(effect);
+    m_shadowedItems.push_back(item);
+  }
 }
 
 void GeometryScene::setProblem(FemmProblem* problem)
@@ -181,6 +208,12 @@ void GeometryScene::setProblem(FemmProblem* problem)
 
 void GeometryScene::rebuild()
 {
+  // Drop these BEFORE clear() -- clear() deletes every item directly and
+  // doesn't reliably fire selectionChanged() per item on the way out, so
+  // onSelectionChanged()'s own cleanup can't be trusted to run first;
+  // leaving stale pointers in m_shadowedItems here would otherwise mean
+  // a future selection change dereferences already-deleted items.
+  m_shadowedItems.clear();
   clear(); // deletes every item, including m_zoomWindowRectItem if present
   m_nodeItems.clear();
   m_segmentItemsByNode.clear();
@@ -518,23 +551,51 @@ void GeometryScene::deleteSelectedItem()
   if (selected.isEmpty())
     return;
 
-  // One item per keypress: deleting a node cascades (removes touching
-  // segments/arcs) and renumbers every remaining node index, which would
-  // invalidate the rest of a stale multi-selection's indices -- rebuild()
-  // below re-syncs everything and drops the (now-recreated) selection, so
-  // repeated Delete presses handle a multi-selection safely one at a time
-  // rather than risking an inconsistent batch edit.
-  QGraphicsItem* item = selected.first();
-  auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
-  int index = item->data(IndexKey).toInt();
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // was one item per keypress (see the removed comment below for why:
+  // deleting a node cascades to remove touching segments/arcs and
+  // renumbers every remaining reference above it, which would invalidate
+  // the rest of a naively-batched multi-selection's captured indices).
+  // Per user request -- delete the WHOLE selection in one press. Safe
+  // batching: bucket by kind first, then delete kind-by-kind in an order
+  // where earlier deletions can never invalidate a later bucket's already-
+  // -captured indices -- Segments/Arcs/BlockLabels first (each only
+  // renumbers *within its own kind*, per FemmProblemEdit's
+  // deleteSegment/deleteArcSegment/deleteBlockLabel, so deleting one kind
+  // never shifts another's indices), Nodes last (FemmProblemEdit::
+  // deleteNode is the only one that reaches into segments/arcs, but by
+  // the time it runs, any segment/arc the user *also* selected is already
+  // gone -- its cascade then only ever touches segments/arcs that were
+  // NOT explicitly selected, which is exactly the "still attached,
+  // implicitly removed" behavior a single-node delete already has).
+  // WITHIN each kind, descending index order keeps every not-yet-deleted
+  // index in that same kind valid, since removing a higher index never
+  // shifts a lower one.
+  QVector<int> nodeIdx, segIdx, arcIdx, blockIdx;
+  for (QGraphicsItem* item : selected) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    switch (kind) {
+    case FemmItemKind::Node: nodeIdx.push_back(index); break;
+    case FemmItemKind::Segment: segIdx.push_back(index); break;
+    case FemmItemKind::Arc: arcIdx.push_back(index); break;
+    case FemmItemKind::BlockLabel: blockIdx.push_back(index); break;
+    }
+  }
+  std::sort(nodeIdx.begin(), nodeIdx.end(), std::greater<int>());
+  std::sort(segIdx.begin(), segIdx.end(), std::greater<int>());
+  std::sort(arcIdx.begin(), arcIdx.end(), std::greater<int>());
+  std::sort(blockIdx.begin(), blockIdx.end(), std::greater<int>());
 
   emit aboutToEdit();
-  switch (kind) {
-  case FemmItemKind::Node: FemmProblemEdit::deleteNode(*m_problem, index); break;
-  case FemmItemKind::Segment: FemmProblemEdit::deleteSegment(*m_problem, index); break;
-  case FemmItemKind::Arc: FemmProblemEdit::deleteArcSegment(*m_problem, index); break;
-  case FemmItemKind::BlockLabel: FemmProblemEdit::deleteBlockLabel(*m_problem, index); break;
-  }
+  for (int i : blockIdx)
+    FemmProblemEdit::deleteBlockLabel(*m_problem, i);
+  for (int i : segIdx)
+    FemmProblemEdit::deleteSegment(*m_problem, i);
+  for (int i : arcIdx)
+    FemmProblemEdit::deleteArcSegment(*m_problem, i);
+  for (int i : nodeIdx)
+    FemmProblemEdit::deleteNode(*m_problem, i);
 
   rebuild();
   emit problemEdited();
@@ -764,6 +825,11 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
 
   QPen pen(AppTheme::gridLine());
   pen.setCosmetic(true);
+  // 2px (not the default 1px hairline) so a dot is still a few visible
+  // device pixels on a high-DPI display, not a single physically-tiny
+  // one -- part of the same "grid doesn't seem to work" fix as
+  // AppTheme::gridLine()'s color change above.
+  pen.setWidth(2);
   painter->setPen(pen);
   for (int i = 0; i < nx; i++) {
     double x = x0 + i * m_gridSize;

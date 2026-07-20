@@ -31,7 +31,7 @@ list(APPEND CMAKE_PREFIX_PATH "${FEMMQT_QT6_DIR}")
 # not take down femm/fkn/triangle/the installer with it. QUIET + an
 # explicit found-check + early return() achieves that; REQUIRED does not
 # offer a way to make just the package-not-found case non-fatal.
-find_package(Qt6 QUIET COMPONENTS Widgets Svg PrintSupport)
+find_package(Qt6 QUIET COMPONENTS Widgets Svg PrintSupport OPTIONAL_COMPONENTS OpenGLWidgets)
 # qt_standard_project_setup() (below) enables AUTOMOC but, confirmed this
 # session, not reliably AUTORCC -- icons.qrc silently never got compiled
 # into a qrc_icons.cpp without this, so IconTheme::themedToolIcon's
@@ -127,8 +127,33 @@ qt_add_executable(femmqt WIN32
   icons.qrc
 )
 
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# femmqt.rc embeds FEMMX's app icon (femm/res/idr_mainframe.ico, same one
+# script.nsi's installer now uses) as the exe's own Windows icon -- without
+# it, Explorer/taskbar/Alt+Tab/the window's title-bar corner all show a
+# generic blank icon, since qt_add_executable() doesn't add one on its own.
+# Only added on Windows -- .rc is an MSVC/rc.exe resource script, not
+# portable, and this target is Windows-only anyway (WIN32 above).
+if(WIN32)
+  target_sources(femmqt PRIVATE femmqt.rc)
+endif()
+
 target_compile_options(femmqt PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
 target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
+
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# per user request to prioritize pan/zoom responsiveness on large meshes
+# via GPU-accelerated rendering -- SolutionGraphicsView sets a QOpenGLWidget
+# as its viewport (see that class's constructor) when this module is
+# available, offloading rasterization (the density plot's triangle fills
+# in particular) to the GPU instead of QPainter's software raster backend.
+# OPTIONAL_COMPONENTS above means this module's absence doesn't take the
+# whole target down (matches this file's existing missing-Qt6 tolerance) --
+# FEMMQT_HAVE_OPENGL gates the actual QOpenGLWidget usage in SolutionView.cpp.
+if(TARGET Qt6::OpenGLWidgets)
+  target_link_libraries(femmqt PRIVATE Qt6::OpenGLWidgets)
+  target_compile_definitions(femmqt PRIVATE FEMMQT_HAVE_OPENGL)
+endif()
 
 install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")
 

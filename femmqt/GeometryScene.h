@@ -151,6 +151,14 @@ class GeometryScene : public QGraphicsScene {
   void keyPressEvent(QKeyEvent* event) override;
   void drawBackground(QPainter* painter, const QRectF& rect) override;
 
+  private slots:
+  // Applies/removes a drop-shadow QGraphicsEffect as items become
+  // selected/deselected -- Qt's own default selection decoration (a thin
+  // dashed bounding-box outline) was reported as too subtle to notice at
+  // a glance. Connected to the base class's own selectionChanged()
+  // signal in the constructor.
+  void onSelectionChanged();
+
   private:
   void handleToolClick(QGraphicsSceneMouseEvent* event);
   void addNodeItem(int index);
@@ -190,4 +198,10 @@ class GeometryScene : public QGraphicsScene {
 
   QGraphicsItem* m_meshOverlayItem = nullptr;
   bool m_showMesh = false;
+
+  // Items currently wearing the onSelectionChanged() drop-shadow effect --
+  // tracked directly (rather than re-scanning every item's isSelected()
+  // each time) so removing a stale effect from a since-deselected item is
+  // O(previous selection size), not O(every item in the scene).
+  QList<QGraphicsItem*> m_shadowedItems;
 };

@@ -26,6 +26,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QGraphicsScene>
 #include <QInputDialog>
@@ -33,13 +34,18 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMouseEvent>
+#ifdef FEMMQT_HAVE_OPENGL
+#include <QOpenGLWidget>
+#endif
 #include <QPageSetupDialog>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPrintDialog>
 #include <QPrintPreviewDialog>
 #include <QPrinter>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -47,6 +53,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QWidget>
 
 #include <algorithm>
 #include <cmath>
@@ -113,24 +120,51 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
   }
   m_bounds = QRectF(QPointF(xmin, ymin), QPointF(xmax, ymax));
 
-  // Precompute each node's average |B| across every element touching it
-  // -- see this member's header comment for why (approximates "Smooth"
-  // shading). Done once here rather than per-paint, since paint() can run
-  // many times (every pan/zoom) but the mesh itself never changes.
-  m_nodeBMagAvg.fill(0.0, solution->nodes.size());
-  QVector<int> touchCount(solution->nodes.size(), 0);
-  for (const MeshSolutionElement& e : solution->elements) {
-    double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-    for (int p : { e.p0, e.p1, e.p2 }) {
-      if (p >= 0 && p < m_nodeBMagAvg.size()) {
-        m_nodeBMagAvg[p] += bMag;
-        touchCount[p]++;
+  // Precompute each node's average value (across every element touching
+  // it -- see QuantityData's header comment for why) plus the min/max
+  // range, for every DensityQuantity at once. Done once here rather than
+  // per-paint or per-quantity-switch, since paint() can run many times
+  // (every pan/zoom) but the mesh itself never changes -- the whole
+  // point of this precompute pass, same as the original |B|-only version.
+  for (int qi = 0; qi < 4; qi++) {
+    auto q = static_cast<DensityQuantity>(qi);
+    QuantityData& qd = m_quantityData[qi];
+    qd.nodeAvg.fill(0.0, solution->nodes.size());
+    QVector<int> touchCount(solution->nodes.size(), 0);
+    bool first = true;
+    for (const MeshSolutionElement& e : solution->elements) {
+      double v = elementQuantity(e, q);
+      if (first) {
+        qd.vMin = qd.vMax = v;
+        first = false;
+      } else {
+        qd.vMin = std::min(qd.vMin, v);
+        qd.vMax = std::max(qd.vMax, v);
+      }
+      for (int p : { e.p0, e.p1, e.p2 }) {
+        if (p >= 0 && p < qd.nodeAvg.size()) {
+          qd.nodeAvg[p] += v;
+          touchCount[p]++;
+        }
       }
     }
+    for (int i = 0; i < qd.nodeAvg.size(); i++)
+      if (touchCount[i] > 0)
+        qd.nodeAvg[i] /= touchCount[i];
   }
-  for (int i = 0; i < m_nodeBMagAvg.size(); i++)
-    if (touchCount[i] > 0)
-      m_nodeBMagAvg[i] /= touchCount[i];
+  m_lastDensityLo = m_quantityData[static_cast<int>(m_densityQuantity)].vMin;
+  m_lastDensityHi = m_quantityData[static_cast<int>(m_densityQuantity)].vMax;
+}
+
+double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQuantity q) const
+{
+  switch (q) {
+  case DensityQuantity::BMag: return std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+  case DensityQuantity::BReMag: return std::hypot(e.B1re, e.B2re);
+  case DensityQuantity::BImMag: return std::hypot(e.B1im, e.B2im);
+  case DensityQuantity::LogBMag: return std::log10(std::max(std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im)), 1e-300));
+  }
+  return 0;
 }
 
 QRectF MeshSolutionItem::boundingRect() const
@@ -142,6 +176,45 @@ void MeshSolutionItem::setPlotMode(PlotMode mode)
 {
   m_mode = mode;
   update();
+}
+
+void MeshSolutionItem::setDensityQuantity(DensityQuantity q)
+{
+  m_densityQuantity = q;
+  // Reset to this quantity's global range immediately -- otherwise the
+  // legend would briefly show the PREVIOUS quantity's cached local range
+  // (wrong units/scale entirely) until the next paintDensity() call
+  // overwrites it.
+  m_lastDensityLo = m_quantityData[static_cast<int>(q)].vMin;
+  m_lastDensityHi = m_quantityData[static_cast<int>(q)].vMax;
+  update();
+}
+
+int MeshSolutionItem::legendBandCount()
+{
+  return kNumBands;
+}
+
+QColor MeshSolutionItem::legendBandColor(int band)
+{
+  return bandColor(band);
+}
+
+void MeshSolutionItem::legendRange(double& lo, double& hi) const
+{
+  lo = m_lastDensityLo;
+  hi = m_lastDensityHi;
+}
+
+QString MeshSolutionItem::legendTitle() const
+{
+  switch (m_densityQuantity) {
+  case DensityQuantity::BMag: return "|B|, Tesla";
+  case DensityQuantity::BReMag: return "|B_re|, Tesla";
+  case DensityQuantity::BImMag: return "|B_im|, Tesla";
+  case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
+  }
+  return QString();
 }
 
 void MeshSolutionItem::setSmoothing(bool smooth)
@@ -162,22 +235,98 @@ void MeshSolutionItem::setShowPoints(bool show)
   update();
 }
 
-void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
+void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
   if (!m_solution || m_solution->elements.isEmpty())
     return;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // option->exposedRect alone is NOT "what's currently visible" -- confirmed
+  // directly via logging: after a pan/zoom (a transform change, which is
+  // most interactive use), Qt marks the WHOLE item dirty, so exposedRect is
+  // the item's entire boundingRect() regardless of how far zoomed in the
+  // view actually is. That silently defeated the exposed-rect viewport
+  // culling below during real interactive zooming (it visually looked
+  // right -- drawing extra off-screen triangles is harmless -- so this
+  // went unnoticed until the zoom-adaptive density-range feature made it
+  // observable: the legend never rescaled because paintDensity always saw
+  // the full mesh, not what was on screen). `widget` is this item's
+  // viewport; its parent is the owning QGraphicsView, which can map its
+  // own visible rect() back to scene coordinates -- intersecting that with
+  // exposedRect gives the actual visible region regardless of why this
+  // paint() call was triggered.
+  QRectF visibleRect = m_bounds;
+  if (widget) {
+    if (auto* view = qobject_cast<QGraphicsView*>(widget->parentWidget()))
+      visibleRect = view->mapToScene(view->viewport()->rect()).boundingRect();
+  }
+  QRectF exposedRect = option ? option->exposedRect.intersected(visibleRect) : visibleRect;
   switch (m_mode) {
-  case PlotMode::Density: paintDensity(painter); break;
-  case PlotMode::Contour: paintContour(painter); break;
-  case PlotMode::Vector: paintVector(painter); break;
+  case PlotMode::Density: paintDensity(painter, exposedRect); break;
+  case PlotMode::Contour: paintContour(painter, exposedRect); break;
+  case PlotMode::Vector: paintVector(painter, exposedRect); break;
   }
   if (m_showMesh || m_showPoints)
-    paintMeshOverlay(painter);
+    paintMeshOverlay(painter, exposedRect);
 }
 
-void MeshSolutionItem::paintDensity(QPainter* painter)
+void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect)
 {
-  double bMin = m_solution->bMagMin, bMax = m_solution->bMagMax;
+  const QuantityData& qd = m_quantityData[static_cast<int>(m_densityQuantity)];
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20: per
+  // user request ("when zooming into a very detailed model, the field
+  // definition improves in the density plot, for example litz wire") --
+  // banding used to always span the WHOLE MESH's global min/max, so
+  // zooming into a small region whose own value range is a tiny fraction
+  // of the global range (a fine-featured area like litz wire strands next
+  // to a saturated core, say) rendered as one or two flat colors no matter
+  // how far in you zoomed -- all the color resolution was "spent" on the
+  // full-mesh range, none of it on what's actually on screen. First pass
+  // below finds min/max over only the currently-visible (exposedRect-
+  // overlapping) elements and bands against THAT instead, so the 20 bands
+  // always cover whatever's in view -- more of the mesh visible (zoomed
+  // out) means coarser per-band detail, exactly like before; a small
+  // zoomed-in region gets the full 20-band resolution to itself. Falls
+  // back to the global range when nothing's visible or the local range is
+  // degenerate (span <= 0, e.g. a single visible element). Cached into
+  // m_lastDensityLo/Hi so the legend (a separate QWidget, not part of this
+  // item's own scene-space paint) can report the same range it's actually
+  // looking at -- see SolutionGraphicsView::scrollContentsBy for why the
+  // legend repaints on every pan/zoom to keep picking that up.
+  double lo = qd.vMin, hi = qd.vMax;
+  {
+    bool first = true;
+    for (const MeshSolutionElement& e : m_solution->elements) {
+      if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
+        continue;
+      const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+      const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+      const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+      double triMinX = std::min({ n0.x, n1.x, n2.x });
+      double triMaxX = std::max({ n0.x, n1.x, n2.x });
+      double triMinY = std::min({ n0.y, n1.y, n2.y });
+      double triMaxY = std::max({ n0.y, n1.y, n2.y });
+      if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
+        continue;
+      double v = m_smooth
+          ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
+          : elementQuantity(e, m_densityQuantity);
+      if (first) {
+        lo = hi = v;
+        first = false;
+      } else {
+        lo = std::min(lo, v);
+        hi = std::max(hi, v);
+      }
+    }
+    if (first || hi <= lo) {
+      lo = qd.vMin;
+      hi = qd.vMax;
+    }
+  }
+  m_lastDensityLo = lo;
+  m_lastDensityHi = hi;
+  double bMin = lo, bMax = hi;
   double span = bMax - bMin;
 
   // One QPainterPath per color band, filled with a single fillPath() call
@@ -188,21 +337,34 @@ void MeshSolutionItem::paintDensity(QPainter* painter)
   for (const MeshSolutionElement& e : m_solution->elements) {
     if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
       continue;
-    // Smooth: band on the average of the 3 corners' node-averaged |B|
-    // instead of this element's own single value -- see m_nodeBMagAvg's
+
+    const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+
+    // Viewport culling: skip any triangle that doesn't overlap the
+    // currently-visible region at all -- see this method's declaration
+    // in SolutionView.h for why this matters far more than GPU-vs-CPU
+    // rasterization for a huge mesh. Cheap bounding-box check, done
+    // before the (comparatively expensive) quantity/band lookup below.
+    double triMinX = std::min({ n0.x, n1.x, n2.x });
+    double triMaxX = std::max({ n0.x, n1.x, n2.x });
+    double triMinY = std::min({ n0.y, n1.y, n2.y });
+    double triMaxY = std::max({ n0.y, n1.y, n2.y });
+    if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
+      continue;
+
+    // Smooth: band on the average of the 3 corners' node-averaged value
+    // instead of this element's own single value -- see QuantityData's
     // header comment.
     double bMag = m_smooth
-        ? (m_nodeBMagAvg[e.p0] + m_nodeBMagAvg[e.p1] + m_nodeBMagAvg[e.p2]) / 3.0
-        : std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+        ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
+        : elementQuantity(e, m_densityQuantity);
     int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
     if (band >= kNumBands)
       band = kNumBands - 1;
     if (band < 0)
       band = 0;
-
-    const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
-    const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
-    const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
 
     QPolygonF tri;
     tri << QPointF(n0.x, n0.y) << QPointF(n1.x, n1.y) << QPointF(n2.x, n2.y);
@@ -218,7 +380,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter)
   }
 }
 
-void MeshSolutionItem::paintContour(QPainter* painter)
+void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect)
 {
   // Equipotential lines of Re(A) (the DC/instantaneous-snapshot potential
   // -- see this function's header note in SolutionView.h) via per-triangle
@@ -246,6 +408,15 @@ void MeshSolutionItem::paintContour(QPainter* painter)
     const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
     const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
     const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+
+    // See paintDensity's identical check for why.
+    double triMinX = std::min({ n0.x, n1.x, n2.x });
+    double triMaxX = std::max({ n0.x, n1.x, n2.x });
+    double triMinY = std::min({ n0.y, n1.y, n2.y });
+    double triMaxY = std::max({ n0.y, n1.y, n2.y });
+    if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
+      continue;
+
     double va[3] = { n0.Are, n1.Are, n2.Are };
     QPointF pa[3] = { QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y) };
 
@@ -274,7 +445,7 @@ void MeshSolutionItem::paintContour(QPainter* painter)
   painter->drawPath(path);
 }
 
-void MeshSolutionItem::paintVector(QPainter* painter)
+void MeshSolutionItem::paintVector(QPainter* painter, const QRectF& exposedRect)
 {
   // Fixed-length arrows at each element centroid showing Re(B) direction
   // (see paintContour's Re(.) note) -- a qualitative field-direction plot,
@@ -294,8 +465,15 @@ void MeshSolutionItem::paintVector(QPainter* painter)
   // a stride so roughly a few thousand arrows are drawn regardless of
   // mesh size.
   int stride = std::max(1, (int)(m_solution->elements.size() / 3000));
+  // Arrows extend up to arrowLen beyond the centroid, so grow the cull
+  // rect by that much rather than culling against the bare centroid --
+  // otherwise an arrow whose centroid is just outside the exposed rect
+  // but whose visible tip pokes into it would be skipped.
+  QRectF cullRect = exposedRect.adjusted(-arrowLen, -arrowLen, arrowLen, arrowLen);
   for (int i = 0; i < m_solution->elements.size(); i += stride) {
     const MeshSolutionElement& e = m_solution->elements[i];
+    if (!cullRect.contains(e.ctrX, e.ctrY))
+      continue;
     double bx = e.B1re, by = e.B2re;
     double mag = std::hypot(bx, by);
     if (mag <= 0)
@@ -311,7 +489,7 @@ void MeshSolutionItem::paintVector(QPainter* painter)
   }
 }
 
-void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
+void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposedRect)
 {
   // Drawn on top of whichever plot mode is active (femm.rc's Show Mesh/
   // Show Points are independent toggles, not plot modes of their own).
@@ -323,6 +501,15 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
       const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
       const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
       const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+
+      // See paintDensity's identical check for why.
+      double triMinX = std::min({ n0.x, n1.x, n2.x });
+      double triMaxX = std::max({ n0.x, n1.x, n2.x });
+      double triMinY = std::min({ n0.y, n1.y, n2.y });
+      double triMaxY = std::max({ n0.y, n1.y, n2.y });
+      if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
+        continue;
+
       path.moveTo(n0.x, n0.y);
       path.lineTo(n1.x, n1.y);
       path.lineTo(n2.x, n2.y);
@@ -339,10 +526,102 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter)
     double r = diag * 0.0015;
     painter->setPen(Qt::NoPen);
     painter->setBrush(AppTheme::meshPointColor());
-    for (const MeshSolutionNode& n : m_solution->nodes)
+    QRectF cullRect = exposedRect.adjusted(-r, -r, r, r);
+    for (const MeshSolutionNode& n : m_solution->nodes) {
+      if (!cullRect.contains(n.x, n.y))
+        continue;
       painter->drawEllipse(QPointF(n.x, n.y), r, r);
+    }
   }
 }
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+// color-band legend overlay ("add a colourmap bar on the side, similar to
+// old gui"), matching femm/FemmviewView.cpp's own Density Plot legend --
+// a fixed-size color-swatch stack with a numeric range label per band,
+// pinned to the viewport's top-right corner. Deliberately a plain QWidget
+// child of the viewport (same pattern as m_cursorTooltip just below) and
+// NOT part of MeshSolutionItem::paint(): that method draws in SCENE space
+// (pans/zooms with the model), while the legend -- like the classic GUI's
+// own, drawn straight onto the device context in FemmviewView::OnDraw --
+// must stay fixed to the viewport regardless of pan/zoom.
+class SolutionLegendWidget : public QWidget {
+  public:
+  explicit SolutionLegendWidget(QWidget* parent)
+      : QWidget(parent)
+  {
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+  }
+
+  void setItem(MeshSolutionItem* item)
+  {
+    m_item = item;
+    updateGeometry();
+  }
+
+  // Recomputes this widget's fixed size from the current item's state --
+  // called whenever plot mode/quantity changes, since the title text
+  // (and therefore the widest row) can change length.
+  void updateGeometry()
+  {
+    if (!m_item) {
+      resize(0, 0);
+      return;
+    }
+    QFontMetrics fm(font());
+    int titleWidth = fm.horizontalAdvance(m_item->legendTitle());
+    int rowWidth = fm.horizontalAdvance("<1.234e+00 : 1.234e+00");
+    int w = std::max({ titleWidth, rowWidth, 160 }) + kSwatchWidth + kMargin * 3;
+    int bandCount = MeshSolutionItem::legendBandCount();
+    int h = kMargin * 2 + bandCount * kRowHeight + kTitleHeight;
+    resize(w, h);
+  }
+
+  protected:
+  void paintEvent(QPaintEvent*) override
+  {
+    if (!m_item)
+      return;
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    painter.fillRect(rect(), palette().color(QPalette::Window));
+    painter.setPen(palette().color(QPalette::Mid));
+    painter.drawRect(rect().adjusted(0, 0, -1, -1));
+
+    double lo, hi;
+    m_item->legendRange(lo, hi);
+    int bandCount = MeshSolutionItem::legendBandCount();
+    double span = (hi - lo) / bandCount;
+
+    painter.setPen(palette().color(QPalette::WindowText));
+    int y = kMargin;
+    // Band 0 (lowest value) at the bottom, highest at the top -- matches
+    // how the color ramp reads bottom-to-top on a typical legend/colorbar.
+    for (int row = 0; row < bandCount; row++) {
+      int band = bandCount - 1 - row;
+      QRect swatch(kMargin, y, kSwatchWidth, kRowHeight - 1);
+      painter.fillRect(swatch, MeshSolutionItem::legendBandColor(band));
+      double bandLo = lo + band * span;
+      double bandHi = lo + (band + 1) * span;
+      QString label = band == bandCount - 1
+          ? QString(">%1").arg(bandLo, 0, 'e', 3)
+          : (band == 0 ? QString("<%1").arg(bandHi, 0, 'e', 3)
+                       : QString("%1:%2").arg(bandLo, 0, 'e', 2).arg(bandHi, 0, 'e', 2));
+      painter.drawText(QRect(kMargin * 2 + kSwatchWidth, y, width() - kSwatchWidth - kMargin * 3, kRowHeight - 1),
+          Qt::AlignVCenter | Qt::AlignLeft, label);
+      y += kRowHeight;
+    }
+    painter.drawText(QRect(kMargin, y, width() - kMargin * 2, kTitleHeight), Qt::AlignVCenter | Qt::AlignLeft, m_item->legendTitle());
+  }
+
+  private:
+  static constexpr int kMargin = 6;
+  static constexpr int kSwatchWidth = 22;
+  static constexpr int kRowHeight = 15;
+  static constexpr int kTitleHeight = 20;
+  MeshSolutionItem* m_item = nullptr;
+};
 
 SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* parent)
     : QGraphicsView(scene, parent)
@@ -351,12 +630,76 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
   setMouseTracking(true); // needed for hoveredAt() to fire without a button held
 
+#ifdef FEMMQT_HAVE_OPENGL
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // per user request to prioritize pan/zoom responsiveness on large
+  // meshes -- a QOpenGLWidget viewport moves rasterization (this view's
+  // dominant per-frame cost: filling potentially millions of density-plot
+  // triangles) onto the GPU instead of QPainter's software raster
+  // backend. Set BEFORE creating m_cursorTooltip/m_legend below: they're
+  // plain QWidget children of viewport(), and setViewport() destroys
+  // whatever widget was there before, which would otherwise orphan them.
+  // Qt composites ordinary QWidget children over a QOpenGLWidget's FBO
+  // output automatically (standard Qt >= 5.4 behavior), so the tooltip
+  // and legend still work unchanged on top of the GL-rendered mesh.
+  setViewport(new QOpenGLWidget(this));
+#endif
+
   m_cursorTooltip = new QLabel(viewport());
   m_cursorTooltip->setStyleSheet(
       "QLabel { background-color: rgba(20, 20, 20, 200); color: white; "
       "padding: 2px 5px; border-radius: 3px; font-size: 11px; }");
   m_cursorTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
   m_cursorTooltip->hide();
+
+  m_legend = new SolutionLegendWidget(viewport());
+  m_legend->hide();
+}
+
+void SolutionGraphicsView::setLegendItem(MeshSolutionItem* item)
+{
+  m_legendItem = item;
+  m_legend->setItem(item);
+  refreshLegend();
+}
+
+void SolutionGraphicsView::setLegendVisible(bool visible)
+{
+  m_legendEnabled = visible;
+  refreshLegend();
+}
+
+void SolutionGraphicsView::refreshLegend()
+{
+  bool visible = m_legendEnabled && m_legendItem && m_legendItem->plotMode() == MeshSolutionItem::PlotMode::Density;
+  if (!visible) {
+    m_legend->hide();
+    return;
+  }
+  m_legend->updateGeometry();
+  m_legend->move(viewport()->width() - m_legend->width() - 8, 8);
+  m_legend->show();
+  m_legend->raise();
+  m_legend->update();
+}
+
+void SolutionGraphicsView::resizeEvent(QResizeEvent* event)
+{
+  QGraphicsView::resizeEvent(event);
+  refreshLegend();
+}
+
+void SolutionGraphicsView::scrollContentsBy(int dx, int dy)
+{
+  QGraphicsView::scrollContentsBy(dx, dy);
+  // Just a repaint (not refreshLegend()'s visibility recheck) -- mode/
+  // quantity/toggle state hasn't changed, only what the legend's numbers
+  // should read given the newly-visible region. The upcoming viewport
+  // repaint this scroll also triggers will have already re-run
+  // paintDensity() and refreshed MeshSolutionItem's cached local range by
+  // the time this widget's own paint event actually executes.
+  if (m_legend->isVisible())
+    m_legend->update();
 }
 
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
@@ -374,12 +717,31 @@ void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
   // by setTooltipText(), called from SolutionWindow::onCanvasHovered
   // once it's finished its own (throttled -- a mesh-element lookup, not
   // free) field-value computation for this same position.
+  QRect oldGeometry = m_cursorTooltip->geometry();
   QPoint pos = event->pos() + QPoint(16, 16);
   pos.setX(std::min(pos.x(), viewport()->width() - m_cursorTooltip->width()));
   pos.setY(std::min(pos.y(), viewport()->height() - m_cursorTooltip->height()));
   m_cursorTooltip->move(pos);
   m_cursorTooltip->show();
   m_cursorTooltip->raise();
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // was viewport()->update(oldGeometry) -- confirmed via a real installed
+  // build that this does NOT reliably erase the tooltip's old position,
+  // leaving a visible trail of stale copies as the cursor moves. Root
+  // cause: this view's default MinimalViewportUpdate mode tracks dirty
+  // regions from SCENE changes, not from a plain QWidget child (the
+  // tooltip) moving -- a bare viewport()->update() call on that region
+  // can get treated as a no-op since nothing in the scene itself
+  // "changed" there. GeometryView.cpp's editor fixes the equivalent bug
+  // with FullViewportUpdate, but that's not an option here: this view
+  // can hold millions of mesh elements, and forcing a full repaint on
+  // every single mouse-move would make the reported "everything is slow
+  // on large geometries" complaint significantly worse. scene()->
+  // invalidate() is the mechanism MinimalViewportUpdate actually
+  // respects for "redraw this region even though nothing scene-side
+  // changed" -- correctly limited to just the vacated rect, not the
+  // whole viewport.
+  scene()->invalidate(mapToScene(oldGeometry).boundingRect());
 
   emit hoveredAt(mapToScene(event->pos()));
 }
@@ -401,20 +763,23 @@ void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;
   scale(factor, factor);
   updateAntialiasingForScale();
+  // Belt-and-suspenders alongside scrollContentsBy: scale() normally
+  // triggers it too (see that override's comment), but this guarantees
+  // the legend picks up the new visible range on every wheel-zoom step
+  // regardless.
+  if (m_legend && m_legend->isVisible())
+    m_legend->update();
   event->accept();
 }
 
 void SolutionGraphicsView::updateAntialiasingForScale()
 {
-  // m11() is the transform's horizontal scale factor -- the y-flip
-  // (scale(1,-1) applied once at construction) makes m22() negative, so
-  // m11() alone is the right one to threshold on. 8x was picked
-  // empirically: comfortably past the zoom level where the seam artifact
-  // became visible in testing, comfortably before it costs anything on a
-  // multi-million-element mesh (at 8x+, the visible viewport can no
-  // longer contain more than a small fraction of a typical mesh).
-  bool zoomedInEnough = std::abs(transform().m11()) >= 8.0;
-  setRenderHint(QPainter::Antialiasing, zoomedInEnough);
+  // Was zoom-gated (only on past 8x) -- see the class declaration's
+  // comment in SolutionView.h for why that's no longer the case.
+  // Unconditional now; kept as its own function (rather than inlining
+  // setRenderHint calls at each call site) so a future element-count-
+  // based heuristic has one place to live.
+  setRenderHint(QPainter::Antialiasing, true);
 }
 
 SolutionWindow::SolutionWindow(QWidget* parent)
@@ -426,7 +791,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   m_scene = new QGraphicsScene(this);
   m_scene->setBackgroundBrush(AppTheme::background());
   m_view = new SolutionGraphicsView(m_scene, this);
-  m_view->setRenderHint(QPainter::Antialiasing, false); // large meshes: skip AA for speed
+  m_view->setRenderHint(QPainter::Antialiasing, true); // see updateAntialiasingForScale()
   // Matches MainWindow's view->scale(1,-1): .ans geometry is in the same
   // math (y-up) convention as .fem.
   m_view->scale(1, -1);
@@ -476,19 +841,72 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   QMenu* viewMenu = menuBar()->addMenu("&View");
   auto* plotGroup = new QActionGroup(this);
   plotGroup->setExclusive(true);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // Contour (field lines), not Density, is the initially-checked plot
+  // mode now -- see MeshSolutionItem::m_mode's default in SolutionView.h.
+  // Each handler also refreshes the view's antialiasing against the
+  // CURRENT zoom level (SolutionGraphicsView::updateAntialiasingForScale)
+  // when its mode becomes active, rather than leaving whatever AA state
+  // happened to be set by the last zoom/wheel event -- matters most for
+  // Density, the expensive one to rasterize on a large mesh, since it's
+  // no longer the default and only gets enabled by deliberate user
+  // action now.
   QAction* densityAction = viewMenu->addAction("&Density Plot");
   densityAction->setCheckable(true);
-  densityAction->setChecked(true);
   plotGroup->addAction(densityAction);
-  connect(densityAction, &QAction::triggered, this, [this]() { if (m_item) m_item->setPlotMode(MeshSolutionItem::PlotMode::Density); });
+  connect(densityAction, &QAction::triggered, this, [this]() {
+    if (m_item)
+      m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+    m_view->updateAntialiasingForScale();
+    m_view->refreshLegend();
+  });
   QAction* contourAction = viewMenu->addAction("&Contour Plot");
   contourAction->setCheckable(true);
+  contourAction->setChecked(true);
   plotGroup->addAction(contourAction);
-  connect(contourAction, &QAction::triggered, this, [this]() { if (m_item) m_item->setPlotMode(MeshSolutionItem::PlotMode::Contour); });
+  connect(contourAction, &QAction::triggered, this, [this]() {
+    if (m_item)
+      m_item->setPlotMode(MeshSolutionItem::PlotMode::Contour);
+    m_view->updateAntialiasingForScale();
+    m_view->refreshLegend();
+  });
   QAction* vectorAction = viewMenu->addAction("&Vector Plot");
   vectorAction->setCheckable(true);
   plotGroup->addAction(vectorAction);
-  connect(vectorAction, &QAction::triggered, this, [this]() { if (m_item) m_item->setPlotMode(MeshSolutionItem::PlotMode::Vector); });
+  connect(vectorAction, &QAction::triggered, this, [this]() {
+    if (m_item)
+      m_item->setPlotMode(MeshSolutionItem::PlotMode::Vector);
+    m_view->updateAntialiasingForScale();
+    m_view->refreshLegend();
+  });
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // per user request for "all the different heatmap possibilities" the
+  // classic GUI's Density Plot offers -- see MeshSolutionItem::
+  // DensityQuantity's header comment for exactly which ones (and why
+  // |H|/|J| aren't included). Applies regardless of which plot mode is
+  // currently active, matching how Smoothing/Show Mesh/Show Points below
+  // are all independent toggles rather than plot modes of their own --
+  // only actually visible in Density mode's own rendering, but there's
+  // no harm in it being selectable while Contour/Vector is shown too.
+  QMenu* densityQtyMenu = viewMenu->addMenu("Density &Quantity");
+  auto* densityQtyGroup = new QActionGroup(this);
+  densityQtyGroup->setExclusive(true);
+  auto addDensityQtyAction = [&](const QString& text, MeshSolutionItem::DensityQuantity q, bool checked) {
+    QAction* a = densityQtyMenu->addAction(text);
+    a->setCheckable(true);
+    a->setChecked(checked);
+    densityQtyGroup->addAction(a);
+    connect(a, &QAction::triggered, this, [this, q]() {
+      if (m_item)
+        m_item->setDensityQuantity(q);
+      m_view->refreshLegend();
+    });
+  };
+  addDensityQtyAction("|B| (Tesla)", MeshSolutionItem::DensityQuantity::BMag, true);
+  addDensityQtyAction("|B_re| (Tesla)", MeshSolutionItem::DensityQuantity::BReMag, false);
+  addDensityQtyAction("|B_im| (Tesla)", MeshSolutionItem::DensityQuantity::BImMag, false);
+  addDensityQtyAction("log10(|B|)", MeshSolutionItem::DensityQuantity::LogBMag, false);
+
   QAction* smoothAction = viewMenu->addAction("&Smoothing");
   smoothAction->setCheckable(true);
   smoothAction->setChecked(true);
@@ -500,6 +918,14 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   QAction* showPointsAction = viewMenu->addAction("Show &Points");
   showPointsAction->setCheckable(true);
   connect(showPointsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowPoints(on); });
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // per user request for a "colourmap bar on the side, similar to old
+  // gui" -- mirrors femm/FemmviewView.cpp's own LegendFlag/d_LegendFlag,
+  // default-on like classic FEMM's own default.
+  QAction* showLegendAction = viewMenu->addAction("Show &Legend");
+  showLegendAction->setCheckable(true);
+  showLegendAction->setChecked(true);
+  connect(showLegendAction, &QAction::toggled, this, [this](bool on) { m_view->setLegendVisible(on); });
   viewMenu->addSeparator();
   viewMenu->addAction("&Circuit Props...", this, &SolutionWindow::onCircuitPropsTriggered);
   viewMenu->addAction("&BH Curves...", this, &SolutionWindow::onBhCurvesTriggered);
@@ -671,6 +1097,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_scene->addItem(m_item);
   m_view->fitInView(m_item->boundingRect(), Qt::KeepAspectRatio);
   m_view->updateAntialiasingForScale();
+  m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
 
   statusBar()->showMessage(QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")
@@ -947,8 +1374,23 @@ void SolutionWindow::onPlotXYTriggered()
   // so this samples |A| and |B| at evenly-spaced points along the current
   // contour and presents them as a plain table instead of a graphical
   // plot. Still gives the same underlying data, just not plotted visually.
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // this used to just show an info box telling the user to go find the
+  // separate Operation > Contours tool first, then come back here --
+  // reported as "the plotting tool does not work" (a fair reading: two
+  // disconnected steps in different menus, easy to miss). Per user
+  // request ("plot the field values across a trajectory that is
+  // drawn"), this now activates the Contour tool directly instead of
+  // just pointing at it, so drawing the trajectory and requesting the
+  // plot are one continuous flow through this single action -- draw
+  // points, then click Plot X-Y again (or Operation > Finish Contour)
+  // when done.
   if (m_contourPoints.size() < 2) {
-    QMessageBox::information(this, "Plot X-Y", "Draw a contour first (Operation > Contours).");
+    m_toolMode = SolutionToolMode::Contour;
+    if (m_contourToolAction)
+      m_contourToolAction->setChecked(true);
+    statusBar()->showMessage("Plot X-Y: click points to draw the trajectory, then click Plot X-Y again when done.");
     return;
   }
   bool ok = false;

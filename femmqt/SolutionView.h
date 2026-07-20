@@ -42,28 +42,103 @@ class MeshSolutionItem : public QGraphicsItem {
   void setShowMesh(bool show);
   void setShowPoints(bool show);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // per user request for "all the different heatmap possibilities" the
+  // classic GUI offers (femm/FemmviewView.cpp's DensityPlot 1-10 for AC,
+  // 1-4 for DC -- see that file's legend-label switch for the full list).
+  // Only the |B|-derived ones are implemented here: |B|, |B_re|, |B_im|,
+  // and log10(|B|) are all directly computable from the complex Bx/By
+  // components MeshSolutionElement already stores. |H| and |J| are NOT
+  // (H needs each element's material permeability, J needs conductivity
+  // -- neither is parsed from .ans into MeshSolution today) -- deferred
+  // as a real follow-up, not attempted here as a rushed approximation.
+  enum class DensityQuantity { BMag, BReMag, BImMag, LogBMag };
+  void setDensityQuantity(DensityQuantity q);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // exposed so SolutionLegendWidget (SolutionView.cpp) can draw the
+  // color-band legend femm.rc's Density Plot always shows (femm/
+  // FemmviewView.cpp's "Draw Legend" block) -- that's a DEVICE-space
+  // overlay fixed to the viewport corner, not part of this item's own
+  // scene-space paint(), so it needs its own small widget rather than
+  // being drawn from within paint() itself.
+  static int legendBandCount();
+  static QColor legendBandColor(int band);
+  void legendRange(double& lo, double& hi) const;
+  QString legendTitle() const;
+  PlotMode plotMode() const { return m_mode; }
+
   private:
-  void paintDensity(QPainter* painter);
-  void paintContour(QPainter* painter);
-  void paintVector(QPainter* painter);
-  void paintMeshOverlay(QPainter* painter);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // exposedRect (QStyleOptionGraphicsItem::exposedRect, in this item's
+  // own coordinate system -- same as the scene's, this item has no
+  // transform of its own) added to every paint* method, per user request
+  // ("everything is so slow especially in large geometries" / "is there
+  // a way to accelerate the graphics"). The real cost for a huge mesh
+  // isn't GPU-vs-CPU rasterization -- it's that every paint call was
+  // already iterating and processing every element in the WHOLE mesh
+  // regardless of how much of it is actually visible at the current pan/
+  // zoom. Skipping any element whose triangle doesn't overlap the
+  // exposed rect turns "cost proportional to total mesh size" into "cost
+  // proportional to what's on screen", which is where the real win is
+  // for a zoomed-in view of a multi-million-element mesh -- switching to
+  // a QOpenGLWidget viewport (the literal "GPU acceleration" ask) would
+  // speed up the final rasterization step, but not this dominant
+  // per-element CPU cost, so it's addressed here first as the higher-
+  // value fix. A spatial index (quadtree/grid buckets) would let the
+  // exposed-rect check skip iterating off-screen elements entirely
+  // rather than just skipping their rendering cost -- a further
+  // improvement, not implemented here.
+  void paintDensity(QPainter* painter, const QRectF& exposedRect);
+  void paintContour(QPainter* painter, const QRectF& exposedRect);
+  void paintVector(QPainter* painter, const QRectF& exposedRect);
+  void paintMeshOverlay(QPainter* painter, const QRectF& exposedRect);
 
   const MeshSolution* m_solution;
   QRectF m_bounds;
-  PlotMode m_mode = PlotMode::Density;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // was PlotMode::Density -- per user request, Contour (field lines) is
+  // now the default a freshly-opened solution shows, not the filled
+  // density plot. Density is still one click/menu-item away, just no
+  // longer shown before the user asks for it. Keep in sync with
+  // SolutionWindow's densityAction/contourAction setChecked() calls,
+  // which drive the View menu/toolbar's initial checked state to match.
+  PlotMode m_mode = PlotMode::Contour;
+  DensityQuantity m_densityQuantity = DensityQuantity::BMag;
   bool m_smooth = true;
   bool m_showMesh = false;
   bool m_showPoints = false;
 
-  // Per-node average of touching elements' |B| -- femm/FemmviewView.cpp's
-  // "Smooth" option colors each triangle using its 3 corner nodes' values
-  // (via GDI's GradientFill) instead of one flat per-element value; Qt's
-  // QPainter has no equivalent triangle-gradient primitive, so this
-  // approximates it by banding on the *average* of the 3 corner nodes'
-  // values instead of the element's own single value -- softens the
-  // element-to-element steps at shared edges without needing per-pixel
-  // rasterization. Computed once in the constructor.
-  QVector<double> m_nodeBMagAvg;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // was a single m_nodeBMagAvg (|B| only) -- generalized to one
+  // precomputed {per-node average, min, max} triple per DensityQuantity,
+  // all computed once in the constructor (bounded, one-time cost, same
+  // as the original |B|-only version) rather than rescanning the mesh
+  // every time the user switches which quantity is plotted.
+  struct QuantityData {
+    QVector<double> nodeAvg; // per-node average of touching elements' value -- see below for why
+    double vMin = 0, vMax = 0;
+  };
+  // Indexed by DensityQuantity's underlying int value.
+  QuantityData m_quantityData[4];
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // the actual band range paintDensity() used the last time it ran --
+  // starts as the global range (matches pre-zoom-rescale behavior until
+  // the first paint), updated every paintDensity() call to whatever the
+  // CURRENTLY VISIBLE elements' local range is (see that method's own
+  // comment). legendRange() reports this instead of the raw global
+  // min/max so the legend always matches what's actually on screen.
+  double m_lastDensityLo = 0, m_lastDensityHi = 0;
+
+  // femm/FemmviewView.cpp's "Smooth" option colors each triangle using
+  // its 3 corner nodes' values (via GDI's GradientFill) instead of one
+  // flat per-element value; Qt's QPainter has no equivalent triangle-
+  // gradient primitive, so this approximates it by banding on the
+  // *average* of the 3 corner nodes' values instead of the element's own
+  // single value -- softens the element-to-element steps at shared edges
+  // without needing per-pixel rasterization.
+  double elementQuantity(const MeshSolutionElement& e, DensityQuantity q) const;
 };
 
 // Routes plain left-clicks (used by the Point/Contour/Area analysis
@@ -76,15 +151,24 @@ class SolutionGraphicsView : public QGraphicsView {
   public:
   explicit SolutionGraphicsView(QGraphicsScene* scene, QWidget* parent = nullptr);
 
-  // Antialiasing is off by default (large meshes: rasterizing millions of
-  // triangles with AA on is real, measurable extra cost) -- but disabled
-  // AA leaves faint 1px seams between adjacent triangles at their shared
-  // edges, invisible at typical zoom where each triangle is a handful of
-  // pixels, but a real, ugly "swiss cheese" artifact once zoomed in far
-  // enough that a triangle covers only a few screen pixels (confirmed
-  // directly: zooming in on a real solved mesh showed exactly this).
-  // Re-enable AA once zoomed in past a threshold where few enough
-  // triangles are ever on screen at once that AA's cost stops mattering.
+  // Antialiasing was originally gated off below 8x zoom (large meshes:
+  // rasterizing millions of triangles with AA on is real, measurable
+  // extra cost), re-enabled past that threshold to fix a "swiss cheese"
+  // seam artifact between adjacent triangles once each covered only a
+  // few screen pixels. Modified by Claude (Anthropic),
+  // noreply@anthropic.com, 2026-07-20: that same off-by-default state
+  // also meant every zoom level *below* 8x rendered every triangle edge
+  // -- both mesh-internal seams and density-band boundaries -- fully
+  // aliased, which reads as "rough/undetailed" at completely ordinary
+  // zoom levels, not just some extreme case (confirmed: this is what a
+  // user actually reported). Per user request, AA is now unconditional
+  // here rather than zoom-gated -- the performance concern that
+  // motivated gating it off in the first place is much less pressing now
+  // that Density (the expensive one to rasterize) defaults to off and is
+  // only ever on when a user deliberately turned it on (see
+  // MeshSolutionItem::m_mode's default). Revisit with a real element-
+  // count-based heuristic instead of this blanket always-on if a huge
+  // mesh's Density view is ever reported as sluggish.
   // Call after any operation that changes the view's scale.
   void updateAntialiasingForScale();
 
@@ -94,6 +178,18 @@ class SolutionGraphicsView : public QGraphicsView {
   // which is throttled (see that function's comment), unlike the
   // tooltip's own position tracking below, which isn't.
   void setTooltipText(const QString& text);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // color-band legend overlay, matching femm/FemmviewView.cpp's own
+  // Density Plot legend ("add a colourmap bar on the side, similar to
+  // old gui"). setLegendItem is called once (SolutionWindow::openAnsFile,
+  // right after constructing m_item); refreshLegend() re-evaluates
+  // visibility/content and must be called after anything that could
+  // change what it shows -- plot mode, density quantity, or the
+  // Show Legend toggle itself.
+  void setLegendItem(MeshSolutionItem* item);
+  void setLegendVisible(bool visible);
+  void refreshLegend();
 
   signals:
   void clickedAt(QPointF scenePos);
@@ -108,9 +204,23 @@ class SolutionGraphicsView : public QGraphicsView {
   void mouseMoveEvent(QMouseEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
+  void resizeEvent(QResizeEvent* event) override;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20: the
+  // legend's numbers now track the CURRENTLY VISIBLE elements' range (see
+  // MeshSolutionItem::paintDensity), which changes on every pan/zoom, not
+  // just on a plot-mode/quantity switch -- scrollContentsBy is QGraphicsView's
+  // one common path for all of those (scrollbar drags, Pan L/R/U/D, wheel
+  // zoom's re-centering, fitInView), so re-querying the legend here (a
+  // cheap widget repaint, not a mesh rescan) catches all of them from one
+  // place instead of threading a refresh call through every zoom/pan entry
+  // point individually.
+  void scrollContentsBy(int dx, int dy) override;
 
   private:
   class QLabel* m_cursorTooltip = nullptr;
+  class SolutionLegendWidget* m_legend = nullptr;
+  MeshSolutionItem* m_legendItem = nullptr;
+  bool m_legendEnabled = true;
 };
 
 enum class SolutionToolMode {

@@ -362,7 +362,7 @@ void MainWindow::onOpenTriggered()
 {
   if (!confirmDiscardUnsavedChanges())
     return;
-  QString path = QFileDialog::getOpenFileName(this, "Open Magnetics Problem", QString(), "FEMM Magnetics Files (*.fem)");
+  QString path = QFileDialog::getOpenFileName(this, "Open Magnetics Problem", QString(), "FEMM Magnetics Files (*.fem *.femx)");
   if (path.isEmpty())
     return;
   openFile(path);
@@ -523,10 +523,16 @@ void MainWindow::onSolveTriggered()
 
   if (!m_solutionWindow)
     m_solutionWindow = new SolutionWindow();
-  m_solutionWindow->openAnsFile(ansPath);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // show() now runs BEFORE openAnsFile(), not after -- openAnsFile()'s
+  // fitInView() call needs the view's real, final viewport geometry to
+  // compute a correct "Natural" fit, and a QMainWindow's viewport can
+  // report stale/default layout geometry before its first show(). Matches
+  // the ordering main.cpp's own command-line-file-open path already uses.
   m_solutionWindow->show();
   m_solutionWindow->raise();
   m_solutionWindow->activateWindow();
+  m_solutionWindow->openAnsFile(ansPath);
 }
 
 void MainWindow::onViewResultsTriggered()
