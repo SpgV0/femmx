@@ -86,6 +86,24 @@
 # building femmqt in CI again (gracefully, per the fallback mentioned
 # below, just not usefully).
 #
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# pinned version down to 6.9.3 (from 6.11.1) -- confirmed directly (both
+# via `aqt list-qt windows desktop --arch <version>` run locally, and raw
+# `curl` against download.qt.io) that the entire 6.11.x/6.12.x release
+# line's Updates.xml is currently unreachable from aqtinstall's mirror
+# (download.qt.io lists e.g. qt6_6111_msvc2022_64/ in its own directory
+# index with a real date, but 404s the moment that URL is actually
+# fetched -- a mirror-propagation gap on Qt's side, not anything in this
+# workflow or femmqt/CMakeLists.txt). This surfaced as `continue-on-error`
+# silently absorbing the failure every run (job stayed green, but the
+# "Install Qt6" step itself failed with "python.exe ... exit code 1" --
+# aqtinstall is a Python tool -- and femmqt was never actually being
+# built/validated as a result). 6.9.3 confirmed working via the same
+# local reproduction. femmqt only uses Widgets+Svg, nothing 6.11-specific,
+# so this doesn't need to track the exact version installed locally
+# (C:\Qt\6.11.1\msvc2022_64) -- just needs *a* working Qt6 MSVC kit with
+# those two components. Revisit once Qt's mirrors catch up on 6.11.x+.
+#
 # Marked continue-on-error: true, matching the LaTeX-install reasoning
 # just above -- a flaky Qt download/network hiccup in a fresh runner is
 # a real, likely failure mode, and should only ever cost femmqt's build
@@ -126,7 +144,7 @@ jobs:
       continue-on-error: true
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.11.1'
+        version: '6.9.3'
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
@@ -253,7 +271,7 @@ jobs:
       continue-on-error: true
       uses: jurplel/install-qt-action@v4
       with:
-        version: '6.11.1'
+        version: '6.9.3'
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2022_64'
