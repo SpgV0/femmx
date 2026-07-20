@@ -120,6 +120,14 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
   }
   m_bounds = QRectF(QPointF(xmin, ymin), QPointF(xmax, ymax));
 
+  if (!solution->nodes.isEmpty()) {
+    m_aMin = m_aMax = solution->nodes[0].Are;
+    for (const MeshSolutionNode& n : solution->nodes) {
+      m_aMin = std::min(m_aMin, n.Are);
+      m_aMax = std::max(m_aMax, n.Are);
+    }
+  }
+
   // Precompute each node's average value (across every element touching
   // it -- see QuantityData's header comment for why) plus the min/max
   // range, for every DensityQuantity at once. Done once here rather than
@@ -154,6 +162,80 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
   }
   m_lastDensityLo = m_quantityData[static_cast<int>(m_densityQuantity)].vMin;
   m_lastDensityHi = m_quantityData[static_cast<int>(m_densityQuantity)].vMax;
+
+  buildSpatialIndex();
+}
+
+void MeshSolutionItem::buildSpatialIndex()
+{
+  m_spatialIndex = SpatialIndex();
+  if (!m_solution || m_solution->elements.isEmpty() || m_solution->nodes.isEmpty())
+    return;
+
+  double w = std::max(m_bounds.width(), 1e-12);
+  double h = std::max(m_bounds.height(), 1e-12);
+  // Aim for roughly one element per cell on average, same heuristic as
+  // SolutionWindow::buildSpatialIndex.
+  double cellSize = std::sqrt((w * h) / std::max(1, (int)m_solution->elements.size()));
+  if (!(cellSize > 0))
+    cellSize = std::max(w, h);
+  int cols = std::max(1, (int)(w / cellSize) + 1);
+  int rows = std::max(1, (int)(h / cellSize) + 1);
+
+  m_spatialIndex.minX = m_bounds.left();
+  m_spatialIndex.minY = m_bounds.top();
+  m_spatialIndex.cellSize = cellSize;
+  m_spatialIndex.cols = cols;
+  m_spatialIndex.rows = rows;
+  m_spatialIndex.cells.resize(cols * rows);
+
+  for (int i = 0; i < m_solution->elements.size(); i++) {
+    const MeshSolutionElement& e = m_solution->elements[i];
+    if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+    double triMinX = std::min({ n0.x, n1.x, n2.x });
+    double triMaxX = std::max({ n0.x, n1.x, n2.x });
+    double triMinY = std::min({ n0.y, n1.y, n2.y });
+    double triMaxY = std::max({ n0.y, n1.y, n2.y });
+    int c0 = std::clamp((int)std::floor((triMinX - m_spatialIndex.minX) / cellSize), 0, cols - 1);
+    int c1 = std::clamp((int)std::floor((triMaxX - m_spatialIndex.minX) / cellSize), 0, cols - 1);
+    int r0 = std::clamp((int)std::floor((triMinY - m_spatialIndex.minY) / cellSize), 0, rows - 1);
+    int r1 = std::clamp((int)std::floor((triMaxY - m_spatialIndex.minY) / cellSize), 0, rows - 1);
+    for (int r = r0; r <= r1; r++)
+      for (int c = c0; c <= c1; c++)
+        m_spatialIndex.cells[r * cols + c].push_back(i);
+  }
+
+  m_visitedMark.fill(-1, m_solution->elements.size());
+  m_visitedGen = 0;
+}
+
+QVector<int> MeshSolutionItem::elementsOverlapping(const QRectF& rect) const
+{
+  QVector<int> result;
+  if (m_spatialIndex.cols == 0 || m_spatialIndex.rows == 0)
+    return result;
+  int cols = m_spatialIndex.cols, rows = m_spatialIndex.rows;
+  double cellSize = m_spatialIndex.cellSize;
+  int c0 = std::clamp((int)std::floor((rect.left() - m_spatialIndex.minX) / cellSize), 0, cols - 1);
+  int c1 = std::clamp((int)std::floor((rect.right() - m_spatialIndex.minX) / cellSize), 0, cols - 1);
+  int r0 = std::clamp((int)std::floor((rect.top() - m_spatialIndex.minY) / cellSize), 0, rows - 1);
+  int r1 = std::clamp((int)std::floor((rect.bottom() - m_spatialIndex.minY) / cellSize), 0, rows - 1);
+  m_visitedGen++;
+  for (int r = r0; r <= r1; r++) {
+    for (int c = c0; c <= c1; c++) {
+      for (int idx : m_spatialIndex.cells[r * cols + c]) {
+        if (m_visitedMark[idx] != m_visitedGen) {
+          m_visitedMark[idx] = m_visitedGen;
+          result.push_back(idx);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQuantity q) const
@@ -313,9 +395,19 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
   // looking at -- see SolutionGraphicsView::scrollContentsBy for why the
   // legend repaints on every pan/zoom to keep picking that up.
   double lo = qd.vMin, hi = qd.vMax;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20: was
+  // a linear scan over m_solution->elements with a per-element bbox
+  // reject -- correct, but O(total mesh size) every paint regardless of
+  // zoom. elementsOverlapping() does the same bbox test but only against
+  // elements the spatial index's cell range says can possibly overlap,
+  // so cost now tracks what's on screen. The precise per-element bbox
+  // check below is kept as a cheap correctness backstop (a cell can hold
+  // elements whose bbox pokes into it but not into the exact query rect).
+  QVector<int> visible = elementsOverlapping(exposedRect);
   {
     bool first = true;
-    for (const MeshSolutionElement& e : m_solution->elements) {
+    for (int ei : visible) {
+      const MeshSolutionElement& e = m_solution->elements[ei];
       if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
         continue;
       const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
@@ -353,7 +445,8 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
   // batching principle as PolyPolygon()/FlushDensityBand in the MFC GUI.
   QPainterPath bandPaths[kNumBands];
 
-  for (const MeshSolutionElement& e : m_solution->elements) {
+  for (int ei : visible) {
+    const MeshSolutionElement& e = m_solution->elements[ei];
     if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
       continue;
 
@@ -410,18 +503,23 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
   // but the same visual result for a piecewise-linear field.
   if (m_solution->nodes.isEmpty())
     return;
-  double aMin = m_solution->nodes[0].Are, aMax = aMin;
-  for (const MeshSolutionNode& n : m_solution->nodes) {
-    aMin = std::min(aMin, n.Are);
-    aMax = std::max(aMax, n.Are);
-  }
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // Are's global min/max never changes once a solution is loaded (unlike
+  // paintDensity's local range, contour LEVELS are deliberately fixed to
+  // the whole mesh's range regardless of zoom, so lines mean the same
+  // potential wherever you scroll to) -- precomputed once in the
+  // constructor instead of rescanning every node on every single
+  // paintContour() call (every frame Contour mode is active and the view
+  // pans/zooms).
+  double aMin = m_aMin, aMax = m_aMax;
   double span = aMax - aMin;
   if (span <= 0)
     return;
 
   constexpr int kNumLevels = 20;
   QPainterPath path;
-  for (const MeshSolutionElement& e : m_solution->elements) {
+  for (int ei : elementsOverlapping(exposedRect)) {
+    const MeshSolutionElement& e = m_solution->elements[ei];
     if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
       continue;
     const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
@@ -514,7 +612,8 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposed
   // Show Points are independent toggles, not plot modes of their own).
   if (m_showMesh) {
     QPainterPath path;
-    for (const MeshSolutionElement& e : m_solution->elements) {
+    for (int ei : elementsOverlapping(exposedRect)) {
+      const MeshSolutionElement& e = m_solution->elements[ei];
       if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
         continue;
       const MeshSolutionNode& n0 = m_solution->nodes[e.p0];

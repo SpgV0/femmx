@@ -103,12 +103,44 @@ class MeshSolutionItem : public QGraphicsItem {
   // per-element CPU cost, so it's addressed here first as the higher-
   // value fix. A spatial index (quadtree/grid buckets) would let the
   // exposed-rect check skip iterating off-screen elements entirely
-  // rather than just skipping their rendering cost -- a further
-  // improvement, not implemented here.
+  // rather than just skipping their rendering cost.
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // implemented -- see m_spatialIndex/elementsOverlapping below. Without
+  // it, every paint() call (i.e. every frame during interactive pan/zoom)
+  // still linearly scanned the WHOLE mesh just to find which elements
+  // pass the exposedRect check above; paintDensity alone does that scan
+  // twice (local-range pass + fill pass). For a multi-million-element
+  // mesh that turns "cost proportional to what's on screen" (the
+  // exposedRect skip's stated goal) back into "cost proportional to
+  // total mesh size" the moment you zoom in, which is exactly backwards.
   void paintDensity(QPainter* painter, const QRectF& exposedRect);
   void paintContour(QPainter* painter, const QRectF& exposedRect);
   void paintVector(QPainter* painter, const QRectF& exposedRect);
   void paintMeshOverlay(QPainter* painter, const QRectF& exposedRect);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // uniform-grid spatial index over element bounding boxes, same design
+  // as SolutionWindow's own (see its declaration for why a grid beats a
+  // quadtree/KD-tree here) but built once in the constructor rather than
+  // lazily -- m_solution never changes for this item's lifetime (a fresh
+  // MeshSolutionItem is constructed per opened file, see
+  // SolutionWindow::openAnsFile), so there's no reload/invalidate case
+  // to handle. elementsOverlapping() returns every element whose bbox
+  // overlaps a rect, deduped even though one element can span several
+  // cells -- dedup uses a generation-stamped m_visitedMark array instead
+  // of a QSet so repeated calls (every paint) don't pay hashing/
+  // allocation cost proportional to visible element count.
+  struct SpatialIndex {
+    double minX = 0, minY = 0, cellSize = 1;
+    int cols = 0, rows = 0;
+    QVector<QVector<int>> cells;
+  };
+  void buildSpatialIndex();
+  QVector<int> elementsOverlapping(const QRectF& rect) const;
+  SpatialIndex m_spatialIndex;
+  mutable QVector<int> m_visitedMark;
+  mutable int m_visitedGen = 0;
 
   const MeshSolution* m_solution;
   QRectF m_bounds;
@@ -156,6 +188,13 @@ class MeshSolutionItem : public QGraphicsItem {
   // single value -- softens the element-to-element steps at shared edges
   // without needing per-pixel rasterization.
   double elementQuantity(const MeshSolutionElement& e, DensityQuantity q) const;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+  // global min/max of nodal Are, precomputed once (paintContour's levels
+  // are deliberately fixed to the whole mesh's range, not zoom-adaptive
+  // like Density's -- see that method for why) instead of rescanning
+  // every node on every paint call.
+  double m_aMin = 0, m_aMax = 0;
 };
 
 // Routes plain left-clicks (used by the Point/Contour/Area analysis
