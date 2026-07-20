@@ -126,7 +126,7 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
   // per-paint or per-quantity-switch, since paint() can run many times
   // (every pan/zoom) but the mesh itself never changes -- the whole
   // point of this precompute pass, same as the original |B|-only version.
-  for (int qi = 0; qi < 4; qi++) {
+  for (int qi = 0; qi < 6; qi++) {
     auto q = static_cast<DensityQuantity>(qi);
     QuantityData& qd = m_quantityData[qi];
     qd.nodeAvg.fill(0.0, solution->nodes.size());
@@ -163,6 +163,23 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   case DensityQuantity::BReMag: return std::hypot(e.B1re, e.B2re);
   case DensityQuantity::BImMag: return std::hypot(e.B1im, e.B2im);
   case DensityQuantity::LogBMag: return std::log10(std::max(std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im)), 1e-300));
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // H = B/(mu_r*mu0) per axis (femm/FemmviewDoc.cpp's GetH, muo =
+  // 1.2566370614359173e-6 H/m matching femm/StdAfx.h's own constant
+  // exactly rather than a recomputed 4*pi*1e-7, which can differ in the
+  // last bit or two). Exact for linear materials only -- see this
+  // method's declaration in SolutionView.h for the nonlinear/laminated/
+  // incremental-permeability cases not covered.
+  case DensityQuantity::HMag: {
+    constexpr double kMuo = 1.2566370614359173e-6;
+    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
+    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    return std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
+  }
+  // jRe/jIm are precomputed once (AnsFileIO::readAns) -- see
+  // MeshSolutionElement's comment for why (needs nodal A, not available
+  // from a single element at paint time).
+  case DensityQuantity::JMag: return std::hypot(e.jRe, e.jIm);
   }
   return 0;
 }
@@ -213,6 +230,8 @@ QString MeshSolutionItem::legendTitle() const
   case DensityQuantity::BReMag: return "|B_re|, Tesla";
   case DensityQuantity::BImMag: return "|B_im|, Tesla";
   case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
+  case DensityQuantity::HMag: return "|H|, Amp/m";
+  case DensityQuantity::JMag: return "|Js+Je|, MA/m^2";
   }
   return QString();
 }
@@ -882,12 +901,12 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // per user request for "all the different heatmap possibilities" the
   // classic GUI's Density Plot offers -- see MeshSolutionItem::
-  // DensityQuantity's header comment for exactly which ones (and why
-  // |H|/|J| aren't included). Applies regardless of which plot mode is
-  // currently active, matching how Smoothing/Show Mesh/Show Points below
-  // are all independent toggles rather than plot modes of their own --
-  // only actually visible in Density mode's own rendering, but there's
-  // no harm in it being selectable while Contour/Vector is shown too.
+  // DensityQuantity's header comment for exactly which ones. Applies
+  // regardless of which plot mode is currently active, matching how
+  // Smoothing/Show Mesh/Show Points below are all independent toggles
+  // rather than plot modes of their own -- only actually visible in
+  // Density mode's own rendering, but there's no harm in it being
+  // selectable while Contour/Vector is shown too.
   QMenu* densityQtyMenu = viewMenu->addMenu("Density &Quantity");
   auto* densityQtyGroup = new QActionGroup(this);
   densityQtyGroup->setExclusive(true);
@@ -906,6 +925,8 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   addDensityQtyAction("|B_re| (Tesla)", MeshSolutionItem::DensityQuantity::BReMag, false);
   addDensityQtyAction("|B_im| (Tesla)", MeshSolutionItem::DensityQuantity::BImMag, false);
   addDensityQtyAction("log10(|B|)", MeshSolutionItem::DensityQuantity::LogBMag, false);
+  addDensityQtyAction("|H| (Amp/m)", MeshSolutionItem::DensityQuantity::HMag, false);
+  addDensityQtyAction("|Js+Je| (MA/m^2)", MeshSolutionItem::DensityQuantity::JMag, false);
 
   QAction* smoothAction = viewMenu->addAction("&Smoothing");
   smoothAction->setCheckable(true);
@@ -1215,6 +1236,16 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     std::complex<double> A = interpolateA(scenePos, elem);
     const MeshSolutionElement& e = m_solution.elements[elem];
     double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // H/J added alongside the existing A/B rows -- same formulas as
+    // MeshSolutionItem::elementQuantity's HMag/JMag cases (see that
+    // method's comment), just also broken into their re/im components
+    // here to match how A/B1/B2 are already shown.
+    constexpr double kMuo = 1.2566370614359173e-6;
+    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
+    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
+    double jMag = std::hypot(e.jRe, e.jIm);
 
     QDialog dlg(this);
     dlg.setWindowTitle("Point Properties");
@@ -1224,10 +1255,15 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     form->addRow("B1 (re, im):", new QLabel(QString("%1, %2").arg(e.B1re, 0, 'g', 6).arg(e.B1im, 0, 'g', 6)));
     form->addRow("B2 (re, im):", new QLabel(QString("%1, %2").arg(e.B2re, 0, 'g', 6).arg(e.B2im, 0, 'g', 6)));
     form->addRow("|B|:", new QLabel(QString("%1 T").arg(bMag, 0, 'g', 6)));
+    form->addRow("H1 (re, im):", new QLabel(QString("%1, %2").arg(h1re, 0, 'g', 6).arg(h1im, 0, 'g', 6)));
+    form->addRow("H2 (re, im):", new QLabel(QString("%1, %2").arg(h2re, 0, 'g', 6).arg(h2im, 0, 'g', 6)));
+    form->addRow("|H|:", new QLabel(QString("%1 A/m").arg(hMag, 0, 'g', 6)));
+    form->addRow("Js+Je (re, im):", new QLabel(QString("%1, %2").arg(e.jRe, 0, 'g', 6).arg(e.jIm, 0, 'g', 6)));
+    form->addRow("|Js+Je|:", new QLabel(QString("%1 MA/m^2").arg(jMag, 0, 'g', 6)));
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
-    appendOutput(QString("Point: x=%1, y=%2  A=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T")
+    appendOutput(QString("Point: x=%1, y=%2  A=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T  |H|=%10 A/m  |Js+Je|=%11 MA/m^2")
                       .arg(scenePos.x(), 0, 'g', 6)
                       .arg(scenePos.y(), 0, 'g', 6)
                       .arg(A.real(), 0, 'g', 6)
@@ -1236,7 +1272,9 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
                       .arg(e.B1im, 0, 'g', 6)
                       .arg(e.B2re, 0, 'g', 6)
                       .arg(e.B2im, 0, 'g', 6)
-                      .arg(bMag, 0, 'g', 6));
+                      .arg(bMag, 0, 'g', 6)
+                      .arg(hMag, 0, 'g', 6)
+                      .arg(jMag, 0, 'g', 6));
     dlg.exec();
     break;
   }

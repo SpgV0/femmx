@@ -10,10 +10,24 @@
 
 namespace {
 
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: was 1,
+// then 2 -- 2 added AnsxElementRecord's 5 material fields (muX/muY/sigma/
+// jSrcRe/jSrcIm); 3 adds jRe/jIm (total current density), which
+// MeshSolutionElement gained in a separate edit right after and this
+// record initially missed -- a real bug caught live (the |Js+Je| density
+// plot rendered as uniformly zero because every cached load silently
+// left e.jRe/e.jIm at their 0 default). No attempt at backward
+// compatibility: an old file simply fails this version check, which
+// isUpToDate() surfaces as "not up to date" -- openAnsFile's existing
+// fallback then regenerates it from the source .ans, exactly like any
+// other stale-cache case. Fine for a pure performance cache with no
+// independent data of its own to lose.
+constexpr uint32_t kAnsxVersion = 3;
+
 #pragma pack(push, 1)
 struct AnsxHeader {
   char magic[8]; // "FEMMANSX"
-  uint32_t version; // 1
+  uint32_t version;
   uint32_t headerSize; // sizeof(AnsxHeader), lets a future version skip unknown trailing fields
   uint32_t coordSystem; // 0 = planar, 1 = axisymmetric
   uint32_t lengthUnits;
@@ -43,10 +57,32 @@ struct AnsxElementRecord {
   int64_t p0, p1, p2, lbl;
   double B1re, B1im, B2re, B2im;
   double ctrX, ctrY;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // resolved material properties (see MeshSolutionElement's own comment)
+  // -- precomputed once by AnsFileIO::readAns, cached here the same way
+  // B1/B2 already are, rather than re-resolved via the .fem-format header
+  // on every load (which would mean re-reading the header from the
+  // source .ans even on the "fast" .ansx path, defeating much of the
+  // point of this cache for a huge source file).
+  double muX, muY;
+  double sigma;
+  double jSrcRe, jSrcIm;
+  // Total current density (source + eddy + solved circuit correction) --
+  // added in the same version-2 bump as the fields above but easy to
+  // miss since MeshSolutionElement gained it in a separate, later edit:
+  // forgetting to also extend this record (and the write/read loops
+  // below) would silently leave e.jRe/e.jIm at their 0 default on every
+  // load that hits the .ansx cache instead of the raw .ans path -- which
+  // is exactly what happened, caught via the |Js+Je| density plot
+  // rendering as uniformly zero despite AnsFileIO::readAns computing
+  // real values (confirmed by temporarily forcing a fresh .ans-path
+  // read, which showed correct numbers) -- see MeshSolutionElement's own
+  // jRe/jIm comment.
+  double jRe, jIm;
 };
 #pragma pack(pop)
 static_assert(sizeof(AnsxNodeRecord) == 32, "AnsxNodeRecord must stay a fixed, packed layout");
-static_assert(sizeof(AnsxElementRecord) == 80, "AnsxElementRecord must stay a fixed, packed layout");
+static_assert(sizeof(AnsxElementRecord) == 136, "AnsxElementRecord must stay a fixed, packed layout");
 
 bool readHeader(QFile& file, AnsxHeader& header)
 {
@@ -54,7 +90,7 @@ bool readHeader(QFile& file, AnsxHeader& header)
     return false;
   if (std::memcmp(header.magic, "FEMMANSX", 8) != 0)
     return false;
-  if (header.version != 1 || header.headerSize < sizeof(AnsxHeader))
+  if (header.version != kAnsxVersion || header.headerSize < sizeof(AnsxHeader))
     return false;
   return true;
 }
@@ -94,7 +130,7 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
 
   AnsxHeader header{};
   std::memcpy(header.magic, "FEMMANSX", 8);
-  header.version = 1;
+  header.version = kAnsxVersion;
   header.headerSize = sizeof(AnsxHeader);
   header.coordSystem = (uint32_t)coordSystem;
   header.lengthUnits = (uint32_t)lengthUnits;
@@ -139,6 +175,13 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
     rec.B2im = e.B2im;
     rec.ctrX = e.ctrX;
     rec.ctrY = e.ctrY;
+    rec.muX = e.muX;
+    rec.muY = e.muY;
+    rec.sigma = e.sigma;
+    rec.jSrcRe = e.jSrcRe;
+    rec.jSrcIm = e.jSrcIm;
+    rec.jRe = e.jRe;
+    rec.jIm = e.jIm;
     if (file.write(reinterpret_cast<const char*>(&rec), sizeof(rec)) != (qint64)sizeof(rec)) {
       errorMessage = QStringLiteral("Failed writing \"%1\" element data.").arg(ansxPath);
       return false;
@@ -198,6 +241,13 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
     e.B2im = recs[i].B2im;
     e.ctrX = recs[i].ctrX;
     e.ctrY = recs[i].ctrY;
+    e.muX = recs[i].muX;
+    e.muY = recs[i].muY;
+    e.sigma = recs[i].sigma;
+    e.jSrcRe = recs[i].jSrcRe;
+    e.jSrcIm = recs[i].jSrcIm;
+    e.jRe = recs[i].jRe;
+    e.jIm = recs[i].jIm;
   }
 
   return true;

@@ -165,6 +165,28 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
     e.lbl = (int)std::strtol(p, &next, 10);
     // trailing Jp (incremental only) intentionally left unparsed.
 
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // resolve this element's material once here (mirrors femm/
+    // FemmviewDoc.cpp's meshelem[k].lbl -> blocklist[lbl] -> blockproplist[blk]
+    // chain) and bake the result into the element -- see MeshSolutionElement's
+    // header comment for why (same precompute-once rationale as B1/B2).
+    // e.lbl indexes problem.blockLabels directly (0-based, no adjustment):
+    // both this reader and femm/FemmviewDoc.cpp populate that list by
+    // reading the identical NumHoles-then-NumBlockLabels .fem-format
+    // sections in file order, and meshelem[k].lbl is used to index
+    // blocklist directly with no adjustment there either.
+    if (e.lbl >= 0 && e.lbl < problem.blockLabels.size()) {
+      int matIdx = problem.blockLabels[e.lbl].blockTypeIndex - 1; // 1-based -> 0-based
+      if (matIdx >= 0 && matIdx < problem.materialProps.size()) {
+        const FemmMaterialProp& mat = problem.materialProps[matIdx];
+        e.muX = mat.muX;
+        e.muY = mat.muY;
+        e.sigma = mat.sigma;
+        e.jSrcRe = mat.JsrcRe;
+        e.jSrcIm = mat.JsrcIm;
+      }
+    }
+
     if (e.p0 < 0 || e.p0 >= solution.nodes.size() || e.p1 < 0 || e.p1 >= solution.nodes.size() || e.p2 < 0 || e.p2 >= solution.nodes.size())
       continue;
     const MeshSolutionNode& n0 = solution.nodes[e.p0];
@@ -189,6 +211,109 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
       solution.bMagMin = std::min(solution.bMagMin, bMag);
       solution.bMagMax = std::max(solution.bMagMax, bMag);
     }
+  }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: a
+  // third, untagged mesh section immediately follows [Elements] -- one row
+  // per block label, giving the SOLVED circuit correction fkn.exe already
+  // computed for it (femm/FemmviewDoc.cpp's own .ans reader, ~line 1032-1051,
+  // and the writer, fkn/prob1big.cpp:815-831): a Case flag (0 = voltage-
+  // specified, in which case the row also carries the solved voltage drop
+  // dVolts; 1 = current-specified, carrying the solved current density J
+  // directly) plus 1 value (DC) or 2 (AC, re+im) depending on Frequency.
+  // Every block label gets a row regardless of whether it's actually in a
+  // circuit -- labels with none get a dummy "1  0" (Case=1, J=0, a no-op)
+  // -- so this can be applied uniformly below with no separate circuit-
+  // membership check. This is genuinely solved output, not something this
+  // reader derives itself: for Case 0 in particular, dVolts depends on the
+  // full current distribution and isn't independently recoverable from
+  // anything else in the file.
+  struct CircuitLabelInfo {
+    int caseFlag = 1;
+    std::complex<double> dVolts, J;
+  };
+  QVector<CircuitLabelInfo> circInfo;
+  line = file.readLine();
+  long labelCount = std::strtol(line.constData(), nullptr, 10);
+  circInfo.resize((int)labelCount);
+  for (long i = 0; i < labelCount; i++) {
+    line = file.readLine();
+    const char* p = line.constData();
+    char* next = nullptr;
+    int caseFlag = (int)std::strtol(p, &next, 10);
+    p = next;
+    double re = std::strtod(p, &next);
+    p = next;
+    double im = (problem.frequency != 0) ? std::strtod(p, &next) : 0.0;
+    CircuitLabelInfo& ci = circInfo[(int)i];
+    ci.caseFlag = caseFlag;
+    if (caseFlag == 0)
+      ci.dVolts = { re, im };
+    else
+      ci.J = { re, im };
+  }
+
+  // Second pass: now that every element's material (muX/muY/sigma/JsrcRe/Im)
+  // and every block label's circuit correction are both resolved, compute
+  // the total current density (femm/FemmviewDoc.cpp's GetJA, the "Javg"/
+  // flat-per-element variant -- matches how B1/B2 above are also a single
+  // flat value per element, independent of the Smooth toggle, which
+  // node-averages afterward at paint time instead of here).
+  double omega = 2.0 * M_PI * problem.frequency;
+  for (long i = 0; i < elemCount; i++) {
+    MeshSolutionElement& e = solution.elements[(int)i];
+    if (e.p0 < 0 || e.p0 >= solution.nodes.size() || e.p1 < 0 || e.p1 >= solution.nodes.size() || e.p2 < 0 || e.p2 >= solution.nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = solution.nodes[e.p0];
+    const MeshSolutionNode& n1 = solution.nodes[e.p1];
+    const MeshSolutionNode& n2 = solution.nodes[e.p2];
+
+    double jRe = e.jSrcRe, jIm = e.jSrcIm;
+
+    // Conductivity used for the eddy/circuit terms -- zeroed for in-plane
+    // laminated materials (GetJA: "c = 0" when Lam_d != 0 && LamType == 0),
+    // since Cduct there models cross-lamination conduction, not in-plane.
+    // blocklist[lbl].FillFactor's own separate zeroing rule (wound-coil
+    // regions) isn't modeled -- FemmBlockLabel/FemmMaterialProp don't carry
+    // an equivalent field to key it off of; a narrower, documented gap
+    // rather than a guessed threshold.
+    int matIdx = (e.lbl >= 0 && e.lbl < problem.blockLabels.size()) ? problem.blockLabels[e.lbl].blockTypeIndex - 1 : -1;
+    double c = e.sigma;
+    if (matIdx >= 0 && matIdx < problem.materialProps.size()) {
+      const FemmMaterialProp& mat = problem.materialProps[matIdx];
+      if (mat.dLam != 0 && mat.lamType == 0)
+        c = 0;
+    }
+
+    if (problem.frequency != 0) {
+      double areAvg = (n0.Are + n1.Are + n2.Are) / 3.0;
+      double aimAvg = (n0.Aim + n1.Aim + n2.Aim) / 3.0;
+      // Javg -= I*omega*c*Aavg, expanded into re/im (Aavg = areAvg + I*aimAvg).
+      jRe += omega * c * aimAvg;
+      jIm -= omega * c * areAvg;
+    }
+
+    if (e.lbl >= 0 && e.lbl < circInfo.size()) {
+      const CircuitLabelInfo& ci = circInfo[e.lbl];
+      if (ci.caseFlag == 0) {
+        if (axisymmetric) {
+          double r = e.ctrX * lengthConv;
+          if (std::fabs(r) > 1.0e-06) {
+            jRe -= c * ci.dVolts.real() / r;
+            jIm -= c * ci.dVolts.imag() / r;
+          }
+        } else {
+          jRe -= c * ci.dVolts.real();
+          jIm -= c * ci.dVolts.imag();
+        }
+      } else {
+        jRe += ci.J.real();
+        jIm += ci.J.imag();
+      }
+    }
+
+    e.jRe = jRe;
+    e.jIm = jIm;
   }
 
   return true;

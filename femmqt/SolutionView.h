@@ -46,13 +46,29 @@ class MeshSolutionItem : public QGraphicsItem {
   // per user request for "all the different heatmap possibilities" the
   // classic GUI offers (femm/FemmviewView.cpp's DensityPlot 1-10 for AC,
   // 1-4 for DC -- see that file's legend-label switch for the full list).
-  // Only the |B|-derived ones are implemented here: |B|, |B_re|, |B_im|,
-  // and log10(|B|) are all directly computable from the complex Bx/By
-  // components MeshSolutionElement already stores. |H| and |J| are NOT
-  // (H needs each element's material permeability, J needs conductivity
-  // -- neither is parsed from .ans into MeshSolution today) -- deferred
-  // as a real follow-up, not attempted here as a rushed approximation.
-  enum class DensityQuantity { BMag, BReMag, BImMag, LogBMag };
+  // |B|, |B_re|, |B_im|, and log10(|B|) are directly computable from the
+  // complex Bx/By components MeshSolutionElement already stores.
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // HMag/JMag added -- per user correction ("in the material properties
+  // you should have permeability"), the .ans text format's [BlockProps]
+  // section (byte-for-byte the same as .fem's) DOES carry muX/muY/sigma/
+  // JsrcRe/JsrcIm, and a third, untagged section right after [Elements]
+  // carries fkn.exe's own solved per-block-label circuit correction --
+  // AnsFileIO::readAns now resolves and bakes both into every
+  // MeshSolutionElement (see that struct's own comment). H = B/(mu*mu0)
+  // is exact for linear, unlaminated, non-permanent-magnet materials
+  // (BHpoints==0, LamType==0/LamFill==1, H_c==0) -- femm/Problem.cpp's
+  // CMaterialProp::GetMu has additional cases (nonlinear BH-curve
+  // materials, laminations, incremental permeability for DC-offset AC
+  // problems) not ported here; see elementQuantity()'s .cpp comment for
+  // why that's a separate, larger follow-up rather than a silently-wrong
+  // approximation for those material types. J = total current density
+  // (source + eddy + solved circuit correction, femm/FemmviewDoc.cpp's
+  // GetJA, ported faithfully including the circuit term since it reads
+  // fkn.exe's own solved output rather than re-deriving it) -- MA/m^2,
+  // matching femm.rc's own "|Js+Je|, MA/m^2" label and units.
+  enum class DensityQuantity { BMag, BReMag, BImMag, LogBMag, HMag, JMag };
   void setDensityQuantity(DensityQuantity q);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -119,8 +135,9 @@ class MeshSolutionItem : public QGraphicsItem {
     QVector<double> nodeAvg; // per-node average of touching elements' value -- see below for why
     double vMin = 0, vMax = 0;
   };
-  // Indexed by DensityQuantity's underlying int value.
-  QuantityData m_quantityData[4];
+  // Indexed by DensityQuantity's underlying int value -- kept in sync
+  // with that enum's value count by hand (6 now that HMag/JMag exist).
+  QuantityData m_quantityData[6];
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // the actual band range paintDensity() used the last time it ran --
