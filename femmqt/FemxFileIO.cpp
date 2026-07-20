@@ -15,7 +15,21 @@ constexpr int kNameLen = 64;
 constexpr int kPathLen = 260;
 constexpr int kCommentLen = 512;
 constexpr int kMagDirFctnLen = 256;
-constexpr int kMaxBhPoints = 64;
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: was
+// 64 -- silently truncating, no error surfaced anywhere. bin/matlib.dat
+// (the real materials library MaterialLibraryDialog imports from) ships
+// materials with up to 149 BH points; several more sit between 64 and
+// that. Any of those, once loaded through a regenerated .femx cache and
+// saved back to .fem, would permanently lose every point past #64 --
+// classic FEMM itself has no fixed cap (a dynamically-sized array), so
+// there's no "correct" limit to match, just a generous one unlikely to
+// ever be hit by a real BH curve. Changes FemxMaterialPropRecord's size,
+// so kFemxVersion below had to bump alongside it -- otherwise an old-
+// layout cached .femx would be misread using the new record size and
+// corrupt every field after materials (circuits, nodes, segments, arcs,
+// block labels).
+constexpr int kMaxBhPoints = 256;
+constexpr uint32_t kFemxVersion = 2;
 
 #pragma pack(push, 1)
 struct FemxHeader {
@@ -60,6 +74,9 @@ struct FemxMaterialPropRecord {
   int32_t bhPointCount; // clamped to kMaxBhPoints on write
   double bhData[kMaxBhPoints][2];
 };
+// Catches a future kMaxBhPoints/field change made without also bumping
+// kFemxVersion -- see kMaxBhPoints's own comment for why that matters.
+static_assert(sizeof(FemxMaterialPropRecord) == 64 + 11 * 8 + 2 * 4 + 2 * 8 + 4 + 256 * 2 * 8, "bump kFemxVersion alongside any FemxMaterialPropRecord layout change");
 
 struct FemxCircuitPropRecord {
   char name[kNameLen];
@@ -153,7 +170,7 @@ bool readHeader(QFile& file, FemxHeader& header)
     return false;
   if (std::memcmp(header.magic, "FEMMFEMX", 8) != 0)
     return false;
-  if (header.version != 1 || header.headerSize < sizeof(FemxHeader))
+  if (header.version != kFemxVersion || header.headerSize < sizeof(FemxHeader))
     return false;
   return true;
 }
@@ -192,7 +209,7 @@ bool FemxFileIO::writeFemx(const QString& femxPath, const QString& sourceFemPath
 
   FemxHeader header{};
   std::memcpy(header.magic, "FEMMFEMX", 8);
-  header.version = 1;
+  header.version = kFemxVersion;
   header.headerSize = sizeof(FemxHeader);
   header.problemType = (uint32_t)p.problemType;
   header.lengthUnits = (uint32_t)p.lengthUnits;
