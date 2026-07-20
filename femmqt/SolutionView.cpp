@@ -1111,6 +1111,7 @@ void SolutionWindow::openAnsFile(const QString& path)
 
   qint64 elapsedMs = timer.elapsed();
 
+  m_spatialIndexBuilt = false; // m_solution just got replaced -- see buildSpatialIndex()'s comment
   m_scene->clear();
   m_contourVisual = nullptr; // clear() above already deleted it
   m_contourPoints.clear();
@@ -1133,17 +1134,82 @@ void SolutionWindow::openAnsFile(const QString& path)
   addToRecentFiles(path);
 }
 
-int SolutionWindow::findContainingElement(QPointF pt) const
+void SolutionWindow::buildSpatialIndex() const
 {
-  // Linear scan: acceptable here because this only runs once per
-  // deliberate user click (Point/Area tools), not per frame -- a spatial
-  // index (grid/quadtree bucketing elements by centroid) would be the
-  // right fix if this ever needs to run in a loop, but a single click's
-  // worth of latency on even a multi-million-element mesh is milliseconds.
+  m_spatialIndex = SpatialIndex();
+  m_spatialIndexBuilt = true;
+  if (m_solution.elements.isEmpty() || m_solution.nodes.isEmpty())
+    return;
+
+  double minX = 0, maxX = 0, minY = 0, maxY = 0;
+  bool first = true;
+  for (const MeshSolutionNode& n : m_solution.nodes) {
+    if (first) {
+      minX = maxX = n.x;
+      minY = maxY = n.y;
+      first = false;
+    } else {
+      minX = std::min(minX, n.x);
+      maxX = std::max(maxX, n.x);
+      minY = std::min(minY, n.y);
+      maxY = std::max(maxY, n.y);
+    }
+  }
+
+  // One cell per element on average -- a simple uniform grid is enough
+  // here (unlike a quadtree, doesn't adapt to locally-uneven element
+  // density, but even a many-times-too-coarse or many-times-too-fine
+  // grid still turns an O(elementCount) scan into a small-bucket lookup,
+  // and finite-element meshes are rarely so wildly non-uniform that this
+  // matters in practice).
+  double w = std::max(maxX - minX, 1e-12);
+  double h = std::max(maxY - minY, 1e-12);
+  double cellSize = std::sqrt((w * h) / std::max(1, (int)m_solution.elements.size()));
+  if (!(cellSize > 0))
+    cellSize = std::max(w, h);
+  int cols = std::max(1, (int)(w / cellSize) + 1);
+  int rows = std::max(1, (int)(h / cellSize) + 1);
+
+  m_spatialIndex.minX = minX;
+  m_spatialIndex.minY = minY;
+  m_spatialIndex.cellSize = cellSize;
+  m_spatialIndex.cols = cols;
+  m_spatialIndex.rows = rows;
+  m_spatialIndex.cells.resize(cols * rows);
+
   for (int i = 0; i < m_solution.elements.size(); i++) {
     const MeshSolutionElement& e = m_solution.elements[i];
     if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
       continue;
+    const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
+    double triMinX = std::min({ n0.x, n1.x, n2.x });
+    double triMaxX = std::max({ n0.x, n1.x, n2.x });
+    double triMinY = std::min({ n0.y, n1.y, n2.y });
+    double triMaxY = std::max({ n0.y, n1.y, n2.y });
+    int c0 = std::clamp((int)((triMinX - minX) / cellSize), 0, cols - 1);
+    int c1 = std::clamp((int)((triMaxX - minX) / cellSize), 0, cols - 1);
+    int r0 = std::clamp((int)((triMinY - minY) / cellSize), 0, rows - 1);
+    int r1 = std::clamp((int)((triMaxY - minY) / cellSize), 0, rows - 1);
+    for (int r = r0; r <= r1; r++)
+      for (int c = c0; c <= c1; c++)
+        m_spatialIndex.cells[r * cols + c].push_back(i);
+  }
+}
+
+int SolutionWindow::findContainingElement(QPointF pt) const
+{
+  if (!m_spatialIndexBuilt)
+    buildSpatialIndex();
+  if (m_spatialIndex.cols == 0 || m_spatialIndex.rows == 0)
+    return -1;
+
+  int c = std::clamp((int)((pt.x() - m_spatialIndex.minX) / m_spatialIndex.cellSize), 0, m_spatialIndex.cols - 1);
+  int r = std::clamp((int)((pt.y() - m_spatialIndex.minY) / m_spatialIndex.cellSize), 0, m_spatialIndex.rows - 1);
+  const QVector<int>& bucket = m_spatialIndex.cells[r * m_spatialIndex.cols + c];
+  for (int i : bucket) {
+    const MeshSolutionElement& e = m_solution.elements[i];
     const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
     const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
     const MeshSolutionNode& n2 = m_solution.nodes[e.p2];

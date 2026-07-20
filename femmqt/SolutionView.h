@@ -288,9 +288,29 @@ class SolutionWindow : public QMainWindow {
   void onAboutTriggered();
 
   private:
-  // Returns the index of the element containing `pt`, or -1. Linear scan
-  // (see the .cpp for why that's an acceptable trade-off here).
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // was a linear scan over every element, justified at the time as "only
+  // runs once per deliberate click, not per frame" -- true for the
+  // Point/Area tools, but onPlotXYTriggered() calls this once per sample
+  // point (up to 500), which turns "milliseconds per click" into
+  // "500x a full mesh scan" on a huge (multi-million-element) mesh --
+  // the exact "if this ever needs to run in a loop" case that comment's
+  // own caveat flagged. Now backed by a uniform-grid spatial index
+  // (buildSpatialIndex()), built lazily on first use and invalidated by
+  // openAnsFile -- see that method's own comment for why a simple grid
+  // (not a quadtree/KD-tree) is enough here.
   int findContainingElement(QPointF pt) const;
+  struct SpatialIndex {
+    double minX = 0, minY = 0, cellSize = 1;
+    int cols = 0, rows = 0;
+    QVector<QVector<int>> cells; // element indices whose bounding box overlaps each cell
+  };
+  // Bucket a triangle's bounding box into every grid cell it overlaps --
+  // shared between building the index and (implicitly, via the same
+  // math) looking a point up in it.
+  void buildSpatialIndex() const;
+  mutable SpatialIndex m_spatialIndex;
+  mutable bool m_spatialIndexBuilt = false;
   // Barycentric-interpolates nodal A within element `elementIndex`
   // (assumed to already contain `pt`, i.e. from findContainingElement).
   std::complex<double> interpolateA(QPointF pt, int elementIndex) const;
