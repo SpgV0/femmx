@@ -11,6 +11,7 @@
 #include "femmviewDoc.h"
 #include "femmviewView.h"
 #include "lua.h"
+#include "AnsxFileIO.h"
 
 extern lua_State* lua;
 extern void* pFemmviewdoc;
@@ -982,6 +983,30 @@ BOOL CFemmviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
     }
   }
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user request ("Add support for .ansx and .femx in the old gui as
+  // well") -- .ansx is a binary cache of exactly the three sections
+  // below (meshnodes/elements/circuit data), already used by femmqt; a
+  // fresh one next to this .ans lets those be filled from one bulk
+  // binary read instead of the strtod/strtol text parse the comment
+  // just below already flags as this load's dominant cost. The text
+  // parser's OWN byte position must still end up in the same place
+  // afterward (the air gap element section right below reads onward
+  // from the same fp), so even on the fast path each section's line
+  // count is still read and its lines still consumed via fgets -- just
+  // without the field-by-field parsing, which is the actual expensive
+  // part for a huge mesh.
+  bool usedAnsxMesh = false;
+  {
+    CString ansxPath(lpszPathName);
+    int dot = ansxPath.ReverseFind('.');
+    if (dot >= 0)
+      ansxPath = ansxPath.Left(dot);
+    ansxPath += ".ansx";
+    if (AnsxFileIO::isUpToDate((const char*)ansxPath, lpszPathName))
+      usedAnsxMesh = AnsxFileIO::readAnsx((const char*)ansxPath, *this);
+  }
+
   // read in meshnodes;
   // Solved models can have millions of mesh nodes/elements (each on its
   // own line here) -- sscanf's format-string interpretation makes it far
@@ -990,46 +1015,60 @@ BOOL CFemmviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   // exactly like sscanf did (strtod/strtol skip leading whitespace/tabs
   // just like %lf/%i do), just without sscanf's per-call overhead.
   fscanf(fp, "%i\n", &k);
-  meshnode.SetSize(k);
-  for (i = 0; i < k; i++) {
-    fgets(s, 1024, fp);
-    char* p = s;
-    int bc;
+  if (usedAnsxMesh) {
+    for (i = 0; i < k; i++)
+      fgets(s, 1024, fp);
+  } else {
+    meshnode.SetSize(k);
+    for (i = 0; i < k; i++) {
+      fgets(s, 1024, fp);
+      char* p = s;
+      int bc;
 
-    mnode.x = strtod(p, &p);
-    mnode.y = strtod(p, &p);
-    if (Frequency != 0) {
-      mnode.A.re = strtod(p, &p);
-      mnode.A.im = strtod(p, &p);
-    } else {
-      mnode.A.re = strtod(p, &p);
-      mnode.A.im = 0;
+      mnode.x = strtod(p, &p);
+      mnode.y = strtod(p, &p);
+      if (Frequency != 0) {
+        mnode.A.re = strtod(p, &p);
+        mnode.A.im = strtod(p, &p);
+      } else {
+        mnode.A.re = strtod(p, &p);
+        mnode.A.im = 0;
+      }
+      if (bIncremental) {
+        bc = (int)strtol(p, &p, 10);
+        mnode.Aprev = strtod(p, &p);
+      }
+      meshnode.SetAt(i, mnode);
     }
-    if (bIncremental) {
-      bc = (int)strtol(p, &p, 10);
-      mnode.Aprev = strtod(p, &p);
-    }
-    meshnode.SetAt(i, mnode);
   }
 
   // read in elements;
   fscanf(fp, "%i\n", &k);
-  meshelem.SetSize(k);
-  for (i = 0; i < k; i++) {
-    fgets(s, 1024, fp);
-    char* p = s;
+  if (usedAnsxMesh) {
+    for (i = 0; i < k; i++)
+      fgets(s, 1024, fp);
+  } else {
+    meshelem.SetSize(k);
+    for (i = 0; i < k; i++) {
+      fgets(s, 1024, fp);
+      char* p = s;
 
-    elm.p[0] = (int)strtol(p, &p, 10);
-    elm.p[1] = (int)strtol(p, &p, 10);
-    elm.p[2] = (int)strtol(p, &p, 10);
-    elm.lbl = (int)strtol(p, &p, 10);
-    if (bIncremental)
-      elm.Jp = strtod(p, &p);
-    elm.blk = blocklist[elm.lbl].BlockType;
-    meshelem.SetAt(i, elm);
+      elm.p[0] = (int)strtol(p, &p, 10);
+      elm.p[1] = (int)strtol(p, &p, 10);
+      elm.p[2] = (int)strtol(p, &p, 10);
+      elm.lbl = (int)strtol(p, &p, 10);
+      if (bIncremental)
+        elm.Jp = strtod(p, &p);
+      elm.blk = blocklist[elm.lbl].BlockType;
+      meshelem.SetAt(i, elm);
+    }
   }
 
-  // read in circuit data;
+  // read in circuit data -- always from text, even on the .ansx fast
+  // path above: this is bounded by block-label count (not mesh size),
+  // so it's cheap regardless, same reasoning as the air gap element
+  // section below (also always text-parsed) -- and unlike meshnode/
+  // meshelem, .ansx doesn't cache it (see AnsxFileIO.h's scope note).
   fscanf(fp, "%i\n", &k);
   for (i = 0; i < k; i++) {
     fgets(s, 1024, fp);
@@ -1342,9 +1381,14 @@ BOOL CFemmviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   }
   lua_close(LocalLua);
 
-  // Find flux density in each element;
-  for (i = 0; i < meshelem.GetSize(); i++)
-    GetElementB(meshelem[i]);
+  // Find flux density in each element -- skipped when meshelem came
+  // from the .ansx fast path above: B1/B2 are already correct there
+  // (see AnsxFileIO.h), and GetElementB is real per-element work
+  // (evaluating shape-function gradients), not just a cheap copy --
+  // exactly the cost this cache exists to avoid paying twice.
+  if (!usedAnsxMesh)
+    for (i = 0; i < meshelem.GetSize(); i++)
+      GetElementB(meshelem[i]);
 
   // Find extreme values of A;
   A_Low = meshnode[0].A.re;
@@ -1812,6 +1856,23 @@ BOOL CFemmviewDoc::OnOpenDocument(LPCTSTR lpszPathName)
   }
 
   FirstDraw = TRUE;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // refresh the .ansx cache after a full text parse (not needed if
+  // usedAnsxMesh -- we'd just be writing back what we already read).
+  // Best-effort: a failure here (e.g. read-only directory) shouldn't
+  // fail the open the user actually asked for, just means no speedup
+  // next time. Every field this writes (B1/B2/ctr, GetJA) is only
+  // correct once this point in the function -- see AnsxFileIO.h.
+  if (!usedAnsxMesh) {
+    CString ansxPath(lpszPathName);
+    int dot = ansxPath.ReverseFind('.');
+    if (dot >= 0)
+      ansxPath = ansxPath.Left(dot);
+    ansxPath += ".ansx";
+    AnsxFileIO::writeAnsx((const char*)ansxPath, lpszPathName, *this);
+  }
+
   return TRUE;
 }
 

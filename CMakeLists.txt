@@ -20,6 +20,20 @@ project(FEMM C CXX)
 # which is what actually fixes it.
 
 option(BUILD_MANUAL "Build the manual" OFF)
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+# declared here (not just in fkn/CMakeLists.txt, which still also declares
+# it -- option() is idempotent, so that's harmless) so femm/CMakeLists.txt
+# can see it too: femm/FemmeDoc.cpp needs to know at compile time whether
+# ITS build is paired with a CUDA-capable fkn.exe (see that file's
+# FEMM_CUDA_ENABLED-gated GPUAccel default) to default new problems to
+# GPU-accelerated solving only for a real "cuda variant" build
+# (build_femmx.ps1 -Cuda / bin\cuda\, per the user's request) -- not for a
+# plain build, where fkn.exe would just pop up a "built without CUDA
+# support" dialog on every solve. femm is added (line ~54, below) before
+# fkn (line ~63), so femm/CMakeLists.txt needs this cache variable to
+# already exist by the time IT runs, not just by the time fkn's own
+# option() call would otherwise create it.
+option(ENABLE_CUDA_SOLVER "Build fkn with an optional CUDA-accelerated linear solver" OFF)
 option(SKIP_belasolv "Skip building belasolv" OFF)
 option(SKIP_csolv "Skip building csolv" OFF)
 option(SKIP_liblua "Skip building liblua" OFF)

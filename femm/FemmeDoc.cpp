@@ -23,6 +23,7 @@
 #include "OpGrp.h"
 #include "ArcDlg.h"
 #include "ExteriorProps.h"
+#include "FemxFileIO.h"
 
 extern void* pFemmeDoc;
 extern lua_State* lua;
@@ -113,7 +114,21 @@ BOOL CFemmeDoc::OnNewDocument()
   LengthUnits = d_length;
   ProblemType = d_type;
   ACSolver = d_solver;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user request ("In the CUDA version, gpu acceleration should be
+  // enabled by default") -- FEMM_CUDA_ENABLED is only defined (see
+  // femm/CMakeLists.txt) when this exe is built as the CUDA variant
+  // (build_femmx.ps1 -Cuda / bin\cuda\), i.e. only when it's actually
+  // paired with an fkn.exe that has real GPU support. A plain build stays
+  // GPUAccel=0 by default -- flipping this unconditionally would have
+  // every new problem's solve pop up fkn.exe's "built without CUDA
+  // support, continuing with the CPU solver" dialog (see fkn/spars.cpp)
+  // on a machine that never asked for GPU acceleration at all.
+#ifdef FEMM_CUDA_ENABLED
+  GPUAccel = 1;
+#else
   GPUAccel = 0;
+#endif
   Coords = d_coord;
   ProblemNote = "Add comments here.";
   PrevSoln = "";
@@ -1653,6 +1668,26 @@ BOOL CFemmeDoc::OnOpenDocument(LPCTSTR lpszPathName)
   // make sure old document is cleared out...
   OnNewDocument();
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user request ("Add support for .ansx and .femx in the old gui as
+  // well") -- .femx is a binary cache of exactly this text parse (see
+  // FemxFileIO.h), already used by femmqt; if a fresh one exists next to
+  // this .fem, load that instead of re-parsing the text below. Falls
+  // through to the normal text parser on any failure (missing/stale/
+  // corrupt cache) -- matches femmqt's own openFile()'s fallback
+  // behavior exactly, so a read-only directory or a first-ever open
+  // (no .femx yet) both still work, just without the speedup.
+  {
+    CString femxPath(lpszPathName);
+    int dot = femxPath.ReverseFind('.');
+    if (dot >= 0)
+      femxPath = femxPath.Left(dot);
+    femxPath += ".femx";
+    if (FemxFileIO::isUpToDate((const char*)femxPath, (const char*)lpszPathName)
+        && FemxFileIO::readFemx((const char*)femxPath, *this))
+      return TRUE;
+  }
+
   FILE* fp;
   int i, j, k, t;
   int vers = 0;
@@ -2664,6 +2699,21 @@ BOOL CFemmeDoc::OnSaveDocument(LPCTSTR lpszPathName)
       k++;
     }
   fclose(fp);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user request ("Add support for .ansx and .femx in the old gui as
+  // well") -- refresh the .femx cache alongside every .fem save, same
+  // trigger femmqt's own MainWindow::saveAs uses. Best-effort: a failure
+  // here (e.g. read-only directory) shouldn't fail the save the user
+  // actually asked for, just means no speedup opening this file next time.
+  {
+    CString femxPath(lpszPathName);
+    int dot = femxPath.ReverseFind('.');
+    if (dot >= 0)
+      femxPath = femxPath.Left(dot);
+    femxPath += ".femx";
+    FemxFileIO::writeFemx((const char*)femxPath, (const char*)lpszPathName, *this);
+  }
 
   return TRUE;
 }
