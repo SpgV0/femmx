@@ -166,6 +166,16 @@ Section
     File "bin\matlib.dat"
     File "bin\statlib.dat"
     File "bin\triangle.exe"
+    # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    # per user request -- neither GUI's Help > Help Topics could find this
+    # since the installer never packaged it at all. Both femm/MainFrm.cpp
+    # and femmqt/MainWindow.cpp's/SolutionView.cpp's manual-finding logic
+    # look next to the exe (bin\manual.pdf) first, matching this. /nonfatal
+    # since building it needs a LaTeX toolchain (manual/CMakeLists.txt) --
+    # already known to be occasionally unavailable in CI (see
+    # build_femmx.ps1's own choco/latex.exe PATH fix) -- so a build without
+    # one still packages everything else cleanly, just without the manual.
+    File /nonfatal "manual\manual.pdf"
 
     # CUDA runtime DLLs, only present in bin\ for a -DENABLE_CUDA_SOLVER=ON
     # build (see fkn/CMakeLists.txt); /nonfatal so a CPU-only build, where
