@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T17:18:04.817Z
+  modified: 2026-07-21T19:23:47.027Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -656,6 +656,80 @@ at construction. Not implemented -- flagged to the user, awaiting a
 decision on whether it's worth doing (tradeoff: switching density
 quantities mid-session would get a one-time hitch instead of being
 instant, in exchange for a faster initial big-file open).
+
+## Round 12b: floating tooltip removed entirely; mesh-point-dots-grow-when-zoomed bug fixed (2026-07-21, same day as Round 12)
+
+Follow-up to Round 12 (zoom/pan stutter fix). User: "if the moving text
+box slows down things, remove and make it stationary somewhere." Rather
+than keep tuning `GeometryView`'s floating cursor-following tooltip
+(the thing that needed the `scene()->invalidate()` workaround at all),
+removed it entirely -- `GeometryView::mouseMoveEvent`/`leaveEvent` are
+now just the base `QGraphicsView` behavior (no override needed). The
+stationary status-bar coordinate readout (`MainWindow::m_positionLabel`,
+wired independently via `GeometryScene::mousePositionChanged`, added
+back in Round 7) shows the same x/y info with zero per-move viewport
+cost -- confirmed nothing was lost by checking it live after the
+removal. **Left `SolutionGraphicsView`'s identical floating tooltip
+alone** -- user's ask was scoped to "the geometry" (the editor), and
+that one already uses the cheap `scene()->invalidate()` approach with
+no reported complaint against it.
+
+User then asked: "when the geometry is zoomed, I want the edges and
+points to not appear thicker -- is this some kind of vector graphics?"
+plus "same in solution viewer, I want an option to show the edges and
+points." Investigated both:
+
+- **Answer to the conceptual question**: it's not really about "vector
+  vs. raster" per se (an SVG zoomed via image scaling would ALSO get
+  thicker lines) -- it's specifically whether the pen width is defined
+  in *device pixels* (a "cosmetic" pen, `QPen::setCosmetic(true)`) vs.
+  *scene/world units* (the default, which DOES scale with zoom). The
+  classic GDI-based GUI gets the same constant-width effect via
+  `PS_COSMETIC` pens.
+- **Geometry editor**: already correct in current source --
+  `GeometryScene.cpp` sets `pen.setCosmetic(true)` on every segment/arc/
+  node pen, and `NodeItem`/block-label markers already use
+  `ItemIgnoresTransformations` for constant on-screen size. Tested
+  directly (built via `build_qt`, zoomed ~264x on a real loaded model,
+  screenshotted before/after) and could NOT reproduce any thickening --
+  edges and node dots stayed visually the same size. **If the user still
+  sees this, they're very likely testing an older installed/pre-built
+  exe** (the Start Menu shortcut, or a `bin\plain\`/`bin\cuda\` copy from
+  earlier in this session), not current source -- worth asking which
+  exe before assuming a live bug exists.
+- **Solution Viewer -- real bug found and fixed**: "Show Mesh" and
+  "Show Points" already existed as checkable View-menu items
+  (`SolutionView.cpp`'s `viewMenu->addAction("Show &Mesh"/"Show
+  &Points")`, wired since Round 4) -- confirmed live via a real menu
+  click + screenshot that "Show Mesh" already renders correctly. But
+  `MeshSolutionItem::paintMeshOverlay`'s "Show Points" dots WERE
+  genuinely growing with zoom: `drawEllipse(pos, r, r)` used
+  `r = model_diagonal * 0.0015`, a fixed SCENE-space value, unlike the
+  mesh edges just above (a cosmetic `QPen`, correctly zoom-invariant).
+  `QPen::setCosmetic` only affects *stroked* lines, not a filled
+  shape's own geometry -- a filled circle needs the equivalent done by
+  hand: divide a fixed on-screen pixel radius by
+  `painter->worldTransform().m11()` (the app only ever does uniform
+  `scale()` zooming, never skew, so `m11()` alone is a safe proxy for
+  the current zoom factor without needing a full singular-value
+  decomposition). Fixed, verified live (built, enabled Show Points,
+  screenshotted before/after a ~13x zoom -- dots stayed small and
+  consistent instead of growing into blobs).
+
+**UI-automation gotcha hit again this round**: keyboard menu mnemonics
+(`Alt+V` then a letter) misfired at least once -- landed on "Contour
+Plot" instead of "Show Mesh"/"Show Points", turning the whole density
+plot into a solid-white contour render that looked like a rendering bug
+at first glance. Switched to direct mouse clicks on the menu (open View,
+screenshot to find the exact row, click it) instead, which worked
+reliably. **Also**: `SolutionWindow`'s actual canvas center is NOT the
+client-rect center -- the docked Output Window panel eats a large
+fraction of the bottom of the window, so a wheel-zoom aimed at the
+naive client-rect midpoint can land on the Output Window instead of the
+canvas and silently do nothing (looked like "zoom doesn't work" until
+traced to aiming at the wrong widget). Use a screenshot-verified
+canvas-area point instead of assuming client-rect center is inside the
+graphics view for this specific window.
 
 ## Round 11: real installer bug behind "the shortcut doesn't work" -- missing Qt6PrintSupport.dll (2026-07-20)
 
