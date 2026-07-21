@@ -40,22 +40,6 @@ GeometryView::GeometryView(QGraphicsScene* scene, QWidget* parent)
   // no explicit policy set can end up not holding keyboard focus once a
   // scene item has taken it (e.g. right after clicking a node).
   setFocusPolicy(Qt::StrongFocus);
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
-  // QGraphicsView's default MinimalViewportUpdate mode only repaints the
-  // regions IT thinks changed (scene item adds/removes/moves) -- moving
-  // m_cursorTooltip, a plain QWidget child of the viewport rather than a
-  // scene item, doesn't reliably trigger a repaint of the scene content
-  // that was under its OLD position, leaving a visible trail of stale
-  // tooltip copies behind as the cursor moves (confirmed directly via a
-  // real installed build, not just a theory -- an explicit
-  // viewport()->update(oldRect) in mouseMoveEvent, tried first, did NOT
-  // fix it either). FullViewportUpdate repaints the entire viewport every
-  // time, which reliably erases the old tooltip since nothing further
-  // requests it be drawn there again -- editor scenes are small enough
-  // (unlike the solution viewer's huge meshes) that the extra repaint
-  // cost is not a concern.
-  setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
-
   m_cursorTooltip = new QLabel(viewport());
   m_cursorTooltip->setStyleSheet(
       "QLabel { background-color: rgba(20, 20, 20, 200); color: white; "
@@ -89,6 +73,22 @@ void GeometryView::mouseMoveEvent(QMouseEvent* event)
   if (auto* gs = qobject_cast<GeometryScene*>(scene()))
     scenePos = gs->snapPoint(scenePos);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // was setViewportUpdateMode(QGraphicsView::FullViewportUpdate) on the
+  // whole view (see git history) -- forced a full repaint on every wheel
+  // zoom and toolbar/scrollbar pan too, not just this hover-move case,
+  // which is exactly the "zoom/pan isn't smooth" complaint this was
+  // rewritten to fix. SolutionGraphicsView's mouseMoveEvent (SolutionView.
+  // cpp) already solved the identical stale-tooltip-trail problem this
+  // way -- ported that fix here instead of reinventing it. Root cause
+  // (see that comment for the fuller explanation): MinimalViewportUpdate
+  // tracks dirty regions from SCENE changes, not from a plain QWidget
+  // child (the tooltip) moving, so a bare viewport()->update(oldRect)
+  // is treated as a no-op; scene()->invalidate() is the mechanism
+  // MinimalViewportUpdate actually respects for "redraw this region even
+  // though nothing scene-side changed."
+  QRect oldGeometry = m_cursorTooltip->geometry();
+
   m_cursorTooltip->setText(QString("%1, %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
   m_cursorTooltip->adjustSize();
 
@@ -101,11 +101,7 @@ void GeometryView::mouseMoveEvent(QMouseEvent* event)
   m_cursorTooltip->move(pos);
   m_cursorTooltip->show();
   m_cursorTooltip->raise();
-  // No explicit "erase the old position" call needed here -- the
-  // constructor's setViewportUpdateMode(FullViewportUpdate) means the
-  // move()/show() above already schedules a full repaint on its own that
-  // covers it (see that setting's own comment for why a plain
-  // viewport()->update(oldRect) call, tried first, was NOT reliable).
+  scene()->invalidate(mapToScene(oldGeometry).boundingRect());
 }
 
 void GeometryView::leaveEvent(QEvent* event)

@@ -866,15 +866,20 @@ void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
   // regions from SCENE changes, not from a plain QWidget child (the
   // tooltip) moving -- a bare viewport()->update() call on that region
   // can get treated as a no-op since nothing in the scene itself
-  // "changed" there. GeometryView.cpp's editor fixes the equivalent bug
-  // with FullViewportUpdate, but that's not an option here: this view
-  // can hold millions of mesh elements, and forcing a full repaint on
-  // every single mouse-move would make the reported "everything is slow
-  // on large geometries" complaint significantly worse. scene()->
-  // invalidate() is the mechanism MinimalViewportUpdate actually
-  // respects for "redraw this region even though nothing scene-side
-  // changed" -- correctly limited to just the vacated rect, not the
-  // whole viewport.
+  // "changed" there. This view can hold millions of mesh elements, and
+  // forcing a full repaint on every single mouse-move (GeometryView.cpp's
+  // editor originally worked around the equivalent bug with
+  // FullViewportUpdate) would make the reported "everything is slow on
+  // large geometries" complaint significantly worse. scene()->invalidate()
+  // is the mechanism MinimalViewportUpdate actually respects for "redraw
+  // this region even though nothing scene-side changed" -- correctly
+  // limited to just the vacated rect, not the whole viewport.
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // GeometryView.cpp's own FullViewportUpdate workaround was later found
+  // to be causing the exact same "zoom/pan isn't smooth" complaint for
+  // the editor too (forced a full repaint on every wheel-zoom and pan,
+  // not just hover-move) -- ported this same scene()->invalidate()
+  // approach there instead, so both views now share one fix.
   scene()->invalidate(mapToScene(oldGeometry).boundingRect());
 
   emit hoveredAt(mapToScene(event->pos()));
