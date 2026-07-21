@@ -60,6 +60,10 @@
 
 namespace {
 constexpr int kNumBands = 20;
+// Fixed on-screen radius (device pixels) for Show Points' mesh-node dots --
+// see paintMeshOverlay's use of this for why it needs to be divided by the
+// painter's current scale rather than used as a scene-space radius directly.
+constexpr double kMeshPointScreenRadius = 2.5;
 
 // Simple fixed "cold to hot" colormap (blue -> cyan -> green -> yellow ->
 // red), band 0 = lowest |B|, band 19 = highest -- a fresh, Qt-side
@@ -640,8 +644,22 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposed
   }
 
   if (m_showPoints) {
-    double diag = std::hypot(m_bounds.width(), m_bounds.height());
-    double r = diag * 0.0015;
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // was a fixed fraction of the model's diagonal (diag * 0.0015) --
+    // drawEllipse's radius is in SCENE units, so that made the dots grow
+    // right along with the model on every zoom-in, unlike the mesh edges
+    // just above (a cosmetic QPen, which Qt already keeps at a constant
+    // DEVICE-pixel width regardless of the view transform). QPen's
+    // cosmetic flag only affects stroked lines, not a filled shape's own
+    // geometry, so a filled circle needs the same effect done by hand:
+    // divide a fixed on-screen pixel radius by the painter's current
+    // world-transform scale, so the SCENE-space radius shrinks exactly
+    // enough to keep the drawn size constant on screen. m11() alone
+    // (not a full singular-value decomposition) is enough here since
+    // this app only ever applies uniform scale() zooming, never skew or
+    // non-uniform scale.
+    double screenScale = painter->worldTransform().m11();
+    double r = kMeshPointScreenRadius / std::max(screenScale, 1e-9);
     painter->setPen(Qt::NoPen);
     painter->setBrush(AppTheme::meshPointColor());
     QRectF cullRect = exposedRect.adjusted(-r, -r, r, r);
