@@ -4,8 +4,19 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-20T11:13:44.619Z
+  modified: 2026-07-21T11:18:12.990Z
 ---
+
+**Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
+is the default again, not Qt.** Round 10 made `FEMMX.lnk` launch
+`femmqt.exe` exclusively; a later session reverted this per direct user
+instruction ("QT has too many bugs at the moment, use the old GUI as the
+default option") -- `script.nsi`'s `FEMMX.lnk` now launches `femmx.exe`
+(classic), with a separate `FEMMX (Qt).lnk` for Qt. Also see
+[[qt_gui_scope_deferred]]: as of the same session, new non-magnetics
+physics-type work (heat/electrostatics/current-flow) is going into the
+classic GUI + solvers only, not femmqt -- femmqt stays magnetics-only,
+not being actively extended right now.
 
 Built a second GUI for FEMMX, `femmqt/` (Qt6.11.1, MSVC kit at
 `C:\Qt\6.11.1\msvc2022_64`), alongside the existing MFC one

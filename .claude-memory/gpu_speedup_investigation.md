@@ -5,8 +5,13 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 0645e6ab-f4a7-4004-a39e-44c28675f293
-  modified: 2026-07-19T22:15:13.677Z
+  modified: 2026-07-21T11:17:25.299Z
 ---
+
+This covers **fkn (magnetics) only**. The same CUDA PCG architecture was
+later ported to **hsolv (heat flow)** -- see [[hsolv_thermal_cuda_port]]
+for that port's specifics and its own (still-unvalidated-on-real-CUDA-
+hardware) speedup status.
 
 Investigated (2026-07-07), then implemented and shipped (2026-07-08).
 Commit `f19a90e` on `new_features` in `femmx` (formerly `femm_mods`,
