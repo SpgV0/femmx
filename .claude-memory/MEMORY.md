@@ -8,6 +8,6 @@
 - [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
 - [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — magnetics-only; classic GUI is the default again as of 2026-07-21 (Qt-default was reverted)
 - [Validate numerical ports empirically](validate_numerical_ports_empirically.md) — don't trust a from-scratch re-derivation of a classic-FEMM formula; check against the classic GUI's real output
-- [hsolv thermal CUDA port](hsolv_thermal_cuda_port.md) — fkn's CUDA PCG solve ported to hsolv (heat flow); hi_setgpuaccel/hi_setredraw added; no real-hardware speedup number yet
+- [CUDA solve ported to all 4 solvers](hsolv_thermal_cuda_port.md) — fkn's CUDA PCG/PBCG solve ported to hsolv, belasolv, csolv too (+ *_setgpuaccel/*_setredraw); csolv needed its own kernel (different convergence criterion); no real-hardware speedup number yet for the 3 new ones
 - [Qt GUI scope deferred](qt_gui_scope_deferred.md) — new non-magnetics physics work goes in the classic GUI + solvers, not femmqt, per direct instruction
 - [pyfemm is pip-installed](pyfemm_is_pip_installed.md) — test/*.py's `import femm` is the PyPI package, not this repo's incomplete pyfemm/ dir
