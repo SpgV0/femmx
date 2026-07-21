@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T14:12:28.158Z
+  modified: 2026-07-21T14:48:39.167Z
 ---
 
 Implemented and shipped 2026-07-21 in three commits on `new_features` in
@@ -114,6 +114,31 @@ temporary top-level `bin\cudart64_12.dll` copy (see
 gpu_solver_test.py's own detection heuristic" gotcha for why that copy
 was needed at all) -- don't leave either change lying around for a
 future session to trip over.
+
+**Update, same day, user asked for a 10x-node comparison**: reran both
+hsolv (real-valued) and csolv (complex) at ~10x the node count (mesh
+size scaled by 1/sqrt(10), ~0.19mm instead of 0.6mm -> ~343K nodes each,
+via ad-hoc scratch scripts, not committed tests -- mirrored the real
+test models exactly). **Still no speedup at 10x either: hsolv 1.03x
+(65.1s CPU vs 63.4s GPU), csolv 1.00x (80.0s vs 80.3s)** -- essentially
+identical to the ~35K-node result, not a "just needs a bigger problem"
+issue. This is now a **robust, reproduced-twice-at-two-sizes** finding,
+not noise -- worth taking seriously before ever claiming GPU
+acceleration helps for these three solvers on annulus-shaped problems on
+this hardware (RTX 4060 Laptop). Contrast with fkn's own DC path, which
+in one measurement DID show growing speedup with size (1.32x@70K ->
+3.49x@700K) -- so "bigger problem = more speedup" is true for *that*
+solver/problem-shape combination but evidently not guaranteed in
+general; something about hsolv/belasolv/csolv's specific problem
+structure, matrix bandwidth (thin annulus + Cuthill-McKee renumbering),
+or subprocess/mesh-generation overhead swamping the actual solve time is
+suppressing the GPU win here. **Not root-caused** (out of scope for a
+quick benchmark ask) -- if this matters later, profile where the wall-
+clock time actually goes (mesh generation vs. matrix assembly vs. PCG
+iterations themselves, same technique as the original "CPU profiling
+that motivated the AC/harmonic extension" section in
+[[gpu_speedup_investigation]]) before assuming the GPU kernel itself is
+at fault.
 
 ## CI verification (2026-07-21, prompted by "is the manual build working in CI too" / "do you need to update anything for CI")
 
