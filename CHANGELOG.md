@@ -30,17 +30,53 @@
   currently-open file to the other executable. femm.ActiveFEMM's COM
   automation registration deliberately still points at `femmx.exe` --
   `femmqt.exe` has no COM automation support yet.
-* `femmqt.exe` is now the installer's only Start Menu shortcut (the
-  previous separate "FEMMX (Classic)" entry is gone) -- the reason for
-  this release's major version bump. `femmx.exe` (the MFC app) is still
-  installed and still load-bearing (COM automation, the three other
-  problem types), just no longer pinned to the Start Menu; reachable via
-  `bin\femmx.exe` directly or the Qt GUI's own "Switch to Classic GUI".
+* `femmqt.exe` was briefly the installer's only Start Menu shortcut, then
+  reverted back to the classic MFC GUI (`femmx.exe`) as the default --
+  `femmqt` is still in active development and not yet considered stable
+  enough to be what a fresh install launches by default. Both GUIs stay
+  fully installed; `FEMMX.lnk` launches `femmx.exe`, with a separate
+  `FEMMX (Qt).lnk` for `femmqt.exe`.
 * Fixed: the classic GUI's post-processor (`CFemmviewView`, the Solution
   Viewer) had its own "Switch to Qt GUI" menu item and a fully-
   implemented handler, but the handler was never wired into the MFC
   message map -- clicking it silently did nothing. The pre-processor
   (editor)'s copy of the same feature was unaffected.
+* Added `.femx`/`.ansx` binary-cache support to the classic MFC GUI too
+  (`femm/FemxFileIO.cpp`/`femm/AnsxFileIO.cpp`), mirroring `femmqt`'s
+  formats exactly -- both GUIs now benefit from the same fast-reopen
+  caching, and files stay interchangeable between them.
+* Fixed zoom-to-fit ("Zoom Natural") in `femmqt`, which could badly
+  mis-frame real-world models: `QGraphicsScene::itemsBoundingRect()`
+  gets corrupted by items using `ItemIgnoresTransformations` (used for
+  fixed-pixel-size markers) at small coordinate scales, so bounds are now
+  computed directly from the underlying geometry data instead. Also fixed
+  `fitInView()` re-centering on wherever the mouse happened to be instead
+  of the model, by temporarily switching `AnchorViewCenter` for the
+  duration of the fit.
+* `manual.pdf` is now packaged into the installer's `bin\` folder (it
+  previously wasn't, so neither GUI's Help > Help Topics could find it).
+* Extended the optional CUDA-accelerated linear solve (see the v1.0.0
+  entry below for the original magnetics/`fkn` implementation) to the
+  other three solvers: `hsolv` (heat flow), `belasolv` (electrostatics),
+  and `csolv` (current flow). `hsolv`/`belasolv` port the same real-
+  valued Jacobi-preconditioned CG kernel `fkn` uses for its DC solve;
+  `csolv`'s linear system is always complex-symmetric (conduction +
+  displacement current), and uses its own CUDA kernel matching
+  `PBCGSolveMod`'s specific convergence criterion (which differs from
+  `fkn`'s AC solver's). Each gets the matching Lua command
+  (`hi_setgpuaccel`, `ei_setgpuaccel`, `ci_setgpuaccel`) and `.feh`/
+  `.fee`/`.fec` `[GPUAccel]` persistence, exactly mirroring
+  `mi_setgpuaccel`. See test/thermal_gpu_solver_test.py,
+  test/electrostatic_gpu_solver_test.py, and
+  test/currentflow_gpu_solver_test.py.
+* Added `hi_setredraw`, `ei_setredraw`, and `ci_setredraw`: the heat-
+  flow/electrostatics/current-flow counterparts of magnetics'
+  `mi_setredraw`, letting a Lua script suspend canvas redraw during a
+  batch of edit operations.
+* Fixed: the Load Monitor's "currently solving" label was swapped
+  between current flow and electrostatics (each showed the other's
+  problem-type name while actually invoking its own correct solver
+  executable).
 
 17Jul2026 (v1.2.0)
 
