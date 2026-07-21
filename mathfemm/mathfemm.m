@@ -2913,6 +2913,9 @@ EISmartMesh::usage = "EISmartMesh[state] sets Smart Meshing on if state=1 or off
 HISmartMesh::usage = "HISmartMesh[state] sets Smart Meshing on if state=1 or off if state=0 for the in focus heat flow problem"
 CISmartMesh::usage = "CISmartMesh[state] sets Smart Meshing on if state=1 or off if state=0 for the in focus current flow problem "
 
+(* Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-21. *)
+MISetGPUAccel::usage = "MISetGPUAccel[flag] asks fkn.exe to try its optional CUDA-accelerated linear solve for the in focus magnetics problem if flag=1; flag=0 (default) is CPU-only. Transparently falls back to the normal CPU solve if fkn.exe wasn't built with CUDA support, or if the GPU solve fails for any reason. Persisted in the .fem file as [GPUAccel], same mechanism as the existing AC solver choice."
+
 MainMinimize::usage = "MainMinimize[] minimizes the main FEMM window."
 MainMaximize::usage = "MainMaximize[] maximizes the main FEMM window."
 MainRestore::usage  = "MainRestore[] restores the main FEMM window from a minimized or maximized state."
@@ -5504,6 +5507,9 @@ SmartMesh[n_]:=MLPut["smartmesh(" <> Num[n] <> ")"];
 MISmartMesh[n_]:=MLPut["mi_smartmesh(" <> Num[n] <> ")"];
 EISmartMesh[n_]:=MLPut["ei_smartmesh(" <> Num[n] <> ")"];
 CISmartMesh[n_]:=MLPut["ci_smartmesh(" <> Num[n] <> ")"];
+
+(* Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-21. *)
+MISetGPUAccel[n_]:=MLPut["mi_setgpuaccel(" <> Num[n] <> ")"];
 HISmartMesh[n_]:=MLPut["hi_smartmesh(" <> Num[n] <> ")"];
 
 MISelectCircle[x_,y_,R_,ee_]:=MLPut["mi_selectcircle(" <> NumC[x] <> NumC[y] <> NumC[R] <> Num[ee] <> ")" ]; 
