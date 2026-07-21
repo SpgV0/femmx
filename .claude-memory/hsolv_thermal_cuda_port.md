@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T12:52:18.272Z
+  modified: 2026-07-21T14:12:28.158Z
 ---
 
 Implemented and shipped 2026-07-21 in three commits on `new_features` in
@@ -83,18 +83,72 @@ current flow" + "GPU acceleration related and add the redraw function" +
 
 ## Verification
 
-Built and tested on this machine's **plain (non-CUDA) build only** --
-no CUDA-hardware speedup number exists yet for hsolv/heat-flow (unlike
-[[gpu_speedup_investigation]]'s validated fkn numbers). CPU-vs-GPU
-correctness assertion passed (0.0000% relative difference, since
-GPUAccel=1 is a no-op on this non-CUDA build); the speedup assertion
-correctly skipped (`_cuda_build_available()` heuristic). Before citing
-any hsolv GPU speedup number, build with `-DENABLE_CUDA_SOLVER=ON` on a
-CUDA-capable machine and rerun `test/thermal_gpu_solver_test.py` for
-real -- don't assume it matches fkn's numbers, since
-[[gpu_speedup_investigation]]'s own "Conflicting DC/real-solver
-speedup measurement" section shows even fkn's real-valued (non-AC) GPU
-path has had contradictory speedup results on the same problem class.
+Initially built/tested on this machine's plain (non-CUDA) build only.
+**Updated 2026-07-21, same day**: also built with
+`-DENABLE_CUDA_SOLVER=ON` (`-DFEMM_CUDA_ROOT="C:\Program Files\NVIDIA GPU
+Computing Toolkit\CUDA\v12.6"`) on this machine's real CUDA 12.6 + RTX
+GPU -- all three of hsolv/belasolv/csolv's `spars_cuda.cu` files compiled
+via nvcc and linked cleanly, matching what the `win-cuda` GitHub Actions
+job does (see the CI section below). Re-registered COM at
+`bin\cuda\femmx.exe` (via `scripts\register_femm_com.ps1
+-FemmExePath bin\cuda\femmx.exe`) and reran all three tests for real
+numbers -- correctness still exact (0.0000% diff) for all three.
+**Speedup at this problem size (~35K nodes): hsolv 1.02x, belasolv
+1.00x, csolv 0.98x -- essentially none.** This matches
+[[gpu_speedup_investigation]]'s own "Conflicting DC/real-solver speedup
+measurement" finding for fkn's real-valued solver at similar sizes --
+not a new regression, a consistent pattern across every real-valued
+(non-AC) GPU path in this codebase so far. Left as an honest, documented
+result (`test/results/*/[...]_gpu_solver.txt`, committed) rather than
+tuned to force a pass -- `currentflow_gpu_solver_test.py`'s
+`test_gpu_is_faster_when_available` assertion actually FAILS at this
+problem size on real hardware (0.98x), though CI never hits this since
+its `win-cuda` job deselects that assertion entirely (no GPU on CI
+runners). **Before assuming any of these three solvers benefit from GPU
+acceleration at typical problem sizes, don't just trust this note --
+rerun for real; a larger problem (see fkn's own 700K-node 3.49x result)
+might show genuine speedup where this ~35K-node test doesn't.**
+Restored COM back to `bin\plain\femmx.exe` afterward and deleted the
+temporary top-level `bin\cudart64_12.dll` copy (see
+[[gpu_speedup_investigation]]'s "hides the CUDA DLLs from
+gpu_solver_test.py's own detection heuristic" gotcha for why that copy
+was needed at all) -- don't leave either change lying around for a
+future session to trip over.
+
+## CI verification (2026-07-21, prompted by "is the manual build working in CI too" / "do you need to update anything for CI")
+
+Found and fixed a real gap: `.github/workflows/ccpp.yml`'s `win-cuda`
+job hardcoded its pytest file list (only `gpu_solver_test.py`
+`ac_gpu_solver_test.py`) rather than running the whole `test/` directory
+like the plain `win-vcpkg` job does -- so it was already compiling
+hsolv/belasolv/csolv with CUDA (shared `ENABLE_CUDA_SOLVER` option) but
+never actually running their new tests. Fixed by adding the three new
+test files to that line (commit `72f4b5f`).
+
+Also **directly verified, not just read the config for**, two other
+CI-relevant things this session, both confirmed working:
+- **The manual PDF build**: CI's `manual/build_manual.bat` uses plain
+  `latex.exe` -> `dvips.exe` -> `ps2pdf.exe` (NOT `xelatex`, despite
+  `manual.tex`'s own misleading `!TEX program = XeLaTeX` magic comment
+  at the top -- that comment is contradicted by the document's own
+  `\usepackage[dvips]{graphicx}`/`[dvips]{hyperref}` options, and is
+  just a stale/wrong editor hint, not what any actual build path uses).
+  Ran that exact pipeline locally (this machine's MiKTeX is installed
+  but not on PATH -- same class of issue as
+  [[build_and_com_registration_gotchas]]'s choco-latex finding; used
+  `C:\Users\spgry\AppData\Local\Programs\MiKTeX\miktex\bin\x64\` directly)
+  and it succeeded end-to-end, producing a clean 164-page PDF with the
+  new `hi_`/`ei_`/`ci_` `setgpuaccel`/`setredraw` content rendering
+  correctly.
+- **The CUDA build itself** (see above) -- confirms `win-cuda`'s
+  `-DENABLE_CUDA_SOLVER=ON` build will succeed for all four solvers, not
+  just fkn.
+
+Also checked and confirmed no other CI changes needed: `test/
+requirements.txt` already covers everything the 3 new test files import
+(just `pytest`+`pyfemm`, nothing new); all 5 test files referenced in
+the `win-cuda` pytest line actually exist; no other hardcoded
+file/solver lists exist elsewhere in `ccpp.yml`.
 
 ## belasolv (electrostatics) -- same shape as hsolv
 
