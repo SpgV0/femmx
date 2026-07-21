@@ -16,6 +16,8 @@ class Chsolvdoc {
   BOOL Coords;
   double dT;
   CString PrevSoln;
+  int GPUAccel; // read from the saved [GPUAccel] field, passed through to
+                // CBigLinProb::GPUAccel in MAIN.CPP (see spars_cuda.cu).
 
   // Axisymmetric external region parameters
   double extRo, extRi, extZo;

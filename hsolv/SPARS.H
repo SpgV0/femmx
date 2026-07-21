@@ -24,6 +24,9 @@ class CBigLinProb {
   int bdw; // Optional matrix bandwidth parameter;
   double Lambda; // relaxation factor;
   double Precision; // error tolerance for solution
+  int GPUAccel; // 1 = try the CUDA-accelerated solve (see PCGSolveGPU), falling
+                // back to the CPU solve above on any failure or if this build
+                // wasn't compiled with CUDA support; 0 = CPU-only (default).
 
   // member functions
 
@@ -34,6 +37,9 @@ class CBigLinProb {
   // use to create/set entries in the matrix
   double Get(int p, int q);
   int PCGSolve(int flag); // flag==true if guess for V present;
+  bool PCGSolveGPU(int flag); // GPU path used by PCGSolve when GPUAccel is set;
+                               // see spars_cuda.cu. Returns false (never the
+                               // only path) if unavailable or the solve fails.
   void MultPC(double* X, double* Y);
   void MultA(double* X, double* Y);
   void SetValue(int i, double x);
