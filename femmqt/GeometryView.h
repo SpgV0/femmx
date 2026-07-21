@@ -2,8 +2,6 @@
 
 #include <QGraphicsView>
 
-class QLabel;
-
 // Thin QGraphicsView subclass adding mouse-wheel zoom -- a standard
 // modern-CAD gesture the classic GUI doesn't have (it only offers
 // menu/keyboard zoom), added as a value-add consistent with the "modern
@@ -43,8 +41,6 @@ class GeometryView : public QGraphicsView {
 
   protected:
   void wheelEvent(QWheelEvent* event) override;
-  void mouseMoveEvent(QMouseEvent* event) override;
-  void leaveEvent(QEvent* event) override;
   // Fusion 360-style multi-select: holding Shift while left-dragging on
   // empty canvas draws a rubber-band rectangle and selects everything it
   // encloses. Only armed in Select tool mode -- see the .cpp for why.
@@ -60,12 +56,4 @@ class GeometryView : public QGraphicsView {
   // RubberBandDrag correctly once *any* prior click had focused this
   // view, and never did on a truly fresh window.
   void showEvent(QShowEvent* event) override;
-
-  private:
-  // Floats next to the cursor showing the model-space coordinate under
-  // it, matching how Fusion 360/most modern CAD tools show a live
-  // coordinate readout that tracks the cursor itself rather than only a
-  // fixed status-bar corner (which MainWindow's own position label still
-  // also provides -- this is additive, not a replacement).
-  QLabel* m_cursorTooltip = nullptr;
 };
