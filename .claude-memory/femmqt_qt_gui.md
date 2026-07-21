@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T11:18:12.990Z
+  modified: 2026-07-21T17:18:04.817Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -591,6 +591,71 @@ correctness checks pass perfectly on both DC and AC problems; AC/harmonic
 GPU solve genuinely 3.16x faster, but DC/real-valued GPU solve measured
 3x *slower* than CPU this round -- left as an honest failing assertion,
 not investigated further (out of scope), not worked around.
+
+## Round 12: geometry editor zoom/pan stutter -- FullViewportUpdate, fixed by porting SolutionGraphicsView's own prior fix (2026-07-21)
+
+User: "the problem i find is that when i zoom i[n] or move the geometry
+is not smooth." Found via direct code reading (no Agent/subagent, per
+the standing constraint from Round 5): `GeometryView`'s constructor set
+`setViewportUpdateMode(QGraphicsView::FullViewportUpdate)` to fix a
+stale-tooltip-trail bug (the floating cursor coordinate readout is a
+plain `QLabel` child of the viewport, not a scene item, so
+`MinimalViewportUpdate`'s scene-change-driven dirty tracking doesn't
+know to repaint its old position when it moves). But `FullViewportUpdate`
+forces a full repaint on **every** viewport update, not just tooltip
+moves -- including every wheel-zoom (`scale()` in `wheelEvent`) and
+every toolbar/scrollbar pan (`onPanLeft/Right/Up/Down` in
+`MainWindow.cpp`, plain `scrollBar->setValue()` calls, which normally
+get a cheap blit-and-fill-the-new-strip optimization that
+`FullViewportUpdate` disables) -- exactly the reported stutter.
+
+**The fix already existed in the codebase, just not ported.**
+`SolutionGraphicsView::mouseMoveEvent` (`SolutionView.cpp`) had already
+solved the *identical* tooltip problem the right way:
+`scene()->invalidate(mapToScene(oldGeometry).boundingRect())` on just
+the tooltip's vacated rect -- `scene()->invalidate()` is the mechanism
+`MinimalViewportUpdate` actually respects for "redraw this region even
+though nothing scene-side changed." Its own comment even names a PRIOR
+"everything is slow on large geometries" complaint that motivated that
+fix -- meaning this exact class of regression had already been found
+and fixed once, in the solution viewer, and just never got applied to
+the geometry editor. Ported it: removed `GeometryView`'s
+`FullViewportUpdate` call entirely, added the same
+`scene()->invalidate()` call to its `mouseMoveEvent`. Zoom and pan now
+go through Qt's efficient default update path; only genuine mouse-hover
+moves pay the (correctly-scoped) invalidate cost, same frequency as
+before.
+
+**Lesson**: when two sibling classes solve the same UI problem (here:
+`GeometryView` and `SolutionGraphicsView`, both `QGraphicsView`
+subclasses with an identical floating-tooltip pattern), check whether
+one already has a better fix before re-deriving one -- grep for the
+similar class name/pattern first, don't assume symmetry has to be
+re-verified from scratch every time.
+
+**Verified live**: built via `build_qt` (`cmake --build build_qt --target
+femmqt`), then launched the real exe against a loaded `.fem`, swept the
+cursor across the canvas with synthetic `SetCursorPos` calls, and
+screenshotted -- confirmed exactly one tooltip label at the final
+position, no stale trail left behind anywhere along the path. Confirms
+`FEMMQT_HAVE_OPENGL` is active in this build too (`QOpenGLWidget`
+viewport, per the constructor's `#ifdef`), so the fix is layered on top
+of already-GPU-composited rendering, not fighting it.
+
+**Separately investigated but not (yet) fixed**: `MeshSolutionItem`'s
+constructor (`SolutionView.cpp:104-166`, runs synchronously on the UI
+thread every time a solved file opens) does 6 full passes over every
+mesh element -- one per `DensityQuantity` enum value -- eagerly
+precomputing node-averaged values and min/max ranges for all 6 plot
+quantities, even though a session typically only ever looks at 1-2.
+Not captured by the file's own `QElapsedTimer` load-time profiling
+(that timer stops *before* this constructor runs) so it's an invisible
+cost in whatever load-time numbers already exist. Recommended fix:
+lazy per-quantity computation on first actual use instead of eager-all-6
+at construction. Not implemented -- flagged to the user, awaiting a
+decision on whether it's worth doing (tradeoff: switching density
+quantities mid-session would get a one-time hitch instead of being
+instant, in exchange for a faster initial big-file open).
 
 ## Round 11: real installer bug behind "the shortcut doesn't work" -- missing Qt6PrintSupport.dll (2026-07-20)
 
