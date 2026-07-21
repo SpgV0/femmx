@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T19:23:47.027Z
+  modified: 2026-07-21T20:20:31.970Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -730,6 +730,71 @@ canvas and silently do nothing (looked like "zoom doesn't work" until
 traced to aiming at the wrong widget). Use a screenshot-verified
 canvas-area point instead of assuming client-rect center is inside the
 graphics view for this specific window.
+
+## Round 12c: "white screen" in Contour Plot root-caused (not fixed); original problem geometry was entirely missing from the Solution Viewer (fixed) (2026-07-21, same day)
+
+User: "i see a white screen there, is it supposed to look like this?"
+(Contour Plot mode, the default -- see Round 12b -- on
+`gpu_solver_cpu.ans`, a wire+ABC magnetics model).
+
+**Root-caused, not yet fixed**: confirmed `paintContour`'s algorithm
+itself is correct by opening a clean reference file
+(`straight_wire_field.ans`) -- renders textbook concentric circles.
+Directly measured `gpu_solver_cpu.ans`'s node values (two ways: parsing
+`[Solution]` in the raw `.ans` text directly, AND a slow ~38K-node
+`mo_getpointvalues` COM loop as a cross-check) -- the vector potential
+A itself has NO extreme outlier values (smooth percentile distribution,
+p1-p99 span is 72% of the full span). But switching the SAME file to
+Density Plot revealed the real story: `|B|` is anomalously HIGH in a
+ring right at the outer domain boundary (>3.66e-3 T there vs. ~2-6e-4 T
+everywhere else) -- almost certainly from `mi_makeABC`'s multi-layer
+Kelvin-transform boundary construction. Since Contour Plot spaces its
+20 levels evenly across A's *value* (not radius), and that thin outer
+boundary region evidently accounts for a large fraction of A's total
+dynamic range despite being geometrically thin, nearly all 20 contour
+lines end up compressed into/near that boundary -- exactly what the
+NEW geometry-overlay feature (below) then visually confirmed: you can
+literally see the multiple closely-packed ABC layers there once
+segment/arc geometry is drawn. **Offered but not implemented**: making
+Contour Plot's level computation more robust (e.g. percentile-based
+instead of true min/max) -- user hasn't asked for this yet.
+
+**Real, separate feature gap found and fixed**: user's follow-up, "in
+the solution viewer the edges and nodes of the geometry do not show
+up." Checked `femm/FemmviewView.cpp` directly -- the classic GUI
+ALWAYS overlays the original problem geometry (nodelist/linelist/
+arclist -- the actual nodes/segments/arcs drawn in the pre-processor,
+e.g. "20 nodes, 20 arcs") on top of whichever plot is active in the
+post-processor, completely distinct from the solved FE MESH (millions
+of elements). femmqt had genuinely nothing for this -- "Show Mesh"/
+"Show Points" only ever meant the solved mesh's own triangulation/
+nodes. Added `MeshSolutionItem::setProblemGeometry()`/
+`paintProblemGeometry()` (`SolutionView.cpp`/`.h`): segments/arcs as
+cosmetic-pen lines (`AppTheme::segmentColor()`/`arcColor()`, matching
+the geometry editor's own colors -- arcs via an independent copy of
+`GeometryScene.cpp`'s `arcGeometry()` math, this codebase's established
+precedent over a shared header), nodes as small fixed-screen-size
+squares (same divide-by-`worldTransform().m11()` technique as the
+mesh-point-radius fix two rounds ago). Always drawn when available, no
+new toggle -- matches classic's own unconditional behavior for
+segments/arcs.
+
+`SolutionWindow` didn't have the original `FemmProblem` at all before
+this (only the `MeshSolution`) -- `openAnsFile()`'s two load paths
+needed different plumbing: the slow (.ans direct) path already parses
+`FemmProblem` as a side effect of extracting `problemType`/
+`lengthUnits`/`frequency`, so it's now just kept (`m_problemGeometry =
+problem;`) instead of discarded; the fast (.ansx cache) path has
+nothing to reuse (the cache only ever stores the mesh, by design), so
+it does one extra best-effort `FemmFileIO::readFem()` call against the
+`.ans` file -- already proven safe/fast against `.ans` files elsewhere
+in this exact class (`onProblemInfoTriggered`/`onCircuitPropsTriggered`/
+`onBhCurvesTriggered` all do the same thing already).
+
+Verified live against both files mentioned above -- concentric boundary
+arcs and node markers now clearly visible over the density plot in
+both, and neither grows when zoomed (confirmed by construction, reusing
+the just-established fixed-screen-size technique, not just assumed).
 
 ## Round 11: real installer bug behind "the shortcut doesn't work" -- missing Qt6PrintSupport.dll (2026-07-20)
 
