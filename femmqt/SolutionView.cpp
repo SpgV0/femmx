@@ -1356,10 +1356,25 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
     std::complex<double> A = interpolateA(scenePos, elem);
     const MeshSolutionElement& e = m_solution.elements[elem];
     double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-    text = QString("x = %1, y = %2   |B| = %3 T   A = %4")
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // |H| and |Js+Je| added to the live hover readout per user request
+    // ("show the values when hovering") -- previously only available via
+    // the Point Properties tool's click-to-open dialog (onCanvasClicked's
+    // SolutionToolMode::Point case, below), which has the identical
+    // formula; duplicated rather than shared since that case also breaks
+    // H/J into re/im components for the dialog's extra rows, which this
+    // one-line tooltip has no room for.
+    constexpr double kMuo = 1.2566370614359173e-6;
+    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
+    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
+    double jMag = std::hypot(e.jRe, e.jIm);
+    text = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   A = %6")
                .arg(scenePos.x(), 0, 'g', 6)
                .arg(scenePos.y(), 0, 'g', 6)
                .arg(bMag, 0, 'g', 4)
+               .arg(hMag, 0, 'g', 4)
+               .arg(jMag, 0, 'g', 4)
                .arg(A.real(), 0, 'g', 4);
   }
   m_positionLabel->setText(text);
