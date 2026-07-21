@@ -246,17 +246,16 @@ Section
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     SetOutPath "$STARTMENU\Programs\${PROJECT_NAME}"
-    ; FEMMX.lnk launches the Qt GUI exclusively -- per user request, no
-    ; separate "(Classic)" Start Menu entry for the MFC GUI anymore (a
-    ; user who followed it ended up in the MFC app by habit and hit a
-    ; real bug there -- see FemmviewView.cpp's OnSwitchToQtGui message-map
-    ; fix). femmx.exe (the MFC app) is still installed to bin\ below --
-    ; it's still load-bearing for femm.ActiveFEMM COM automation and for
-    ; electrostatics/heat-flow/current-flow, which the Qt GUI doesn't
-    ; support yet (magnetics-only) -- it's just not pinned to the Start
-    ; Menu. Reachable via bin\femmx.exe directly, or the Qt GUI's own
-    ; "Switch to Classic GUI" menu item.
-    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmqt.exe"
+    ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    ; reverted -- FEMMX.lnk now launches the classic MFC GUI again, per
+    ; user request ("QT has too many bugs at the moment, use the old GUI
+    ; as the default option"). femmqt.exe stays fully installed (still
+    ; needed: its own "Switch to Classic GUI" menu item, and vice versa
+    ; via femmx.exe's "Switch to Qt GUI") and gets its own secondary
+    ; shortcut below rather than none at all, so it's still one click
+    ; away for anyone who wants it despite not being the default.
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmx.exe"
+    CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Qt).lnk" "$INSTDIR\bin\femmqt.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
 
     WriteRegStr HKCU "${PROJECT_REG_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${PROJECT_UNINSTALL_EXE}" _?=$INSTDIR'
@@ -292,11 +291,12 @@ Section "uninstall"
     # remove the links from the start menu
     Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Classic).lnk"
+    Delete "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Qt).lnk"
     Delete "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk"
-    ; the FEMMX (Classic).lnk Delete above is kept even though the
-    ; installer no longer creates that shortcut -- harmlessly no-ops on a
-    ; fresh install, but still cleans it up for anyone upgrading from an
-    ; older install that did create it.
+    ; the FEMMX (Classic).lnk Delete above is kept even though no shipped
+    ; version of the installer has created that exact filename since --
+    ; harmlessly no-ops on a fresh install, but still cleans it up for
+    ; anyone upgrading from the specific older install that did create it.
     RMDir "$STARTMENU\Programs\${PROJECT_NAME}"
 
     # remove the installdir
