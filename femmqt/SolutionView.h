@@ -7,6 +7,7 @@
 #include <QPair>
 #include <QVector>
 
+#include "FemmProblem.h"
 #include "MeshSolution.h"
 
 #include <complex>
@@ -41,6 +42,19 @@ class MeshSolutionItem : public QGraphicsItem {
   void setSmoothing(bool smooth);
   void setShowMesh(bool show);
   void setShowPoints(bool show);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user report ("the edges and nodes of the geometry do not show up") --
+  // the classic GUI's post-processor (femm/FemmviewView.cpp) always draws
+  // the ORIGINAL problem geometry (the nodes/segments/arcs drawn in the
+  // pre-processor, e.g. "20 nodes, 20 arcs") as a thin overlay on top of
+  // whichever plot is active, distinct from "Show Mesh"/"Show Points"
+  // above (those are the solved FE mesh's own triangulation/nodes,
+  // typically thousands to millions of them -- a completely different,
+  // much smaller list). femmqt had no equivalent at all. Not gated by a
+  // toggle, matching the classic GUI's own always-on behavior for
+  // segments/arcs; nullptr (the default, e.g. before a file is loaded)
+  // just means nothing to draw yet.
+  void setProblemGeometry(const FemmProblem* problem);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // per user request for "all the different heatmap possibilities" the
@@ -156,6 +170,8 @@ class MeshSolutionItem : public QGraphicsItem {
   bool m_smooth = true;
   bool m_showMesh = false;
   bool m_showPoints = false;
+  const FemmProblem* m_problemGeometry = nullptr;
+  void paintProblemGeometry(QPainter* painter, const QRectF& exposedRect);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // was a single m_nodeBMagAvg (|B| only) -- generalized to one
@@ -381,6 +397,14 @@ class SolutionWindow : public QMainWindow {
   QGraphicsScene* m_scene = nullptr;
   SolutionGraphicsView* m_view = nullptr;
   MeshSolution m_solution;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // the original problem's geometry (nodes/segments/arcs), read once in
+  // openAnsFile() via FemmFileIO::readFem() (already proven safe against
+  // an .ans file -- see onProblemInfoTriggered()'s identical use) and fed
+  // to m_item->setProblemGeometry() so the solution viewer can overlay it
+  // like the classic GUI always does. Kept alive here for m_item's
+  // lifetime (it only stores a raw pointer to this).
+  FemmProblem m_problemGeometry;
   MeshSolutionItem* m_item = nullptr;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
   // classic FEMM labels the raw solved nodal potential differently by

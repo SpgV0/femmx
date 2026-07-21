@@ -1,3 +1,4 @@
+#define _USE_MATH_DEFINES
 #include "SolutionView.h"
 
 #include "AnsFileIO.h"
@@ -74,6 +75,30 @@ QColor bandColor(int band)
 {
   double t = band / (double)(kNumBands - 1); // 0..1
   return QColor::fromHsvF((1.0 - t) * 0.667, 1.0, 1.0); // hue 240deg(blue) -> 0deg(red)
+}
+
+// Same math as GeometryScene.cpp's own arcGeometry() -- an independent
+// copy rather than a shared header, matching this codebase's established
+// precedent (see FemxFileIO.cpp/AnsxFileIO.cpp's identical top-of-file
+// note) for small, self-contained helpers like this one.
+bool arcGeometry(double x0, double y0, double x1, double y1, double arcLengthDeg,
+    double& cx, double& cy, double& R, double& startAngleDeg)
+{
+  double dx = x1 - x0, dy = y1 - y0;
+  double d = std::hypot(dx, dy);
+  if (d <= 0)
+    return false;
+  double tta = arcLengthDeg * M_PI / 180.0;
+  double s = std::sin(tta / 2.0);
+  if (std::abs(s) < 1e-12)
+    return false;
+  R = d / (2.0 * s);
+  double tx = dx / d, ty = dy / d;
+  double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
+  cx = x0 + (d / 2.0 * tx - h * ty);
+  cy = y0 + (d / 2.0 * ty + h * tx);
+  startAngleDeg = std::atan2(y0 - cy, x0 - cx) * 180.0 / M_PI;
+  return true;
 }
 
 // Point-in-triangle via barycentric sign test (standard technique).
@@ -340,6 +365,12 @@ void MeshSolutionItem::setShowPoints(bool show)
   update();
 }
 
+void MeshSolutionItem::setProblemGeometry(const FemmProblem* problem)
+{
+  m_problemGeometry = problem;
+  update();
+}
+
 void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
   if (!m_solution || m_solution->elements.isEmpty())
@@ -372,6 +403,8 @@ void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
   }
   if (m_showMesh || m_showPoints)
     paintMeshOverlay(painter, exposedRect);
+  if (m_problemGeometry)
+    paintProblemGeometry(painter, exposedRect);
 }
 
 void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect)
@@ -668,6 +701,74 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposed
         continue;
       painter->drawEllipse(QPointF(n.x, n.y), r, r);
     }
+  }
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: the
+// original problem geometry (nodes/segments/arcs, as opposed to the
+// solved FE mesh paintMeshOverlay draws) -- see this method's declaration
+// in SolutionView.h for why femmqt needed this at all. Segments/arcs
+// always drawn (matching femm/FemmviewView.cpp's own unconditional
+// "Draw lines linking nodes" -- classic FEMM has no toggle for hiding
+// them, only per-entity Hidden flags, which this respects); nodes as
+// small fixed-screen-size squares, matching classic's own 4x4-pixel box
+// marker (MyMoveTo/LineTo around xs+-2,ys+-2) -- same screen-space-radius
+// technique as paintMeshOverlay's Show Points dots just above, since a
+// scene-space square would grow with zoom otherwise.
+void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exposedRect)
+{
+  const FemmProblem& problem = *m_problemGeometry;
+
+  QPen segPen(AppTheme::segmentColor());
+  segPen.setCosmetic(true);
+  painter->setPen(segPen);
+  QPainterPath segPath;
+  for (const FemmSegment& seg : problem.segments) {
+    if (seg.hidden)
+      continue;
+    if (seg.n0 < 0 || seg.n0 >= problem.nodes.size() || seg.n1 < 0 || seg.n1 >= problem.nodes.size())
+      continue;
+    const FemmNode& n0 = problem.nodes[seg.n0];
+    const FemmNode& n1 = problem.nodes[seg.n1];
+    if (!exposedRect.intersects(QRectF(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y)).normalized()))
+      continue;
+    segPath.moveTo(n0.x, n0.y);
+    segPath.lineTo(n1.x, n1.y);
+  }
+  painter->drawPath(segPath);
+
+  QPen arcPen(AppTheme::arcColor());
+  arcPen.setCosmetic(true);
+  painter->setPen(arcPen);
+  QPainterPath arcPath;
+  for (const FemmArcSegment& arc : problem.arcSegments) {
+    if (arc.hidden)
+      continue;
+    if (arc.n0 < 0 || arc.n0 >= problem.nodes.size() || arc.n1 < 0 || arc.n1 >= problem.nodes.size())
+      continue;
+    const FemmNode& n0 = problem.nodes[arc.n0];
+    const FemmNode& n1 = problem.nodes[arc.n1];
+    double cx, cy, R, startAngleDeg;
+    if (!arcGeometry(n0.x, n0.y, n1.x, n1.y, arc.arcLength, cx, cy, R, startAngleDeg))
+      continue;
+    if (!exposedRect.intersects(QRectF(QPointF(cx - R, cy - R), QSizeF(2 * R, 2 * R))))
+      continue;
+    arcPath.moveTo(n0.x, n0.y);
+    arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
+  }
+  painter->drawPath(arcPath);
+
+  double screenScale = painter->worldTransform().m11();
+  double half = 2.5 / std::max(screenScale, 1e-9);
+  QPen nodePen(AppTheme::nodeColor());
+  nodePen.setCosmetic(true);
+  painter->setPen(nodePen);
+  painter->setBrush(Qt::NoBrush);
+  QRectF cullRect = exposedRect.adjusted(-half, -half, half, half);
+  for (const FemmNode& n : problem.nodes) {
+    if (!cullRect.contains(n.x, n.y))
+      continue;
+    painter->drawRect(QRectF(n.x - half, n.y - half, 2 * half, 2 * half));
   }
 }
 
@@ -1249,6 +1350,27 @@ void SolutionWindow::openAnsFile(const QString& path)
     QString writeError;
     AnsxFileIO::writeAnsx(ansxPath, ansPath, (int)problem.problemType, (int)problem.lengthUnits,
         problem.frequency, m_solution, writeError);
+    // readAns already parsed the geometry (nodes/segments/arcSegments)
+    // as a side effect of extracting problemType/lengthUnits/frequency
+    // above -- reuse it directly rather than re-parsing the file again
+    // below.
+    m_problemGeometry = problem;
+  } else {
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // the .ansx cache only ever stored the solved MESH (that's the whole
+    // point -- see this file's header comment), never the original
+    // problem geometry, so the fast path above has nothing to reuse the
+    // way the slow path does. Best-effort re-read of just the .ans
+    // file's geometry header via FemmFileIO::readFem -- already proven
+    // safe and fast against a real .ans file elsewhere in this class
+    // (onProblemInfoTriggered/onCircuitPropsTriggered/onBhCurvesTriggered
+    // all do exactly this), and it tolerates/ignores the (potentially
+    // huge) trailing [Solution] mesh section it doesn't need, so this
+    // doesn't undermine .ansx's whole "skip the huge mesh reparse" point.
+    // A failure here shouldn't block viewing the solution we already
+    // have loaded -- it just means no geometry overlay this time.
+    QString geomError;
+    FemmFileIO::readFem(ansPath, m_problemGeometry, geomError);
   }
 
   qint64 elapsedMs = timer.elapsed();
@@ -1258,6 +1380,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_contourVisual = nullptr; // clear() above already deleted it
   m_contourPoints.clear();
   m_item = new MeshSolutionItem(&m_solution);
+  m_item->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
   m_view->fitInViewSafe(m_item->boundingRect());
   m_view->updateAntialiasingForScale();
