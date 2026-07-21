@@ -36,6 +36,10 @@ class CbeladrawDoc : public CDocument {
   CString ProblemNote;
   BOOL FirstDraw;
   BOOL NoDraw;
+  int GPUAccel; // 1 = ask belasolv.exe to try its optional CUDA-accelerated
+                // linear solve (see belasolv/spars_cuda.cu); persisted in
+                // the .fee file as [GPUAccel], same mechanism as
+                // magnetics' CFemmeDoc::GPUAccel.
 
   // default behaviors
   double d_prec;
@@ -196,6 +200,8 @@ class CbeladrawDoc : public CDocument {
   static int lua_modpointprop(lua_State* L);
   static int lua_modcircprop(lua_State* L);
   static int lua_exitpre(lua_State* L);
+  static int lua_setgpuaccel(lua_State* L);
+  static int lua_setredraw(lua_State* L);
   PBITMAPINFO CreateBitmapInfoStruct(HWND hwnd, HBITMAP hBmp);
   void CreateBMPFile(HWND hwnd, LPTSTR pszFile, PBITMAPINFO pbi, HBITMAP hBMP, HDC hDC);
   static int lua_saveWMF(lua_State* L);

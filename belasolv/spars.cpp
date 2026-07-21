@@ -2,9 +2,18 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vector>
 #include "belasolv.h"
 #include "belasolvDlg.h"
 #include "spars.h"
+#include "spars_cuda.h"
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+// PCGSolveGPU() (CSR conversion + dispatch to the optional CUDA solver)
+// added below PCGSolve; PCGSolve now tries the GPU path first when
+// GPUAccel is set, falling back to the existing CPU path unchanged on
+// any failure or when built without CUDA support. Ported from
+// fkn/spars.cpp's identical addition for the magnetics solver.
 
 #define KLUDGE
 
@@ -18,6 +27,7 @@ CEntry::CEntry()
 CBigLinProb::CBigLinProb()
 {
   n = 0;
+  GPUAccel = 0;
 }
 
 CBigLinProb::~CBigLinProb()
@@ -214,6 +224,50 @@ int CBigLinProb::PCGSolve(int flag)
       return FALSE;
     }
 
+  if (GPUAccel) {
+#ifndef FEMM_CUDA_ENABLED
+    MsgBox(
+        "GPU acceleration was requested for this problem, but this copy of "
+        "belasolv.exe was built without CUDA support.\n\n"
+        "To use GPU acceleration:\n"
+        "1. Install the NVIDIA CUDA Toolkit (a version supported by your GPU "
+        "driver -- run \"nvidia-smi\" to check the maximum CUDA version it "
+        "supports).\n"
+        "2. Rebuild femmx with CMake options -DENABLE_CUDA_SOLVER=ON "
+        "-DFEMM_CUDA_ROOT=\"<path to CUDA Toolkit>\" (add "
+        "-DFEMM_CUDA_CCBIN=\"<path to an nvcc-compatible MSVC toolset bin "
+        "dir>\" too if your installed Visual Studio is newer than the CUDA "
+        "Toolkit supports -- this is common; see belasolv/CMakeLists.txt).\n"
+        "3. See belasolv/spars_cuda.cu and belasolv/CMakeLists.txt for "
+        "details.\n\n"
+        "Continuing with the CPU solver for this run.");
+#else
+    if (TheView != NULL)
+      TheView->SetDlgItemText(IDC_FRAME1, "Conjugate Gradient Solver (GPU)");
+    if (PCGSolveGPU(flag))
+      return 1;
+    MsgBox(
+        "GPU-accelerated solve did not produce a result (see the "
+        "console/stderr output for the exact reason).\n\n"
+        "This usually means one of:\n"
+        "- No CUDA-capable NVIDIA GPU is present on this machine, or\n"
+        "- The installed NVIDIA driver is older than this build's CUDA "
+        "Toolkit requires -- run \"nvidia-smi\" to check the maximum CUDA "
+        "version your driver supports, then either update the driver or "
+        "rebuild belasolv.exe with an older -DFEMM_CUDA_ROOT to match it, "
+        "or\n"
+        "- The GPU solve ran but did not converge: the Jacobi preconditioner "
+        "used for GPU parallelism is weaker than the CPU's SSOR, and some "
+        "problems need more iterations than it can provide. This isn't a "
+        "GPU/driver problem -- try the CPU solver for this specific problem "
+        "instead.\n\n"
+        "Continuing with the CPU solver for this run.");
+#endif
+    // GPU path unavailable, not built with CUDA support, or failed to
+    // converge/errored out -- fall through to the CPU solve below rather
+    // than failing the whole analysis.
+  }
+
   // initialize progress bar;
   TheView->SetDlgItemText(IDC_FRAME1, "Conjugate Gradient Solver");
   TheView->m_prog1.SetPos(0);
@@ -286,6 +340,67 @@ int CBigLinProb::PCGSolve(int flag)
   } while (er > Precision);
 
   return 1;
+}
+
+// Converts the upper-triangle-only linked-list matrix storage (M[]) into a
+// full symmetric CSR matrix and dispatches to the CUDA solver. Returns
+// false (never throws/errors out loud) if this build wasn't compiled with
+// CUDA support, or if the GPU solve itself fails for any reason -- either
+// way the caller (PCGSolve) falls back to the CPU path.
+bool CBigLinProb::PCGSolveGPU(int flag)
+{
+#ifndef FEMM_CUDA_ENABLED
+  (void)flag;
+  return false;
+#else
+  int i;
+  CEntry* e;
+
+  // Pass 1: count entries per row of the FULL symmetric matrix. Each
+  // stored entry (i, e->c) contributes to row i directly, and -- unless
+  // it's the diagonal -- also mirrors into row e->c.
+  std::vector<int> rowCount(n, 0);
+  int nnz = 0;
+  for (i = 0; i < n; i++) {
+    for (e = M[i]; e != NULL; e = e->next) {
+      rowCount[i]++;
+      nnz++;
+      if (e->c != i) {
+        rowCount[e->c]++;
+        nnz++;
+      }
+    }
+  }
+
+  std::vector<int> rowPtr(n + 1, 0);
+  for (i = 0; i < n; i++)
+    rowPtr[i + 1] = rowPtr[i] + rowCount[i];
+
+  std::vector<int> colInd(nnz);
+  std::vector<double> values(nnz);
+  std::vector<double> diag(n);
+  std::vector<int> cursor(rowPtr.begin(), rowPtr.end() - 1);
+
+  for (i = 0; i < n; i++) {
+    for (e = M[i]; e != NULL; e = e->next) {
+      colInd[cursor[i]] = e->c;
+      values[cursor[i]] = e->x;
+      cursor[i]++;
+      if (e->c != i) {
+        colInd[cursor[e->c]] = i;
+        values[cursor[e->c]] = e->x;
+        cursor[e->c]++;
+      }
+    }
+    diag[i] = M[i]->x; // M[i] is always the diagonal entry (see Create())
+  }
+
+  int iters = 0;
+  int ok = CudaPCGSolve(n, rowPtr.data(), colInd.data(), values.data(), nnz,
+      diag.data(), b, V, flag, Precision, /*maxiter=*/100000, &iters);
+
+  return ok != 0;
+#endif
 }
 
 void CBigLinProb::SetValue(int i, double x)

@@ -1,0 +1,10 @@
+GPU-accelerated current-flow solve: correctness + benchmark
+=============================================================
+CUDA-enabled build detected: False
+Probe point: (10, 0)
+Frequency: 1.000e+09 Hz
+
+CPU: V = (48.99000909419929-29.2773296414957j)  |V| = 5.707174e+01  (time: 21.736s)
+GPU: V = (48.99000909419929-29.2773296414957j)  |V| = 5.707174e+01  (time: 21.302s)
+Relative difference: 0.0000%
+Speedup: 1.02x

@@ -34,6 +34,8 @@ void CbeladrawDoc::initalise_lua()
   lua_register(lua, "ei_saveas", luaSaveDocument);
   lua_register(lua, "ei_createmesh", lua_create_mesh);
   lua_register(lua, "ei_smartmesh", lua_smartmesh);
+  lua_register(lua, "ei_setgpuaccel", lua_setgpuaccel);
+  lua_register(lua, "ei_setredraw", lua_setredraw);
   lua_register(lua, "ei_showmesh", lua_show_mesh);
   lua_register(lua, "ei_purgemesh", lua_purge_mesh);
   lua_register(lua, "ei_probdef", lua_prob_def);
@@ -443,6 +445,55 @@ int CbeladrawDoc::lua_smartmesh(lua_State* L)
       k = 1;
     thisDoc->SmartMesh = k;
   }
+
+  return 0;
+}
+
+// ei_setgpuaccel(flag): flag=1 asks belasolv.exe to try its optional CUDA-
+// accelerated linear solve for this problem (see belasolv/spars_cuda.cu);
+// it transparently falls back to the normal CPU solve if belasolv.exe
+// wasn't built with CUDA support, or if the GPU solve fails for any
+// reason. flag=0 (default) is CPU-only. Persisted in the .fee file as
+// [GPUAccel], mirroring CFemmeDoc::lua_setgpuaccel for magnetics.
+int CbeladrawDoc::lua_setgpuaccel(lua_State* L)
+{
+  CatchNullDocument();
+  CbeladrawDoc* thisDoc;
+  thisDoc = (CbeladrawDoc*)pBeladrawDoc;
+
+  int n = lua_gettop(L);
+  BOOL enable = TRUE;
+  if (n > 0)
+    enable = (lua_todouble(L, 1) != 0);
+
+  thisDoc->GPUAccel = enable ? 1 : 0;
+
+  return 0;
+}
+
+// ei_setredraw(flag): flag=0 suspends canvas redraw for subsequent edit
+// operations (e.g. a batch of ei_copytranslate/ei_copyrotate calls on a
+// densely-drawn model); flag=1 (default state) resumes it and forces a
+// single refresh to show everything that changed while it was off.
+// Mirrors CFemmeDoc::lua_setredraw for magnetics.
+int CbeladrawDoc::lua_setredraw(lua_State* L)
+{
+  CatchNullDocument();
+  CbeladrawDoc* thisDoc;
+  CbeladrawView* theView;
+  thisDoc = (CbeladrawDoc*)pBeladrawDoc;
+  POSITION pos;
+  pos = thisDoc->GetFirstViewPosition();
+  theView = (CbeladrawView*)thisDoc->GetNextView(pos);
+
+  int n = lua_gettop(L);
+  BOOL enable = TRUE;
+  if (n > 0)
+    enable = (lua_todouble(L, 1) != 0);
+
+  thisDoc->NoDraw = !enable;
+  if (enable)
+    theView->InvalidateRect(NULL);
 
   return 0;
 }
