@@ -64,6 +64,16 @@ GeometryView::GeometryView(QGraphicsScene* scene, QWidget* parent)
   m_cursorTooltip->hide();
 }
 
+void GeometryView::fitInViewSafe(const QRectF& rect)
+{
+  if (rect.isEmpty())
+    return;
+  QGraphicsView::ViewportAnchor prevAnchor = transformationAnchor();
+  setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+  fitInView(rect, Qt::KeepAspectRatio);
+  setTransformationAnchor(prevAnchor);
+}
+
 void GeometryView::wheelEvent(QWheelEvent* event)
 {
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;

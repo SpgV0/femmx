@@ -206,6 +206,57 @@ void GeometryScene::setProblem(FemmProblem* problem)
   rebuild();
 }
 
+QRectF GeometryScene::computeProblemBounds() const
+{
+  if (!m_problem)
+    return QRectF();
+
+  bool first = true;
+  double xmin = 0, xmax = 0, ymin = 0, ymax = 0;
+  auto expand = [&](double x, double y) {
+    if (first) {
+      xmin = xmax = x;
+      ymin = ymax = y;
+      first = false;
+    } else {
+      xmin = std::min(xmin, x);
+      xmax = std::max(xmax, x);
+      ymin = std::min(ymin, y);
+      ymax = std::max(ymax, y);
+    }
+  };
+
+  for (const FemmNode& n : m_problem->nodes)
+    expand(n.x, n.y);
+  for (const FemmBlockLabel& b : m_problem->blockLabels)
+    expand(b.x, b.y);
+  for (const FemmArcSegment& a : m_problem->arcSegments) {
+    if (a.n0 < 0 || a.n0 >= m_problem->nodes.size() || a.n1 < 0 || a.n1 >= m_problem->nodes.size())
+      continue;
+    const FemmNode& n0 = m_problem->nodes[a.n0];
+    const FemmNode& n1 = m_problem->nodes[a.n1];
+    double cx, cy, R, startAngleDeg;
+    if (arcGeometry(n0.x, n0.y, n1.x, n1.y, a.arcLength, cx, cy, R, startAngleDeg)) {
+      // Conservative: expands to the arc's full circle rather than just
+      // its actual swept portion (which would need the exact start/end
+      // angle range) -- a safe superset, and the difference only matters
+      // for a short arc cut from a very large circle, not a realistic
+      // case for this app's models.
+      expand(cx - R, cy - R);
+      expand(cx + R, cy + R);
+    } else {
+      // Degenerate arc (see arcGeometry's own early-return cases) --
+      // still make sure its endpoints themselves count.
+      expand(n0.x, n0.y);
+      expand(n1.x, n1.y);
+    }
+  }
+
+  if (first)
+    return QRectF();
+  return QRectF(QPointF(xmin, ymin), QPointF(xmax, ymax));
+}
+
 void GeometryScene::rebuild()
 {
   // Drop these BEFORE clear() -- clear() deletes every item directly and

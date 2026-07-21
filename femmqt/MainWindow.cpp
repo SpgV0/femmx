@@ -406,7 +406,7 @@ void MainWindow::openFile(const QString& path)
   m_problem = problem;
   m_currentPath = femPath;
   m_scene->setProblem(&m_problem);
-  m_view->fitInView(m_scene->itemsBoundingRect(), Qt::KeepAspectRatio);
+  m_view->fitInViewSafe(m_scene->computeProblemBounds());
   // After, not before, setProblem(): populating the scene calls setPos()
   // on every new NodeItem, which -- same as a real user drag -- fires
   // ItemPositionHasChanged -> onNodeMoved() -> problemEdited(), so a
@@ -1020,10 +1020,7 @@ void MainWindow::onZoomOut()
 
 void MainWindow::onZoomNatural()
 {
-  QRectF bounds = m_scene->itemsBoundingRect();
-  if (bounds.isEmpty())
-    return;
-  m_view->fitInView(bounds, Qt::KeepAspectRatio);
+  m_view->fitInViewSafe(m_scene->computeProblemBounds());
 }
 
 void MainWindow::onZoomWindowTriggered()
@@ -1033,7 +1030,7 @@ void MainWindow::onZoomWindowTriggered()
 
 void MainWindow::onZoomWindowSelected(QRectF sceneRect)
 {
-  m_view->fitInView(sceneRect, Qt::KeepAspectRatio);
+  m_view->fitInViewSafe(sceneRect);
   // Match the toolbar's radio buttons back to Select, which is what the
   // scene itself reverted to internally (see GeometryScene::
   // mouseReleaseEvent) -- Zoom Window isn't part of that QActionGroup (see

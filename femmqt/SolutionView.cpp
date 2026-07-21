@@ -780,6 +780,16 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
   m_legend->hide();
 }
 
+void SolutionGraphicsView::fitInViewSafe(const QRectF& rect)
+{
+  if (rect.isEmpty())
+    return;
+  QGraphicsView::ViewportAnchor prevAnchor = transformationAnchor();
+  setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+  fitInView(rect, Qt::KeepAspectRatio);
+  setTransformationAnchor(prevAnchor);
+}
+
 void SolutionGraphicsView::setLegendItem(MeshSolutionItem* item)
 {
   m_legendItem = item;
@@ -1226,7 +1236,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_contourPoints.clear();
   m_item = new MeshSolutionItem(&m_solution);
   m_scene->addItem(m_item);
-  m_view->fitInView(m_item->boundingRect(), Qt::KeepAspectRatio);
+  m_view->fitInViewSafe(m_item->boundingRect());
   m_view->updateAntialiasingForScale();
   m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
@@ -1914,7 +1924,7 @@ void SolutionWindow::onZoomOut()
 void SolutionWindow::onZoomNatural()
 {
   if (m_item)
-    m_view->fitInView(m_item->boundingRect(), Qt::KeepAspectRatio);
+    m_view->fitInViewSafe(m_item->boundingRect());
   m_view->updateAntialiasingForScale();
 }
 

@@ -37,6 +37,27 @@ class GeometryScene : public QGraphicsScene {
 
   void setProblem(FemmProblem* problem);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
+  // user report ("Zoom to fit... does not work") -- root-caused against a
+  // real 88k-node model whose true coordinate range was only ~0.03 units
+  // wide (a small transformer core, modeled in meters): QGraphicsScene::
+  // itemsBoundingRect() came back roughly 1000x too large (45x22 instead
+  // of ~0.035x0.066), because NodeItem/BlockLabelItem are flagged
+  // ItemIgnoresTransformations (so their marker stays a constant size on
+  // screen regardless of zoom) -- Qt has no active view transform to
+  // resolve their true screen size against when itemsBoundingRect() is
+  // called outside of a paint pass, so each marker's fixed PIXEL size
+  // gets treated as scene UNITS instead. That's invisible for models
+  // whose real extent is comparable to or larger than a marker's pixel
+  // size (every model this session had tested until now), but completely
+  // swamps one whose real extent is much smaller -- exactly this file.
+  // Bypasses the scene graph entirely: computes bounds straight from the
+  // data model (FemmProblem's node/block-label positions, plus each arc's
+  // true circle extent so a highly-bulged arc isn't clipped), which has
+  // no notion of "pixels" at all and is immune to this class of bug by
+  // construction -- also cheaper than walking ~200k QGraphicsItems.
+  QRectF computeProblemBounds() const;
+
   // Re-reads AppTheme's current colors into the scene background and every
   // existing item (via rebuild()) -- called after AppTheme::setDark()
   // toggles, since item colors are baked in at creation time rather than

@@ -228,6 +228,18 @@ class SolutionGraphicsView : public QGraphicsView {
   // Call after any operation that changes the view's scale.
   void updateAntialiasingForScale();
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // same fix as GeometryView::fitInViewSafe (see that declaration's
+  // comment for the full root-cause writeup, confirmed against a real
+  // 88k-node model) -- plain fitInView() still honors this view's
+  // AnchorUnderMouse transformationAnchor (needed for wheel-zoom), which
+  // re-centers on wherever the mouse happens to be, not the target rect,
+  // making "fit to view" silently wrong (in the reported case, "does
+  // nothing" visible) whenever the cursor isn't already over the canvas
+  // -- exactly the case right after opening a file. Swaps to
+  // AnchorViewCenter for the duration of the call.
+  void fitInViewSafe(const QRectF& rect);
+
   // Updates the floating cursor-following tooltip's text (position is
   // maintained internally, following the last mouse move) -- called by
   // SolutionWindow::onCanvasHovered once it's computed the field value,
