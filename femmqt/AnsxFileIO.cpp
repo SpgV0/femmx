@@ -191,7 +191,7 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
   return true;
 }
 
-bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QString& errorMessage)
+bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QString& errorMessage, int* coordSystemOut)
 {
   QFile file(ansxPath);
   if (!file.open(QIODevice::ReadOnly)) {
@@ -204,6 +204,8 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
     errorMessage = QStringLiteral("\"%1\" is not a valid .ansx file.").arg(ansxPath);
     return false;
   }
+  if (coordSystemOut)
+    *coordSystemOut = (int)header.coordSystem;
 
   solution = MeshSolution();
   solution.bMagMin = header.bMagMin;

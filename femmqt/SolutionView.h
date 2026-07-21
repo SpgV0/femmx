@@ -370,6 +370,17 @@ class SolutionWindow : public QMainWindow {
   SolutionGraphicsView* m_view = nullptr;
   MeshSolution m_solution;
   MeshSolutionItem* m_item = nullptr;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // classic FEMM labels the raw solved nodal potential differently by
+  // coordinate system -- "A ... Wb/m" (planar) vs "Flux ... Wb"
+  // (axisymmetric, femm/FemmviewView.cpp's DisplayPointProperties) --
+  // same underlying value (MeshSolutionNode::Are/Aim), no unit
+  // conversion needed, just the right label. Set once in openAnsFile
+  // from whichever load path ran (the slow .ans path already has a
+  // FemmProblem; the fast .ansx path gets it via readAnsx's coordSystem
+  // out-param) rather than re-reading the source file's header on every
+  // hover.
+  bool m_axisymmetric = false;
 
   SolutionToolMode m_toolMode = SolutionToolMode::None;
   QAction* m_pointToolAction = nullptr;

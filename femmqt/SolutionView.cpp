@@ -1189,8 +1189,11 @@ void SolutionWindow::openAnsFile(const QString& path)
   bool loadedFromAnsx = false;
 
   if (AnsxFileIO::isUpToDate(ansxPath, ansPath)) {
-    if (AnsxFileIO::readAnsx(ansxPath, m_solution, error))
+    int coordSystem = 0;
+    if (AnsxFileIO::readAnsx(ansxPath, m_solution, error, &coordSystem)) {
       loadedFromAnsx = true;
+      m_axisymmetric = (coordSystem == (int)FemmCoordinateType::Axisymmetric);
+    }
     // falls through to the slow .ans path below if the .ansx turned out
     // to be corrupt despite passing the staleness check
   }
@@ -1206,6 +1209,7 @@ void SolutionWindow::openAnsFile(const QString& path)
       QMessageBox::warning(this, "Open Failed", error);
       return;
     }
+    m_axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
     // Cache for next time -- best-effort: a failure here (e.g. a
     // read-only directory) shouldn't block viewing the solution we
     // already have loaded, just means no speedup next time.
@@ -1376,26 +1380,40 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
     double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
     double jMag = std::hypot(e.jRe, e.jIm);
-    statusText = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   A = %6")
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // per user correction ("for the A you do not have a unit") -- classic
+    // FEMM (femm/FemmviewView.cpp's DisplayPointProperties) labels this
+    // raw solved nodal value differently by coordinate system: "A ...
+    // Wb/m" for planar, "Flux ... Wb" for axisymmetric -- same value
+    // (MeshSolutionNode::Are/Aim, interpolated above), no conversion, just
+    // the right label/unit for whichever this solution is (m_axisymmetric,
+    // set once in openAnsFile).
+    const char* aLabel = m_axisymmetric ? "Flux" : "A";
+    const char* aUnit = m_axisymmetric ? "Wb" : "Wb/m";
+    statusText = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   %6 = %7 %8")
                      .arg(scenePos.x(), 0, 'g', 6)
                      .arg(scenePos.y(), 0, 'g', 6)
                      .arg(bMag, 0, 'g', 4)
                      .arg(hMag, 0, 'g', 4)
                      .arg(jMag, 0, 'g', 4)
-                     .arg(A.real(), 0, 'g', 4);
+                     .arg(aLabel)
+                     .arg(A.real(), 0, 'g', 4)
+                     .arg(aUnit);
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
     // the floating cursor tooltip (unlike the status bar, which stays a
     // single conventional line) is stacked one value per line per user
     // request ("have them one above another") -- the single-line version
     // was wide enough to run off the edge of the view at typical window
     // sizes.
-    tooltipText = QString("x = %1, y = %2\n|B| = %3 T\n|H| = %4 A/m\n|Js+Je| = %5 MA/m^2\nA = %6")
+    tooltipText = QString("x = %1, y = %2\n|B| = %3 T\n|H| = %4 A/m\n|Js+Je| = %5 MA/m^2\n%6 = %7 %8")
                       .arg(scenePos.x(), 0, 'g', 6)
                       .arg(scenePos.y(), 0, 'g', 6)
                       .arg(bMag, 0, 'g', 4)
                       .arg(hMag, 0, 'g', 4)
                       .arg(jMag, 0, 'g', 4)
-                      .arg(A.real(), 0, 'g', 4);
+                      .arg(aLabel)
+                      .arg(A.real(), 0, 'g', 4)
+                      .arg(aUnit);
   }
   m_positionLabel->setText(statusText);
   m_view->setTooltipText(tooltipText);
@@ -1446,12 +1464,17 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
     double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
     double jMag = std::hypot(e.jRe, e.jIm);
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // same A/Flux label+unit fix as onCanvasHovered -- see that method's
+    // comment.
+    QString aLabel = m_axisymmetric ? "Flux (re, im)" : "A (re, im)";
+    QString aUnit = m_axisymmetric ? "Wb" : "Wb/m";
 
     QDialog dlg(this);
     dlg.setWindowTitle("Point Properties");
     auto* form = new QFormLayout(&dlg);
     form->addRow("x, y:", new QLabel(QString("%1, %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6)));
-    form->addRow("A (re, im):", new QLabel(QString("%1, %2").arg(A.real(), 0, 'g', 6).arg(A.imag(), 0, 'g', 6)));
+    form->addRow(aLabel + ":", new QLabel(QString("%1, %2 %3").arg(A.real(), 0, 'g', 6).arg(A.imag(), 0, 'g', 6).arg(aUnit)));
     form->addRow("B1 (re, im):", new QLabel(QString("%1, %2").arg(e.B1re, 0, 'g', 6).arg(e.B1im, 0, 'g', 6)));
     form->addRow("B2 (re, im):", new QLabel(QString("%1, %2").arg(e.B2re, 0, 'g', 6).arg(e.B2im, 0, 'g', 6)));
     form->addRow("|B|:", new QLabel(QString("%1 T").arg(bMag, 0, 'g', 6)));
@@ -1463,7 +1486,7 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
-    appendOutput(QString("Point: x=%1, y=%2  A=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T  |H|=%10 A/m  |Js+Je|=%11 MA/m^2")
+    appendOutput(QString("Point: x=%1, y=%2  %12=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T  |H|=%10 A/m  |Js+Je|=%11 MA/m^2")
                       .arg(scenePos.x(), 0, 'g', 6)
                       .arg(scenePos.y(), 0, 'g', 6)
                       .arg(A.real(), 0, 'g', 6)
@@ -1474,7 +1497,8 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
                       .arg(e.B2im, 0, 'g', 6)
                       .arg(bMag, 0, 'g', 6)
                       .arg(hMag, 0, 'g', 6)
-                      .arg(jMag, 0, 'g', 6));
+                      .arg(jMag, 0, 'g', 6)
+                      .arg(m_axisymmetric ? "Flux" : "A"));
     dlg.exec();
     break;
   }
