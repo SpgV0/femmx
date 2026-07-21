@@ -764,9 +764,15 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
 #endif
 
   m_cursorTooltip = new QLabel(viewport());
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+  // was 11px in a single line -- per user request ("one above another
+  // and a little bit smaller font") now stacked (see onCanvasHovered's
+  // tooltipText) at 9px, which also needed line-height tightened a touch
+  // (Qt's default leaves noticeably more gap between lines than within
+  // a single line at this size) so 5 stacked lines don't look sparse.
   m_cursorTooltip->setStyleSheet(
       "QLabel { background-color: rgba(20, 20, 20, 200); color: white; "
-      "padding: 2px 5px; border-radius: 3px; font-size: 11px; }");
+      "padding: 2px 5px; border-radius: 3px; font-size: 9px; line-height: 120%; }");
   m_cursorTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
   m_cursorTooltip->hide();
 
@@ -1349,9 +1355,10 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
   m_hoverThrottle.restart();
 
   int elem = findContainingElement(scenePos);
-  QString text;
+  QString statusText, tooltipText;
   if (elem < 0) {
-    text = QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6);
+    statusText = QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6);
+    tooltipText = statusText;
   } else {
     std::complex<double> A = interpolateA(scenePos, elem);
     const MeshSolutionElement& e = m_solution.elements[elem];
@@ -1363,22 +1370,35 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
     // SolutionToolMode::Point case, below), which has the identical
     // formula; duplicated rather than shared since that case also breaks
     // H/J into re/im components for the dialog's extra rows, which this
-    // one-line tooltip has no room for.
+    // tooltip has no room for.
     constexpr double kMuo = 1.2566370614359173e-6;
     double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
     double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
     double jMag = std::hypot(e.jRe, e.jIm);
-    text = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   A = %6")
-               .arg(scenePos.x(), 0, 'g', 6)
-               .arg(scenePos.y(), 0, 'g', 6)
-               .arg(bMag, 0, 'g', 4)
-               .arg(hMag, 0, 'g', 4)
-               .arg(jMag, 0, 'g', 4)
-               .arg(A.real(), 0, 'g', 4);
+    statusText = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   A = %6")
+                     .arg(scenePos.x(), 0, 'g', 6)
+                     .arg(scenePos.y(), 0, 'g', 6)
+                     .arg(bMag, 0, 'g', 4)
+                     .arg(hMag, 0, 'g', 4)
+                     .arg(jMag, 0, 'g', 4)
+                     .arg(A.real(), 0, 'g', 4);
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+    // the floating cursor tooltip (unlike the status bar, which stays a
+    // single conventional line) is stacked one value per line per user
+    // request ("have them one above another") -- the single-line version
+    // was wide enough to run off the edge of the view at typical window
+    // sizes.
+    tooltipText = QString("x = %1, y = %2\n|B| = %3 T\n|H| = %4 A/m\n|Js+Je| = %5 MA/m^2\nA = %6")
+                      .arg(scenePos.x(), 0, 'g', 6)
+                      .arg(scenePos.y(), 0, 'g', 6)
+                      .arg(bMag, 0, 'g', 4)
+                      .arg(hMag, 0, 'g', 4)
+                      .arg(jMag, 0, 'g', 4)
+                      .arg(A.real(), 0, 'g', 4);
   }
-  m_positionLabel->setText(text);
-  m_view->setTooltipText(text);
+  m_positionLabel->setText(statusText);
+  m_view->setTooltipText(tooltipText);
 }
 
 void SolutionWindow::onPointToolTriggered()
