@@ -1072,21 +1072,21 @@ void MainWindow::onSetGridTriggered()
 
 void MainWindow::snapshotForUndo()
 {
-  m_undoSnapshot = m_problem;
-  m_hasUndo = true;
+  m_undoStack.push_back(m_problem);
+  if (m_undoStack.size() > kMaxUndoSteps)
+    m_undoStack.pop_front();
 }
 
 void MainWindow::onUndoTriggered()
 {
-  if (!m_hasUndo) {
+  if (m_undoStack.isEmpty()) {
     statusBar()->showMessage("Nothing to undo");
     return;
   }
-  m_problem = m_undoSnapshot;
-  m_hasUndo = false;
+  m_problem = m_undoStack.takeLast();
   m_scene->rebuild();
   markEdited();
-  statusBar()->showMessage("Undone");
+  statusBar()->showMessage(QString("Undone (%1 more step%2 available)").arg(m_undoStack.size()).arg(m_undoStack.size() == 1 ? "" : "s"));
 }
 
 void MainWindow::onMoveSelectedTriggered()

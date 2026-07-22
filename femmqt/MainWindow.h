@@ -105,11 +105,12 @@ class MainWindow : public QMainWindow {
   QString m_currentPath;
   bool m_dirty = false;
 
-  // Single-level undo, matching classic FEMM's own CFemmeDoc::UpdateUndo/
-  // Undo (a snapshot overwritten before each destructive op, not a full
-  // undo/redo stack) -- see snapshotForUndo()'s call sites.
-  FemmProblem m_undoSnapshot;
-  bool m_hasUndo = false;
+  // A bounded undo stack (up to kMaxUndoSteps snapshots), unlike classic
+  // FEMM's own CFemmeDoc::UpdateUndo/Undo (a single overwritten snapshot)
+  // -- see snapshotForUndo()'s call sites for what's covered. No redo:
+  // not requested, and classic FEMM doesn't have one either.
+  static constexpr int kMaxUndoSteps = 20;
+  QList<FemmProblem> m_undoStack;
 
   QAction* m_selectToolAction = nullptr;
   QAction* m_addNodeToolAction = nullptr;

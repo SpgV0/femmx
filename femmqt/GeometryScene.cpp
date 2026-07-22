@@ -152,7 +152,16 @@ bool arcGeometry(double x0, double y0, double x1, double y1, double arcLengthDeg
   double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
   cx = x0 + (d / 2.0 * tx - h * ty);
   cy = y0 + (d / 2.0 * ty + h * tx);
-  startAngleDeg = std::atan2(y0 - cy, x0 - cx) * 180.0 / M_PI;
+  // Qt's QPainterPath::arcTo measures angles with the y-axis effectively
+  // negated relative to plain math atan2/cos/sin (its documented example:
+  // 0 deg = 3 o'clock, 90 deg = 12 o'clock, even though scene y increases
+  // downward) -- so the angle that makes Qt's own point-at-angle formula
+  // reproduce (x0, y0) needs a negated y term here, not a plain atan2.
+  // Confirmed empirically: without this, a vertical 180-degree arc (e.g.
+  // an ABC shell circle's node pair) drew its curve correctly but ALSO
+  // grew a spurious straight bridge from the moveTo() point to the
+  // (wrong, y-mirrored) point Qt itself considered the arc's start.
+  startAngleDeg = std::atan2(-(y0 - cy), x0 - cx) * 180.0 / M_PI;
   return true;
 }
 

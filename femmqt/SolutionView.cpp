@@ -97,7 +97,9 @@ bool arcGeometry(double x0, double y0, double x1, double y1, double arcLengthDeg
   double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
   cx = x0 + (d / 2.0 * tx - h * ty);
   cy = y0 + (d / 2.0 * ty + h * tx);
-  startAngleDeg = std::atan2(y0 - cy, x0 - cx) * 180.0 / M_PI;
+  // Sign-flipped to match Qt's QPainterPath::arcTo angle convention -- see
+  // the matching fix/comment on GeometryScene.cpp's copy of this function.
+  startAngleDeg = std::atan2(-(y0 - cy), x0 - cx) * 180.0 / M_PI;
   return true;
 }
 
