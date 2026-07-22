@@ -797,34 +797,65 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
 
 void MeshSolutionItem::paintVector(QPainter* painter, const QRectF& exposedRect)
 {
-  // Fixed-length arrows at each element centroid showing Re(B) direction
-  // (see paintContour's Re(.) note) -- a qualitative field-direction plot,
-  // not scaled to physical magnitude (|B| already varies over orders of
-  // magnitude across a typical mesh, which would make a magnitude-scaled
-  // arrow plot mostly invisible/unreadably-huge in the same view).
-  double diag = std::hypot(m_bounds.width(), m_bounds.height());
-  double arrowLen = diag * 0.01;
+  // Fixed-length arrows at each SAMPLED element's centroid showing Re(B)
+  // direction (see paintContour's Re(.) note) -- a qualitative
+  // field-direction plot, not scaled to physical magnitude (|B| already
+  // varies over orders of magnitude across a typical mesh, which would
+  // make a magnitude-scaled arrow plot mostly invisible/unreadably-huge
+  // in the same view).
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
+  // user report ("the vector field looks weird in the trafo") -- this used
+  // to stride through m_solution->elements by a fixed ARRAY-INDEX step
+  // (elements.size()/3000) and size every arrow off the WHOLE model's
+  // diagonal. Both assumptions silently depend on the mesh being roughly
+  // spatially uniform, which real-world models routinely aren't (fine
+  // mesh around thin coil conductors, coarse mesh in the surrounding air,
+  // confirmed on the real transformer test file): index-order isn't
+  // spatial order, so a fixed stride can land nearly all of its samples
+  // inside one densely-meshed region and almost none in a coarse one, and
+  // a fixed global arrow length is wildly oversized relative to a fine
+  // region's actual feature size -- together this rendered as solid
+  // white blobs over the coils (many oversized, heavily overlapping
+  // arrows) and an almost-bare exterior (barely any samples landed
+  // there). Replaced with a fixed screen-space grid over exposedRect: one
+  // representative element per cell, arrow length scaled to the cell
+  // size rather than the whole model -- this guarantees even coverage of
+  // whatever's currently visible and arrows that never grossly overlap,
+  // regardless of how non-uniform the underlying mesh is, and (as a
+  // bonus, consistent with paintDensity's own zoom-adaptive behavior)
+  // zooming into a fine-mesh area now reveals more local detail instead
+  // of repeating the same oversized arrows.
+  if (exposedRect.width() <= 0 || exposedRect.height() <= 0)
+    return;
+  constexpr int kGridDim = 36;
+  double cellW = exposedRect.width() / kGridDim;
+  double cellH = exposedRect.height() / kGridDim;
+  if (cellW <= 0 || cellH <= 0)
+    return;
+  double arrowLen = std::min(cellW, cellH) * 0.4;
   if (arrowLen <= 0)
     return;
+
+  QVector<int> cellElement(kGridDim * kGridDim, -1);
+  for (int ei : elementsOverlapping(exposedRect)) {
+    const MeshSolutionElement& e = m_solution->elements[ei];
+    if (!exposedRect.contains(e.ctrX, e.ctrY))
+      continue;
+    int cx = std::clamp((int)((e.ctrX - exposedRect.left()) / cellW), 0, kGridDim - 1);
+    int cy = std::clamp((int)((e.ctrY - exposedRect.top()) / cellH), 0, kGridDim - 1);
+    cellElement[cy * kGridDim + cx] = ei; // last one found in this cell wins -- any representative is fine
+  }
 
   QPen pen(AppTheme::meshPointColor());
   pen.setCosmetic(true);
   pen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
   painter->setPen(pen);
 
-  // Sampling every element would be too dense to read -- skip through at
-  // a stride so roughly a few thousand arrows are drawn regardless of
-  // mesh size.
-  int stride = std::max(1, (int)(m_solution->elements.size() / 3000));
-  // Arrows extend up to arrowLen beyond the centroid, so grow the cull
-  // rect by that much rather than culling against the bare centroid --
-  // otherwise an arrow whose centroid is just outside the exposed rect
-  // but whose visible tip pokes into it would be skipped.
-  QRectF cullRect = exposedRect.adjusted(-arrowLen, -arrowLen, arrowLen, arrowLen);
-  for (int i = 0; i < m_solution->elements.size(); i += stride) {
-    const MeshSolutionElement& e = m_solution->elements[i];
-    if (!cullRect.contains(e.ctrX, e.ctrY))
+  for (int idx : cellElement) {
+    if (idx < 0)
       continue;
+    const MeshSolutionElement& e = m_solution->elements[idx];
     double bx = e.B1re, by = e.B2re;
     double mag = std::hypot(bx, by);
     if (mag <= 0)
