@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-22T04:43:21.391Z
+  modified: 2026-07-22T11:45:43.916Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -900,3 +900,165 @@ showed +25mm after the moves, +5mm after 20 undos (exactly 20 of 25
 recovered, confirming the cap evicts the oldest 5), and still +5mm
 unchanged after the 21st undo (confirming it correctly no-ops once the
 stack is empty rather than under- or over-shooting).
+
+## Round 14: batch (multi-select) property editing to match classic FEMM; a real matlib.dat parser bug found and fixed (2026-07-22)
+
+User: "make sure the selection and editing of the edges and node
+properties happens same way as in the old gui. Also make sure the
+material library drop down list works fine."
+
+**Selection/editing gap, found by reading femm/FemmeView.cpp +
+FemmeDoc.cpp cold rather than assuming femmqt already matched**: classic
+FEMM's actual convention is LEFT click = add geometry (mode-dependent),
+RIGHT click = toggle-select nearest item of the CURRENT mode's type,
+and **Space bar / Edit > Open Selected (ID_OPEN_SELECTED)** opens one
+property dialog for the ENTIRE current selection at once --
+`CFemmeDoc::OpNodeDlg`/`OpSegDlg`/`OpArcSegDlg`/`OpBlkDlg` each loop over
+every `IsSelected==TRUE` entry and apply the dialog's chosen values to
+all of them on OK, not just one. femmqt already had "Open Selected" as a
+menu item (matching the name) but `GeometryScene::selectedEntity`
+required exactly one selected item ("Select exactly one item first") --
+the batch-apply behavior itself was simply missing, and there was no
+Space-bar shortcut at all (classic binds it in `OnKeyDown`, not as a
+`QKeySequence` on a menu action, so nothing in femmqt's own menu/
+shortcut wiring would have surfaced this gap without reading classic's
+mouse/keyboard code directly).
+
+Fixed: `GeometryScene::selectedEntities(FemmItemKind&, QVector<int>&)`
+replaces `selectedEntity` -- true only when the selection is non-empty
+and every item is the same kind (mixed kinds can't happen in classic's
+own model, so mixed femmqt selections just get a clear "select entities
+of only one kind" message rather than an attempted guess). A new
+`GeometryScene::openSelectedRequested()` signal fires on `Key_Space`
+(`keyPressEvent`, alongside the existing Delete/Backspace handling),
+connected to `MainWindow::onOpenSelectedTriggered` -- same signal/slot
+pattern already used for `aboutToEdit`/`entityDoubleClicked` rather than
+hardcoding dialog logic in the scene. All four PropDialogs
+(`NodePropDialog`/`SegmentPropDialog`/`ArcPropDialog`/
+`BlockLabelPropDialog`) changed from taking a single `FemmXxx&` to a
+`QVector<FemmXxx*>`, replicating each classic `OpXxxDlg`'s own specific
+mixed-value rule (verified by reading `femm/FemmeDoc.cpp` line by line
+for each, not guessed): boundary/point-property mixed -> "<None>";
+mesh size mixed -> average across the batch (segments: automesh wins if
+ANY selected is on automesh); hidden mixed -> checked if ANY selected is
+hidden; group mixed -> 0. `BlockLabelPropDialog` needed its own twist:
+classic's mixed-material default ("<None>", index 0) isn't safely
+reusable here because index 0 in femmqt's combo is "<Hole>" (a
+deliberate earlier simplification, see Round 5) -- collapsing a mixed
+batch to "<Hole>" on an unattended OK would be destructive, so a mixed
+material/circuit instead shows a non-selectable "<Multiple>" placeholder
+and `onAccept()` only touches that field if the user actually moved off
+it, otherwise leaving each label's existing value untouched.
+`MainWindow::openEntityProperties(kind, indices)` is the new shared
+entry point both `onOpenSelectedTriggered` (whatever's selected) and
+`onEntityDoubleClicked` (a single hit-tested item, wrapped in a
+one-element `QVector`) funnel through, so double-click and Space bar/
+Open Selected now share one code path instead of two.
+
+**Verified live, all via UI automation with numeric/visual ground
+truth, not just code review**: (1) Ctrl+click-selected 2 segments
+(different indices, both initially unassigned), Space bar opened
+"Segment Properties (2 segments)" showing Boundary "<None>" (correctly
+uniform), set it to a real boundary, OK, saved, and read the `.fem`
+back -- both selected segments' `boundaryMarker` changed, the two
+unselected ones didn't. (2) Selected 1 node + 1 segment (mixed kinds),
+Space bar correctly showed "Select entities of only one kind..." instead
+of guessing. (3) Double-clicking a single segment still opens the
+unchanged-looking "Segment Properties" (no count suffix) dialog --
+confirms the shared-path refactor didn't regress the existing single-
+item flow.
+
+**Materials Library dropdown bug, found empirically not by inspection**:
+opening Problem > Materials Library and expanding into any category
+folder (e.g. Soft Magnetic Materials > Silicon Iron) showed a
+row of completely blank space where the actual material names should
+be -- but the rows were real: clicking a blank one and hitting "Add to
+Problem" correctly added the right material by name every time,
+proving the underlying data was fine and only the tree's own display
+text was missing. Spent real effort ruling out the wrong causes first
+(confirmed live): not a dark-theme color/contrast issue (a diagnostic
+pass explicitly forcing every tree item to bright red still showed nothing
+in those rows), not a stale-layout/repaint issue (`expandAll()` +
+`collapseAll()` at construction time, and manual scroll/resize, changed
+nothing). Root cause, found by reading `MaterialLibraryIO.cpp`'s
+`readChildren()`: for a folder child it sets `child.name` from
+`<FolderName>` (so folders display fine), but for a material/block
+child it only ever set `child.material.name` (from `<BlockName>`, via
+`readBlock()`) -- the outer `MaterialLibraryNode::name` field that
+`MaterialLibraryDialog::populateTree()` actually displays was simply
+never assigned for non-folder nodes, at any depth. Fixed with one line
+(`child.name = child.material.name;` right after a successful
+`readBlock()`). This means the feature was never fully visually usable
+before this fix (in the fast-iteration `build_qt/femmqt/Release/`
+target, which also lacked `bin/plain/matlib.dat` entirely until copied
+over for this round's testing -- same "install step's extra files don't
+follow the fast-iteration build target" pattern as `triangle.exe`,
+already documented in [[build_and_com_registration_gotchas]]) -- verified
+live after the fix: "Low Carbon Steel" now shows "1006 Steel"/"1010
+Steel"/"1018 Steel"/"1020 Steel"/"1117 Steel", all real grade names, in
+normal readable text.
+
+**Density Plot: invisible geometry overlay bug, root cause + fix
+(2026-07-22, commit `134a40c` on `new_features`, pushed).** User report:
+"show the geometry's edges together in the solution viewer, only the
+block labels are currently visible" -- reproduced on the real 1.5M-node
+transformer model (`mag_trafo_center_detailed_AC_a.ans`) in Density Plot
+mode: the segment/arc overlay (`paintProblemGeometry`, drawn last, on
+top) was rendering but effectively invisible; only the small node-marker
+squares (which the user called "block labels") showed. Root cause:
+`SolutionView.cpp`'s `bandColor()` was a fresh HSV "blue(240deg) ->
+red(0deg)" ramp -- band 0 (lowest value, dominant in any real model's
+low-magnitude background/air regions) was pure blue, colliding with
+`AppTheme::segmentColor()`/`arcColor()`'s own light-blue/light-green
+dark-theme colors. Confirmed via `femm/StdAfx.h`: classic FEMM's actual
+20-entry density palette (`dColor00..19`) runs magenta -> red -> orange
+-> yellow -> green -> cyan and deliberately never touches blue -- why
+classic's own near-identical dark-theme line color (`RGB(90,160,255)`,
+`femm/FemmviewView.cpp`) never had this problem. Fixed by porting that
+literal table (plus `dGrey00..19` for a new Greyscale toggle) in place
+of the HSV ramp -- verified via a before/after crop on the real model:
+before, zero visible boundary line against the fill; after, a clear blue
+line against the new magenta/orange/cyan palette. Same commit also added
+a "Density Plot Options..." dialog (Greyscale + a per-`DensityQuantity`
+opt-in custom Min/Max range, `MeshSolutionItem::setCustomRange`/
+`clearCustomRange` -- the existing zoom-adaptive auto-range stays
+default) and replaced the "average the 3 corners into one flat color"
+Smoothing approximation with classic's real marching-triangle band-
+slicing algorithm (`sliceTriangleIntoBands`/`appendEdgeCrossings` in
+`SolutionView.cpp`) -- confirmed classic does NOT use GDI's
+`GradientFill` (zero matches grepping all of `femm/` for
+`GradientFill`/`Gouraud`/`TRIVERTEX`), correcting a stale comment that
+had claimed otherwise.
+
+**UI-automation gotcha, cost most of a session to pin down: a
+`QMenu`'s native popup-tracking loop intermittently rejects synthetic
+input from a separate process, with no useful error.** Pattern: `click`
+to open a top-level menu (e.g. the View menu) always worked; a second
+`SetCursorPos` to click an item *inside* that open popup would
+frequently fail with `pywintypes.error: (0, 'SetCursorPos', 'No error
+message is available')` -- sometimes on the very first attempt,
+sometimes after several successful runs, with no code change in
+between (confirmed: the target process stayed alive and its window
+handle stayed valid throughout every failure, via `proc.poll()`/
+`win32gui.IsWindow` checks -- ruling out a crash). `keybd_event`-based
+Down+Enter navigation (instead of a second click) failed the same way,
+proving it isn't mouse-specific. `win32process.AttachThreadInput`
+(attaching this script's input queue to the target window's thread for
+the whole open-menu-then-click sequence, not just an initial
+foreground-steal) fixed it MOST of the time but not always -- the one
+combination that was reliable across many repeated attempts was
+AttachThreadInput *plus* a longer settle delay (>=1.5s, not the ~0.3-0.5s
+that had been fine for ordinary non-menu clicks all session) between the
+click that opens the menu and the click on an item inside it. Also
+observed once: a `QDialog` opened from inside one of these flaky
+sequences itself showed "(Not Responding)" in its own title bar with no
+real work happening -- almost certainly leftover confused input-queue
+state from a prior failed attempt in the same script, not a real hang
+(a completely fresh process + single continuous script recovered
+immediately). Takeaway for next time: for ANY click targeting something
+*inside* an already-open `QMenu`/popup in this app, default to
+`AttachThreadInput` wrapping the whole interaction plus a >=1.5s pause
+after opening the menu before clicking the item, and if a window or
+dialog ever shows "(Not Responding)" mid-automation-script with no
+plausible heavy computation to justify it, kill that process and start
+a fresh one rather than continuing to poke at the same stuck instance.
