@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-21T20:20:31.970Z
+  modified: 2026-07-22T04:43:21.391Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -824,3 +824,79 @@ capture) visually picked up one of those stale overlapping dialogs,
 making the fix look broken until the stale dialogs were found via
 `EnumWindows` and closed. Don't trust a "still broken" screenshot without
 checking what's actually still on screen from earlier test runs.
+
+## Round 13: spurious vertical line when arcs form a circle -- Qt's arcTo angle convention needed a sign flip; undo extended to a 20-step stack (2026-07-21/22)
+
+User reported a spurious straight line appearing when arcs are drawn to
+form a circle, in both the geometry editor and Solution Viewer, most
+visibly on ABC-boundary shell circles (e.g. `test/results/straight_wire_field/straight_wire_field.fem`'s outermost, boundary-marked shell pair).
+Root-caused via a minimal from-scratch repro (a 2-node, 1-or-2-arc `.fem`,
+isolating every variable the real file had -- mesh overlay, block labels,
+9 nested shells, etc.) rather than continuing to stare at the 20-arc
+file: a single 180-degree, exactly-vertical arc reproduced it standalone,
+proving the CURVE itself rendered correctly (both semicircle bulges
+present, correctly shaped) but grew an EXTRA straight bridging line from
+the `moveTo()` point to a second point.
+
+Cause: `arcGeometry()`'s `startAngleDeg = atan2(y0 - cy, x0 - cx)` used
+plain math atan2, but `QPainterPath::arcTo`'s own point-at-angle formula
+effectively negates the y-term (Qt's documented convention: 0 deg = 3
+o'clock, 90 deg = 12 o'clock, even though scene y increases downward --
+confirmed by deriving the y0=2*cy-y0 mirror relationship and checking it
+against Qt's own worked example). Whenever Qt's own arc-start point
+(computed from our `startAngleDeg` via ITS formula) didn't match the
+`moveTo()` point we'd already placed, Qt bridged the two with a straight
+line before drawing the curve. For a 180-degree, purely-vertical arc,
+the y-mirror of the start point lands EXACTLY on the opposite node --
+maximally visible as a full diametric line -- which is why this went
+unnoticed for non-vertical/non-180 arcs (the mismatch there is a shorter,
+easy-to-miss bridging segment or a wrong-bulge-direction curve, not a
+dramatic full-height line).
+
+Fix: negate the y-term -- `atan2(-(y0 - cy), x0 - cx)` -- applied
+identically to both independent copies of `arcGeometry()`
+(`GeometryScene.cpp` and `SolutionView.cpp`, per this codebase's
+established precedent of independent copies over a shared header, see
+Round 9's note on the same function). Verified empirically, not just by
+re-deriving the math again: (1) minimal 1-arc and 2-arc vertical repros
+both went from "curve + spurious diameter line" to "clean curve, no
+line"; (2) the real `straight_wire_field.fem` file, opened fresh (after
+deleting its stale `.femx` cache) with NO click performed, rendered with
+zero stray lines -- the earlier "still broken" screenshot in this same
+investigation turned out to be a SEPARATE artifact: the repro script's
+own diagnostic click (deliberately aimed at the old bug's line location)
+was landing on the now-correctly-positioned arc's edge and selecting it,
+and Qt's default dashed-selection-rectangle outline (one edge sitting
+exactly on the shared node x-coordinate) was being mistaken for a
+surviving version of the original bug; (3) an asymmetric, off-axis,
+non-90-degree arc (endpoints (30,5) and (10,25), 75-degree sweep)
+rendered identically in femmqt and the classic GUI (via COM automation
+screenshot comparison) -- confirms the fix produces the geometrically
+*correct* bulge direction, not merely "no visible line" for the
+symmetric cases that happened to be tested.
+
+Same session, follow-up request: extend `MainWindow`'s undo from a
+single overwritten snapshot (`m_undoSnapshot`/`m_hasUndo`, matching
+classic FEMM's own single-slot `CFemmeDoc::UpdateUndo`/`Undo`) to a
+20-step stack. Mechanical change -- `QList<FemmProblem> m_undoStack`
+capped at `kMaxUndoSteps = 20` (push in `snapshotForUndo()`, evicting the
+oldest via `pop_front()` once over the cap; `onUndoTriggered()` pops via
+`takeLast()`) -- covering the exact same 7 call sites as before (Create
+Radius, Create Open Boundary, Import DXF, Move/Copy/Scale/Mirror
+Selected, and Delete Selected via the `aboutToEdit` signal); still no
+redo (wasn't requested, and classic FEMM doesn't have one either).
+Verified two ways, both via UI automation with numeric ground truth
+(reading saved `.fem` node coordinates back, not just eyeballing
+screenshots): (1) 3 sequential single-node deletes followed by 4 Ctrl+Z
+presses showed the node count step correctly back up 2->3->4->5 with the
+status bar reporting "Undone (N more steps available)" at each step, and
+the 4th (extra) undo correctly reported "Nothing to undo"; (2) a 25-node
+file with 25 sequential `Move (+1,0)` operations (using a rubber-band
+re-select before each -- `rebuild()` after a move does not preserve the
+graphics-item selection state, so a stale selection would silently hit
+"Nothing selected" on the 2nd+ iteration if not re-selected) followed by
+21 Ctrl+Z presses: saving and reading the `.fem` back at each checkpoint
+showed +25mm after the moves, +5mm after 20 undos (exactly 20 of 25
+recovered, confirming the cap evicts the oldest 5), and still +5mm
+unchanged after the 21st undo (confirming it correctly no-ops once the
+stack is empty rather than under- or over-shooting).
