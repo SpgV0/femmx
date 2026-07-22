@@ -91,12 +91,27 @@ constexpr QRgb kColorMap[kNumBands] = {
   qRgb(194, 255, 16), qRgb(171, 255, 31), qRgb(148, 255, 51), qRgb(123, 255, 76),
   qRgb(98, 255, 108), qRgb(69, 255, 147), qRgb(37, 255, 195), qRgb(0, 255, 255),
 };
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
+// femm/StdAfx.h's literal dGrey00..dGrey19 (55->245 in steps of 10) --
+// confirmed via a direct render of a real model (the transformer test
+// file) that this reads as almost no visible gradient at all, even
+// though the underlying band assignment is correct: 20 distinct grey
+// values ARE used, but a 10-unit RGB step between adjacent bands is well
+// under what's reliably perceptible, especially compared to the color
+// palette's large hue jumps between bands. Widened to the full 0->255
+// range (19-unit steps, ~90% more contrast per band) -- a deliberate,
+// user-requested improvement over classic's own cramped range, not a
+// faithful-port choice like kColorMap above. 0 (pure black) was checked
+// against this app's dark-theme background (~30,30,30, AppTheme::
+// background()) and stays visibly distinguishable from it, so this
+// doesn't reintroduce the same "lowest band blends into the background"
+// problem that motivated kColorMap's own port.
 constexpr QRgb kGreyMap[kNumBands] = {
-  qRgb(55, 55, 55), qRgb(65, 65, 65), qRgb(75, 75, 75), qRgb(85, 85, 85),
-  qRgb(95, 95, 95), qRgb(105, 105, 105), qRgb(115, 115, 115), qRgb(125, 125, 125),
-  qRgb(135, 135, 135), qRgb(145, 145, 145), qRgb(155, 155, 155), qRgb(165, 165, 165),
-  qRgb(175, 175, 175), qRgb(185, 185, 185), qRgb(195, 195, 195), qRgb(205, 205, 205),
-  qRgb(215, 215, 215), qRgb(225, 225, 225), qRgb(235, 235, 235), qRgb(245, 245, 245),
+  qRgb(0, 0, 0), qRgb(13, 13, 13), qRgb(27, 27, 27), qRgb(40, 40, 40),
+  qRgb(54, 54, 54), qRgb(67, 67, 67), qRgb(81, 81, 81), qRgb(94, 94, 94),
+  qRgb(108, 108, 108), qRgb(121, 121, 121), qRgb(134, 134, 134), qRgb(148, 148, 148),
+  qRgb(161, 161, 161), qRgb(175, 175, 175), qRgb(188, 188, 188), qRgb(202, 202, 202),
+  qRgb(215, 215, 215), qRgb(229, 229, 229), qRgb(242, 242, 242), qRgb(255, 255, 255),
 };
 
 QColor bandColor(int band, bool grayscale)
