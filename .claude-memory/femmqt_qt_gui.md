@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-22T11:45:43.916Z
+  modified: 2026-07-22T14:14:12.780Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -1062,3 +1062,47 @@ after opening the menu before clicking the item, and if a window or
 dialog ever shows "(Not Responding)" mid-automation-script with no
 plausible heavy computation to justify it, kill that process and start
 a fresh one rather than continuing to poke at the same stuck instance.
+
+**Follow-up same day: greyscale contrast was genuinely too low, user
+caught it live (commit `9311573`).** After the palette-swap fix above,
+user directly tested and reported "I see no gradient" in Greyscale mode
+specifically -- initially suspected a code bug, but a from-scratch
+re-verification (sampling the real solved `|B|` field at 3600 points via
+the classic GUI's own `mo_getb`, not trusting screenshots) showed the
+20-band assignment itself was correct; the real problem was
+`kGreyMap`'s range, ported verbatim from `femm/StdAfx.h`'s
+`dGrey00..19` (55->245, 10-unit steps between bands) -- far below what's
+perceptible, especially next to the color palette's large hue jumps.
+Confirmed by directly rendering the real transformer model in Greyscale
+and looking at it: technically-correct-but-imperceptible banding, exactly
+matching the report. Fixed by widening to the full 0->255 range (~90%
+more contrast per band) -- a deliberate improvement beyond classic's own
+value, not a faithful-port choice (unlike the color table, which stayed
+verbatim). **Lesson: when a user directly disputes something you already
+called "verified," re-derive from first principles (real data, direct
+code re-reading) rather than defending the earlier screenshot-based
+verification -- this session's automation was flaky enough (see above)
+that an earlier "successful" verification screenshot is not strong
+evidence on its own.**
+
+**Also confirmed this round: verifying a UI default via live automation
+can be sidestepped entirely by temporarily changing the C++ default
+value, rebuilding, and screenshotting a fresh launch -- no menu
+interaction needed at all.** Used this after the interactive
+Greyscale-checkbox toggle failed repeatedly across mouse clicks, Tab/
+Space keyboard nav (initial dialog focus turned out to land on the
+"Automatic" radio button, not the first-added checkbox -- Qt's initial-
+focus choice does not necessarily match widget creation order), and
+direct dialog-hwnd targeting -- all while the dialog and/or main window
+intermittently either silently no-op'd or showed "(Not Responding)".
+Temporarily flipped `MeshSolutionItem::m_mode`'s default to `Density` and
+`m_grayscale`'s default to `true` in `SolutionView.h`, rebuilt, launched
+fresh (zero interaction needed beyond waiting for load), screenshotted,
+then reverted both defaults and rebuilt again before committing --
+verified the revert was exact via `git diff` showing zero changes to
+that file. For a huge model (the 3M-element transformer file), this
+also needs the load-wait lesson from earlier in this doc: a short/naive
+CPU-stability check gives false positives mid-construction (seen again
+this round, a "stable" reading after only 39s when the real settle point
+was 150s+) -- prefer `Get-Process`'s own `.Responding` flag polled every
+few seconds over guessing from `cpu_times()` deltas.
