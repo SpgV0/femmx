@@ -6,6 +6,7 @@
 #include "AppTheme.h"
 #include "BHCurveDialog.h"
 #include "CircuitAnalysis.h"
+#include "DensityPlotOptionsDialog.h"
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
@@ -66,15 +67,112 @@ constexpr int kNumBands = 20;
 // painter's current scale rather than used as a scene-space radius directly.
 constexpr double kMeshPointScreenRadius = 2.5;
 
-// Simple fixed "cold to hot" colormap (blue -> cyan -> green -> yellow ->
-// red), band 0 = lowest |B|, band 19 = highest -- a fresh, Qt-side
-// implementation of the same color-banding concept as
-// femm/FemmviewView.cpp's PlotFluxDensity, not shared code (matches this
-// phase's scope: no Preferences-configurable legend colors yet).
-QColor bandColor(int band)
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was a
+// fresh HSV "blue -> cyan -> green -> yellow -> red" ramp (band 0 = pure
+// blue). Replaced with femm/StdAfx.h's actual dColor00..dColor19 table --
+// found while debugging a user report that geometry edges disappear
+// against the density fill on a real-world model: this app's overlay line
+// colors (AppTheme::segmentColor/arcColor) are light blue/light green,
+// which silently collided with the old ramp's own blue/cyan low-value
+// bands whenever a model's field is dominated by low-magnitude regions
+// (background/air, common in any real model). Classic's palette runs
+// magenta (band 0, lowest) -> red -> orange -> yellow -> green -> cyan
+// (band 19, highest) and deliberately never passes through blue, which is
+// exactly why the classic GUI's own near-identical dark-theme LineColor
+// (RGB 90,160,255, femm/FemmviewView.cpp) has never had this problem
+// against its density plots. greymap is femm/StdAfx.h's dGrey00..dGrey19
+// (linear 55->245), selected by the Greyscale toggle (setGrayscale) --
+// same simple palette-table swap classic's own GreyContours flag does in
+// CFemmviewView::OnDraw, not a separate rendering path.
+constexpr QRgb kColorMap[kNumBands] = {
+  qRgb(255, 0, 255), qRgb(255, 37, 195), qRgb(255, 69, 147), qRgb(255, 98, 108),
+  qRgb(255, 123, 76), qRgb(255, 148, 51), qRgb(255, 171, 31), qRgb(255, 194, 16),
+  qRgb(255, 217, 6), qRgb(255, 242, 1), qRgb(242, 255, 1), qRgb(217, 255, 6),
+  qRgb(194, 255, 16), qRgb(171, 255, 31), qRgb(148, 255, 51), qRgb(123, 255, 76),
+  qRgb(98, 255, 108), qRgb(69, 255, 147), qRgb(37, 255, 195), qRgb(0, 255, 255),
+};
+constexpr QRgb kGreyMap[kNumBands] = {
+  qRgb(55, 55, 55), qRgb(65, 65, 65), qRgb(75, 75, 75), qRgb(85, 85, 85),
+  qRgb(95, 95, 95), qRgb(105, 105, 105), qRgb(115, 115, 115), qRgb(125, 125, 125),
+  qRgb(135, 135, 135), qRgb(145, 145, 145), qRgb(155, 155, 155), qRgb(165, 165, 165),
+  qRgb(175, 175, 175), qRgb(185, 185, 185), qRgb(195, 195, 195), qRgb(205, 205, 205),
+  qRgb(215, 215, 215), qRgb(225, 225, 225), qRgb(235, 235, 235), qRgb(245, 245, 245),
+};
+
+QColor bandColor(int band, bool grayscale)
 {
-  double t = band / (double)(kNumBands - 1); // 0..1
-  return QColor::fromHsvF((1.0 - t) * 0.667, 1.0, 1.0); // hue 240deg(blue) -> 0deg(red)
+  band = std::clamp(band, 0, kNumBands - 1);
+  return QColor::fromRgb(grayscale ? kGreyMap[band] : kColorMap[band]);
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
+// user request ("in the old gui I think the heatmaps looks smoother, can
+// you have an option for that and check how that is implemented") --
+// femm/FemmviewView.cpp's PlotFluxDensity does NOT use GDI's GradientFill
+// (confirmed via an exhaustive grep of the whole femm/ tree for
+// GradientFill/Gouraud/TRIVERTEX -- zero matches). It marching-triangle
+// slices each element into up to kNumBands flat-colored sub-polygons
+// hugging the exact iso-value lines of its 3 corners' values, instead of
+// filling the whole triangle with one flat color -- what femmqt's
+// m_smooth previously did (band on the AVERAGE of the 3 corners) softened
+// element-to-element steps but not the coarse, one-color-per-whole-
+// element blockiness within a single element that's straddling several
+// bands, which is what actually reads as "smooth" in the classic GUI at
+// typical zoom levels. appendEdgeCrossings walks one triangle edge from
+// (pA,vA) to (pB,vB) in "band space" (vA/vB already rescaled to
+// 0..kNumBands) and appends every INTEGER level strictly between them, in
+// the order encountered, as (position, level) pairs -- linear
+// interpolation of POSITION at the same parameter t as the value crossing.
+void appendEdgeCrossings(QPointF pA, double vA, QPointF pB, double vB, QVector<QPair<QPointF, double>>& out)
+{
+  if (vA == vB)
+    return;
+  int lvlLo = (int)std::floor(std::min(vA, vB)) + 1;
+  int lvlHi = (int)std::ceil(std::max(vA, vB)) - 1;
+  if (vA < vB) {
+    for (int L = lvlLo; L <= lvlHi; L++)
+      out.push_back({ pA + (L - vA) / (vB - vA) * (pB - pA), (double)L });
+  } else {
+    for (int L = lvlHi; L >= lvlLo; L--)
+      out.push_back({ pA + (L - vA) / (vB - vA) * (pB - pA), (double)L });
+  }
+}
+
+// Slices one triangle (corners p0/p1/p2, each with a value already
+// rescaled to band-space 0..kNumBands) into flat-colored sub-polygons,
+// adding each to the matching bandPaths[] entry -- femm/FemmviewView.cpp's
+// exact algorithm: walk the 3 edges collecting corners + every integer
+// crossing into a perimeter-ordered polygon, then repeatedly ear-clip the
+// LOWEST-value remaining vertex together with its two cyclic neighbors
+// into one flat-colored sub-triangle (banded on their 3-value mean) until
+// only 2 vertices remain. Produces up to ~kNumBands thin slivers per
+// element, each following the iso-value lines exactly, rather than one
+// flat color for the whole triangle.
+void sliceTriangleIntoBands(QPointF p0, double v0, QPointF p1, double v1, QPointF p2, double v2, QPainterPath bandPaths[])
+{
+  QVector<QPair<QPointF, double>> perim;
+  perim.reserve(9);
+  QPointF pts[3] = { p0, p1, p2 };
+  double vals[3] = { v0, v1, v2 };
+  for (int i = 0; i < 3; i++) {
+    perim.push_back({ pts[i], vals[i] });
+    appendEdgeCrossings(pts[i], vals[i], pts[(i + 1) % 3], vals[(i + 1) % 3], perim);
+  }
+  while (perim.size() > 2) {
+    int n = perim.size();
+    int idx = 0;
+    for (int i = 1; i < n; i++)
+      if (perim[i].second < perim[idx].second)
+        idx = i;
+    int prev = (idx - 1 + n) % n;
+    int next = (idx + 1) % n;
+    double meanV = (perim[prev].second + perim[idx].second + perim[next].second) / 3.0;
+    int band = std::clamp((int)std::floor(meanV), 0, kNumBands - 1);
+    QPolygonF tri;
+    tri << perim[prev].first << perim[idx].first << perim[next].first;
+    bandPaths[band].addPolygon(tri);
+    perim.remove(idx);
+  }
 }
 
 // Same math as GeometryScene.cpp's own arcGeometry() -- an independent
@@ -311,13 +409,70 @@ void MeshSolutionItem::setPlotMode(PlotMode mode)
 void MeshSolutionItem::setDensityQuantity(DensityQuantity q)
 {
   m_densityQuantity = q;
-  // Reset to this quantity's global range immediately -- otherwise the
-  // legend would briefly show the PREVIOUS quantity's cached local range
-  // (wrong units/scale entirely) until the next paintDensity() call
-  // overwrites it.
-  m_lastDensityLo = m_quantityData[static_cast<int>(q)].vMin;
-  m_lastDensityHi = m_quantityData[static_cast<int>(q)].vMax;
+  // Reset the legend's displayed range immediately -- otherwise it would
+  // briefly show the PREVIOUS quantity's cached range (wrong units/scale
+  // entirely) until the next paintDensity() call overwrites it. Prefers
+  // this quantity's own custom range if one was set (setCustomRange),
+  // matching classic's per-quantity PlotBounds persistence; falls back to
+  // the whole-mesh auto range otherwise.
+  int idx = static_cast<int>(q);
+  if (m_useCustomRange[idx]) {
+    m_lastDensityLo = m_customLo[idx];
+    m_lastDensityHi = m_customHi[idx];
+  } else {
+    m_lastDensityLo = m_quantityData[idx].vMin;
+    m_lastDensityHi = m_quantityData[idx].vMax;
+  }
   update();
+}
+
+void MeshSolutionItem::setGrayscale(bool on)
+{
+  m_grayscale = on;
+  update();
+}
+
+bool MeshSolutionItem::hasCustomRange(DensityQuantity q) const
+{
+  return m_useCustomRange[static_cast<int>(q)];
+}
+
+void MeshSolutionItem::customRange(DensityQuantity q, double& lo, double& hi) const
+{
+  int idx = static_cast<int>(q);
+  lo = m_customLo[idx];
+  hi = m_customHi[idx];
+}
+
+void MeshSolutionItem::setCustomRange(DensityQuantity q, double lo, double hi)
+{
+  int idx = static_cast<int>(q);
+  m_useCustomRange[idx] = true;
+  m_customLo[idx] = lo;
+  m_customHi[idx] = hi;
+  if (q == m_densityQuantity) {
+    m_lastDensityLo = lo;
+    m_lastDensityHi = hi;
+  }
+  update();
+}
+
+void MeshSolutionItem::clearCustomRange(DensityQuantity q)
+{
+  int idx = static_cast<int>(q);
+  m_useCustomRange[idx] = false;
+  if (q == m_densityQuantity) {
+    m_lastDensityLo = m_quantityData[idx].vMin;
+    m_lastDensityHi = m_quantityData[idx].vMax;
+  }
+  update();
+}
+
+void MeshSolutionItem::densityQuantityAutoRange(DensityQuantity q, double& lo, double& hi) const
+{
+  const QuantityData& qd = m_quantityData[static_cast<int>(q)];
+  lo = qd.vMin;
+  hi = qd.vMax;
 }
 
 int MeshSolutionItem::legendBandCount()
@@ -325,9 +480,9 @@ int MeshSolutionItem::legendBandCount()
   return kNumBands;
 }
 
-QColor MeshSolutionItem::legendBandColor(int band)
+QColor MeshSolutionItem::legendBandColor(int band) const
 {
-  return bandColor(band);
+  return bandColor(band, m_grayscale);
 }
 
 void MeshSolutionItem::legendRange(double& lo, double& hi) const
@@ -443,7 +598,17 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
   // check below is kept as a cheap correctness backstop (a cell can hold
   // elements whose bbox pokes into it but not into the exact query rect).
   QVector<int> visible = elementsOverlapping(exposedRect);
-  {
+  int qIdx = static_cast<int>(m_densityQuantity);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: a
+  // custom range (Density Plot Options -> Custom Range) is a fixed,
+  // user-chosen override -- skip the zoom-adaptive local-range scan
+  // entirely rather than compute it and then discard it, both because
+  // it's pointless work and because it's the more expensive of
+  // paintDensity's two per-visible-element passes on a huge mesh.
+  if (m_useCustomRange[qIdx]) {
+    lo = m_customLo[qIdx];
+    hi = m_customHi[qIdx];
+  } else {
     bool first = true;
     for (int ei : visible) {
       const MeshSolutionElement& e = m_solution->elements[ei];
@@ -505,28 +670,33 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
     if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
       continue;
 
-    // Smooth: band on the average of the 3 corners' node-averaged value
-    // instead of this element's own single value -- see QuantityData's
-    // header comment.
-    double bMag = m_smooth
-        ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
-        : elementQuantity(e, m_densityQuantity);
-    int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
-    if (band >= kNumBands)
-      band = kNumBands - 1;
-    if (band < 0)
-      band = 0;
+    if (m_smooth && span > 0) {
+      // Marching-triangle band slicing on the 3 corners' individual
+      // node-averaged values -- see sliceTriangleIntoBands' comment. This
+      // is what actually produces the smooth-gradient look (continuity
+      // across shared nodes via nodeAvg, fine intra-element banding via
+      // the slicing itself), not just averaging the 3 corners into one
+      // flat color the way this branch used to.
+      double bv0 = (qd.nodeAvg[e.p0] - bMin) / span * kNumBands;
+      double bv1 = (qd.nodeAvg[e.p1] - bMin) / span * kNumBands;
+      double bv2 = (qd.nodeAvg[e.p2] - bMin) / span * kNumBands;
+      sliceTriangleIntoBands(QPointF(n0.x, n0.y), bv0, QPointF(n1.x, n1.y), bv1, QPointF(n2.x, n2.y), bv2, bandPaths);
+    } else {
+      double bMag = m_smooth ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0 : elementQuantity(e, m_densityQuantity);
+      int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
+      band = std::clamp(band, 0, kNumBands - 1);
 
-    QPolygonF tri;
-    tri << QPointF(n0.x, n0.y) << QPointF(n1.x, n1.y) << QPointF(n2.x, n2.y);
-    bandPaths[band].addPolygon(tri);
+      QPolygonF tri;
+      tri << QPointF(n0.x, n0.y) << QPointF(n1.x, n1.y) << QPointF(n2.x, n2.y);
+      bandPaths[band].addPolygon(tri);
+    }
   }
 
   painter->setPen(Qt::NoPen);
   for (int b = 0; b < kNumBands; b++) {
     if (bandPaths[b].isEmpty())
       continue;
-    painter->setBrush(bandColor(b));
+    painter->setBrush(bandColor(b, m_grayscale));
     painter->drawPath(bandPaths[b]);
   }
 }
@@ -854,7 +1024,7 @@ class SolutionLegendWidget : public QWidget {
     for (int row = 0; row < bandCount; row++) {
       int band = bandCount - 1 - row;
       QRect swatch(kMargin, y, kSwatchWidth, kRowHeight - 1);
-      painter.fillRect(swatch, MeshSolutionItem::legendBandColor(band));
+      painter.fillRect(swatch, m_item->legendBandColor(band));
       double bandLo = lo + band * span;
       double bandHi = lo + (band + 1) * span;
       QString label = band == bandCount - 1
@@ -1182,6 +1352,12 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   addDensityQtyAction("log10(|B|)", MeshSolutionItem::DensityQuantity::LogBMag, false);
   addDensityQtyAction("|H| (Amp/m)", MeshSolutionItem::DensityQuantity::HMag, false);
   addDensityQtyAction("|Js+Je| (MA/m^2)", MeshSolutionItem::DensityQuantity::JMag, false);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
+  // user request ("I think the density plots have more options (greyscale,
+  // range ...)") -- see DensityPlotOptionsDialog for the classic-dialog
+  // fields this ports (femm/cv_DPlotDlg2.h's cvCDPlotDlg2).
+  viewMenu->addAction("Density Plot &Options...", this, &SolutionWindow::onDensityOptionsTriggered);
 
   QAction* smoothAction = viewMenu->addAction("&Smoothing");
   smoothAction->setCheckable(true);
@@ -1908,6 +2084,17 @@ void SolutionWindow::onReloadTriggered()
     return;
   }
   openAnsFile(m_currentPath);
+}
+
+void SolutionWindow::onDensityOptionsTriggered()
+{
+  if (!m_item) {
+    QMessageBox::information(this, "Density Plot Options", "No solution loaded.");
+    return;
+  }
+  DensityPlotOptionsDialog dlg(m_item, this);
+  if (dlg.exec() == QDialog::Accepted)
+    m_view->refreshLegend();
 }
 
 void SolutionWindow::onProblemInfoTriggered()

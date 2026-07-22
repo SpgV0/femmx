@@ -84,6 +84,30 @@ class MeshSolutionItem : public QGraphicsItem {
   // matching femm.rc's own "|Js+Je|, MA/m^2" label and units.
   enum class DensityQuantity { BMag, BReMag, BImMag, LogBMag, HMag, JMag };
   void setDensityQuantity(DensityQuantity q);
+  DensityQuantity densityQuantity() const { return m_densityQuantity; }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
+  // user request ("I think the density plots have more options (greyscale,
+  // range ...)") -- ports femm/cv_DPlotDlg2.h's cvCDPlotDlg2 dialog fields
+  // (m_gscale, PlotBounds[]/d_PlotBounds[]) onto the Qt side. Greyscale is
+  // a global toggle (matches classic's GreyContours, one setting for
+  // whichever quantity is plotted); the custom range is tracked PER
+  // quantity (matches classic's PlotBounds[quantity][0/1], persisted
+  // separately per quantity so switching Density Quantity doesn't clobber
+  // a range set for a different one) and is an OPT-IN override -- when not
+  // set, paintDensity() keeps its existing zoom-adaptive auto-range
+  // behavior (see that method's own long-standing comment) unchanged.
+  void setGrayscale(bool on);
+  bool grayscale() const { return m_grayscale; }
+  bool hasCustomRange(DensityQuantity q) const;
+  void customRange(DensityQuantity q, double& lo, double& hi) const;
+  void setCustomRange(DensityQuantity q, double lo, double hi);
+  void clearCustomRange(DensityQuantity q);
+  // The quantity's full (whole-mesh) auto range -- what "Reset Bounds"
+  // reverts to in classic FEMM's dialog (cvCDPlotDlg2::OnResbtn2) and what
+  // this dialog prefills a custom-range field with the first time it's
+  // opened for a quantity that has no custom range set yet.
+  void densityQuantityAutoRange(DensityQuantity q, double& lo, double& hi) const;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // exposed so SolutionLegendWidget (SolutionView.cpp) can draw the
@@ -93,7 +117,11 @@ class MeshSolutionItem : public QGraphicsItem {
   // scene-space paint(), so it needs its own small widget rather than
   // being drawn from within paint() itself.
   static int legendBandCount();
-  static QColor legendBandColor(int band);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
+  // static -- now depends on m_grayscale (the greyscale toggle above), so
+  // it needs an instance. SolutionLegendWidget already holds a
+  // MeshSolutionItem* (m_item) and calls through it instead.
+  QColor legendBandColor(int band) const;
   void legendRange(double& lo, double& hi) const;
   QString legendTitle() const;
   PlotMode plotMode() const { return m_mode; }
@@ -168,6 +196,11 @@ class MeshSolutionItem : public QGraphicsItem {
   PlotMode m_mode = PlotMode::Contour;
   DensityQuantity m_densityQuantity = DensityQuantity::BMag;
   bool m_smooth = true;
+  // See setGrayscale/setCustomRange's declarations above.
+  bool m_grayscale = false;
+  bool m_useCustomRange[6] = { false, false, false, false, false, false };
+  double m_customLo[6] = { 0, 0, 0, 0, 0, 0 };
+  double m_customHi[6] = { 0, 0, 0, 0, 0, 0 };
   bool m_showMesh = false;
   bool m_showPoints = false;
   const FemmProblem* m_problemGeometry = nullptr;
@@ -196,13 +229,16 @@ class MeshSolutionItem : public QGraphicsItem {
   // min/max so the legend always matches what's actually on screen.
   double m_lastDensityLo = 0, m_lastDensityHi = 0;
 
-  // femm/FemmviewView.cpp's "Smooth" option colors each triangle using
-  // its 3 corner nodes' values (via GDI's GradientFill) instead of one
-  // flat per-element value; Qt's QPainter has no equivalent triangle-
-  // gradient primitive, so this approximates it by banding on the
-  // *average* of the 3 corner nodes' values instead of the element's own
-  // single value -- softens the element-to-element steps at shared edges
-  // without needing per-pixel rasterization.
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
+  // "via GDI's GradientFill" -- confirmed FALSE via an exhaustive grep of
+  // femm/ for GradientFill/Gouraud/TRIVERTEX (zero matches). classic's
+  // "Smooth" option (femm/FemmviewView.cpp's PlotFluxDensity) instead
+  // feeds each triangle's 3 corner NODE-AVERAGED values (vs. the
+  // element's own single raw value when off) into a marching-triangle
+  // band slicer that cuts the triangle into several flat-colored
+  // sub-polygons along the exact iso-value lines between those 3 corner
+  // values -- see paintDensity()'s use of sliceTriangleIntoBands
+  // (SolutionView.cpp) for the ported version of that slicer.
   double elementQuantity(const MeshSolutionElement& e, DensityQuantity q) const;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -337,6 +373,7 @@ class SolutionWindow : public QMainWindow {
   void onProblemInfoTriggered();
   void onCircuitPropsTriggered();
   void onBhCurvesTriggered();
+  void onDensityOptionsTriggered();
   void onZoomIn();
   void onZoomOut();
   void onZoomNatural();

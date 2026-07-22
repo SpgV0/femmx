@@ -126,6 +126,8 @@ qt_add_executable(femmqt WIN32
   CircuitAnalysis.cpp
   HoverTooltip.h
   HoverTooltip.cpp
+  DensityPlotOptionsDialog.h
+  DensityPlotOptionsDialog.cpp
   icons.qrc
 )
 
