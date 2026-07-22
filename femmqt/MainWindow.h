@@ -90,6 +90,13 @@ class MainWindow : public QMainWindow {
   bool hasAppliedPeriodicBoundary() const;
   void markEdited();
   void snapshotForUndo();
+  // Shared by onEntityDoubleClicked (a single-item selection) and
+  // onOpenSelectedTriggered (whatever's currently selected, possibly
+  // more than one item of the same kind) -- constructs the right
+  // PropDialog with pointers into m_problem's own storage for `indices`
+  // and applies it. Matches femm.rc's ID_OPEN_SELECTED semantics -- see
+  // GeometryScene::selectedEntities' comment.
+  void openEntityProperties(FemmItemKind kind, const QVector<int>& indices);
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
   void refreshToolbarIcons();

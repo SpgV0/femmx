@@ -597,6 +597,15 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
 
   QPen pen(AppTheme::meshPointColor());
   pen.setCosmetic(true);
+  // Width 0, not the QPen(color) ctor's default of 1 -- see
+  // GeometryScene.cpp's addNodeItem for the full explanation. This is the
+  // pen behind the reported "field lines are magnified" bug on a real,
+  // detailed model: a cosmetic pen with a nonzero logical width goes
+  // through general stroke tessellation (computing an offset via the
+  // transform's inverse scale), which loses precision at the extreme
+  // accumulated zoom fine wire-level detail can require; width exactly 0
+  // uses Qt's simpler, more robust hairline path instead.
+  pen.setWidth(0);
   painter->setPen(pen);
   painter->drawPath(path);
 }
@@ -615,6 +624,7 @@ void MeshSolutionItem::paintVector(QPainter* painter, const QRectF& exposedRect)
 
   QPen pen(AppTheme::meshPointColor());
   pen.setCosmetic(true);
+  pen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
   painter->setPen(pen);
 
   // Sampling every element would be too dense to read -- skip through at
@@ -674,6 +684,7 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposed
     }
     QPen pen(AppTheme::meshLineColor());
     pen.setCosmetic(true);
+    pen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
     painter->setPen(pen);
     painter->drawPath(path);
   }
@@ -723,6 +734,7 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
 
   QPen segPen(AppTheme::segmentColor());
   segPen.setCosmetic(true);
+  segPen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
   painter->setPen(segPen);
   QPainterPath segPath;
   for (const FemmSegment& seg : problem.segments) {
@@ -741,6 +753,7 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
 
   QPen arcPen(AppTheme::arcColor());
   arcPen.setCosmetic(true);
+  arcPen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
   painter->setPen(arcPen);
   QPainterPath arcPath;
   for (const FemmArcSegment& arc : problem.arcSegments) {
@@ -764,6 +777,7 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
   double half = 2.5 / std::max(screenScale, 1e-9);
   QPen nodePen(AppTheme::nodeColor());
   nodePen.setCosmetic(true);
+  nodePen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
   painter->setPen(nodePen);
   painter->setBrush(Qt::NoBrush);
   QRectF cullRect = exposedRect.adjusted(-half, -half, half, half);
@@ -1357,6 +1371,7 @@ void SolutionWindow::openAnsFile(const QString& path)
     // above -- reuse it directly rather than re-parsing the file again
     // below.
     m_problemGeometry = problem;
+    m_geometryOverlayError.clear();
   } else {
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
     // the .ansx cache only ever stored the solved MESH (that's the whole
@@ -1370,9 +1385,14 @@ void SolutionWindow::openAnsFile(const QString& path)
     // huge) trailing [Solution] mesh section it doesn't need, so this
     // doesn't undermine .ansx's whole "skip the huge mesh reparse" point.
     // A failure here shouldn't block viewing the solution we already
-    // have loaded -- it just means no geometry overlay this time.
-    QString geomError;
-    FemmFileIO::readFem(ansPath, m_problemGeometry, geomError);
+    // have loaded -- it just means no geometry overlay this time. Still
+    // recorded (see the status-bar message below) rather than swallowed
+    // outright -- a silent gap here previously looked indistinguishable
+    // from "there's no geometry to show," which isn't true for any real
+    // .fem-backed .ans.
+    m_problemGeometry = FemmProblem();
+    if (!FemmFileIO::readFem(ansPath, m_problemGeometry, m_geometryOverlayError))
+      m_problemGeometry = FemmProblem(); // readFem may have partially populated it before failing
   }
 
   qint64 elapsedMs = timer.elapsed();
@@ -1389,14 +1409,17 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
 
-  statusBar()->showMessage(QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")
-                                .arg(path)
-                                .arg(m_solution.nodes.size())
-                                .arg(m_solution.elements.size())
-                                .arg(m_solution.bMagMin, 0, 'g', 4)
-                                .arg(m_solution.bMagMax, 0, 'g', 4)
-                                .arg(loadedFromAnsx ? ".ansx" : ".ans")
-                                .arg(elapsedMs));
+  QString statusMsg = QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")
+                           .arg(path)
+                           .arg(m_solution.nodes.size())
+                           .arg(m_solution.elements.size())
+                           .arg(m_solution.bMagMin, 0, 'g', 4)
+                           .arg(m_solution.bMagMax, 0, 'g', 4)
+                           .arg(loadedFromAnsx ? ".ansx" : ".ans")
+                           .arg(elapsedMs);
+  if (!m_geometryOverlayError.isEmpty())
+    statusMsg += QString(" -- geometry overlay unavailable: %1").arg(m_geometryOverlayError);
+  statusBar()->showMessage(statusMsg);
   setWindowTitle(QString("FEMMX (Qt) - Solution Viewer - %1").arg(path));
   addToRecentFiles(path);
 }

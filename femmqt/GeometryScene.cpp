@@ -6,6 +6,7 @@
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
 #include "MeshOverlay.h"
+#include "MeshOverlayItem.h"
 
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsEllipseItem>
@@ -283,8 +284,11 @@ void GeometryScene::rebuild()
   // clear() above already deleted this along with everything else -- an
   // edit invalidates any previous mesh anyway (matches classic FEMM's own
   // MeshUpToDate flag being cleared on any geometry change), so there's no
-  // reason to try to preserve/re-add it here.
+  // reason to try to preserve/re-add it here. m_mesh reset too (a
+  // multi-million-element mesh is real memory not worth holding onto
+  // past the point it's actually displayable).
   m_meshOverlayItem = nullptr;
+  m_mesh = MeshOverlay();
   m_pendingNode = -1;
 
   if (!m_problem)
@@ -318,6 +322,16 @@ void GeometryScene::addNodeItem(int index)
   const FemmNode& n = m_problem->nodes[index];
   QPen pen(AppTheme::nodeColor());
   pen.setCosmetic(true);
+  // Width 0, not the QPen(color) constructor's default of 1 -- Qt treats
+  // a cosmetic pen with width exactly 0 as a fast, robust "hairline" that
+  // draws directly from transformed point positions, versus a cosmetic
+  // pen with a nonzero (even if logically tiny) width, which goes through
+  // general stroke-to-polygon tessellation (offsetting the line by half
+  // its width, itself computed via the transform's inverse scale) --
+  // confirmed directly as the source of lines rendering visibly thicker
+  // than a device pixel at extreme zoom on a real, detailed model (see
+  // MeshOverlayItem's header comment for the full investigation).
+  pen.setWidth(0);
   auto* item = new NodeItem(index, m_problem, this,
       QRectF(-kNodeHandlePixelRadius, -kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius));
   item->setPos(n.x, n.y);
@@ -332,6 +346,7 @@ void GeometryScene::addSegmentItem(int index)
   const FemmSegment& s = m_problem->segments[index];
   QPen pen(s.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::segmentColor());
   pen.setCosmetic(true);
+  pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
   auto* item = addLine(QLineF(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
   item->setData(KindKey, static_cast<int>(FemmItemKind::Segment));
@@ -347,6 +362,7 @@ void GeometryScene::addArcItem(int index)
   const FemmArcSegment& a = m_problem->arcSegments[index];
   QPen pen(a.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::arcColor());
   pen.setCosmetic(true);
+  pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
   auto* item = addPath(QPainterPath(), pen);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
   item->setData(KindKey, static_cast<int>(FemmItemKind::Arc));
@@ -364,6 +380,7 @@ void GeometryScene::addBlockLabelItem(int index)
   double r = kBlockLabelPixelRadius;
   QPen pen(isHole ? AppTheme::holeColor() : QColor(200, 0, 0));
   pen.setCosmetic(true);
+  pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
 
   QPainterPath path;
   path.moveTo(-r, 0);
@@ -600,6 +617,11 @@ void GeometryScene::keyPressEvent(QKeyEvent* event)
     event->accept();
     return;
   }
+  if (event->key() == Qt::Key_Space) {
+    emit openSelectedRequested();
+    event->accept();
+    return;
+  }
   QGraphicsScene::keyPressEvent(event);
 }
 
@@ -699,13 +721,20 @@ void GeometryScene::syncSelectionToProblem()
   }
 }
 
-bool GeometryScene::selectedEntity(FemmItemKind& kind, int& index) const
+bool GeometryScene::selectedEntities(FemmItemKind& kind, QVector<int>& indices) const
 {
   const auto sel = selectedItems();
-  if (sel.size() != 1)
+  if (sel.isEmpty())
     return false;
   kind = static_cast<FemmItemKind>(sel.first()->data(KindKey).toInt());
-  index = sel.first()->data(IndexKey).toInt();
+  QVector<int> out;
+  out.reserve(sel.size());
+  for (QGraphicsItem* item : sel) {
+    if (static_cast<FemmItemKind>(item->data(KindKey).toInt()) != kind)
+      return false; // mixed kinds -- not something classic FEMM's own selection model can produce
+    out.push_back(item->data(IndexKey).toInt());
+  }
+  indices = out;
   return true;
 }
 
@@ -742,27 +771,14 @@ void GeometryScene::setMeshOverlay(const MeshOverlay& mesh)
   if (mesh.elements.isEmpty())
     return;
 
-  // One batched path for the whole mesh (matches SolutionView.cpp's
-  // MeshSolutionItem reasoning) -- a per-triangle QGraphicsItem doesn't
-  // scale to a real mesh's element count.
-  QPainterPath path;
-  for (const MeshOverlayElement& e : mesh.elements) {
-    if (e.p0 < 0 || e.p0 >= mesh.nodes.size() || e.p1 < 0 || e.p1 >= mesh.nodes.size() || e.p2 < 0 || e.p2 >= mesh.nodes.size())
-      continue;
-    const MeshOverlayNode& a = mesh.nodes[e.p0];
-    const MeshOverlayNode& b = mesh.nodes[e.p1];
-    const MeshOverlayNode& c = mesh.nodes[e.p2];
-    path.moveTo(a.x, a.y);
-    path.lineTo(b.x, b.y);
-    path.lineTo(c.x, c.y);
-    path.lineTo(a.x, a.y);
-  }
-
-  QPen pen(AppTheme::meshLineColor());
-  pen.setCosmetic(true);
-  auto* item = addPath(path, pen);
+  // m_mesh owns the data for the item's lifetime -- see MeshOverlayItem's
+  // header comment for why this replaced a single monolithic
+  // QGraphicsPathItem built from the whole mesh regardless of zoom.
+  m_mesh = mesh;
+  auto* item = new MeshOverlayItem(&m_mesh);
   item->setZValue(-1.0); // beneath geometry (nodes/segments/arcs/labels)
   item->setVisible(m_showMesh);
+  addItem(item);
   m_meshOverlayItem = item;
 }
 
@@ -773,6 +789,7 @@ void GeometryScene::clearMeshOverlay()
     delete m_meshOverlayItem;
     m_meshOverlayItem = nullptr;
   }
+  m_mesh = MeshOverlay();
 }
 
 void GeometryScene::setShowMesh(bool show)
@@ -883,17 +900,27 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
   if ((qint64)nx * (qint64)ny > 200000)
     return;
 
-  QPen pen(AppTheme::gridLine());
-  pen.setCosmetic(true);
-  // 2px (not the default 1px hairline) so a dot is still a few visible
-  // device pixels on a high-DPI display, not a single physically-tiny
-  // one -- part of the same "grid doesn't seem to work" fix as
-  // AppTheme::gridLine()'s color change above.
-  pen.setWidth(2);
-  painter->setPen(pen);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22:
+  // was QPainter::drawPoint() with a wide cosmetic pen -- confirmed
+  // directly (after also trying a QPen width/color fix and a RoundCap
+  // fix, neither of which helped) that Show Grid produced zero visible
+  // dots at any zoom level or grid spacing on this build, despite the
+  // toggle itself being verified correct. This view's viewport is a
+  // QOpenGLWidget (GeometryView.cpp, FEMMQT_HAVE_OPENGL) -- Qt's OpenGL
+  // paint engine implements drawPoint() via its own GL point-rendering
+  // path, which does not reliably honor QPen width/cap-style the way the
+  // default raster engine does. Switched to the same fixed-screen-pixel-
+  // radius filled drawEllipse() pattern already used and proven
+  // elsewhere in this exact codebase (e.g. MeshSolutionItem's "Show
+  // Points", SolutionView.cpp) instead of a second, differently-behaved
+  // primitive.
+  double screenScale = painter->worldTransform().m11();
+  double r = 1.0 / std::max(screenScale, 1e-9); // 2px-diameter dot, matching the old pen width
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(AppTheme::gridLine());
   for (int i = 0; i < nx; i++) {
     double x = x0 + i * m_gridSize;
     for (int j = 0; j < ny; j++)
-      painter->drawPoint(QPointF(x, y0 + j * m_gridSize));
+      painter->drawEllipse(QPointF(x, y0 + j * m_gridSize), r, r);
   }
 }

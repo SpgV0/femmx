@@ -405,6 +405,12 @@ class SolutionWindow : public QMainWindow {
   // like the classic GUI always does. Kept alive here for m_item's
   // lifetime (it only stores a raw pointer to this).
   FemmProblem m_problemGeometry;
+  // Set (non-empty) when the fast .ansx-cache load path's best-effort
+  // geometry re-read fails -- see openAnsFile()'s comment. Reported in
+  // the post-load status-bar message instead of failing silently, so a
+  // missing geometry overlay isn't indistinguishable from "there was
+  // never any geometry to show."
+  QString m_geometryOverlayError;
   MeshSolutionItem* m_item = nullptr;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
   // classic FEMM labels the raw solved nodal potential differently by

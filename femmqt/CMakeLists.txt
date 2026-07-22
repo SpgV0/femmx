@@ -100,6 +100,8 @@ qt_add_executable(femmqt WIN32
   GeometryView.cpp
   MeshOverlay.h
   MeshOverlay.cpp
+  MeshOverlayItem.h
+  MeshOverlayItem.cpp
   AppTheme.h
   AppTheme.cpp
   AppPreferences.h
@@ -152,7 +154,8 @@ target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 # FEMMQT_HAVE_OPENGL gates the actual QOpenGLWidget usage in SolutionView.cpp.
 if(TARGET Qt6::OpenGLWidgets)
   target_link_libraries(femmqt PRIVATE Qt6::OpenGLWidgets)
-  target_compile_definitions(femmqt PRIVATE FEMMQT_HAVE_OPENGL)
+  # TEMP DIAGNOSTIC -- disabled to test a blue-background rendering bug
+  # target_compile_definitions(femmqt PRIVATE FEMMQT_HAVE_OPENGL)
 endif()
 
 install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")

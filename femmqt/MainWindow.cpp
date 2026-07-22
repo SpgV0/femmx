@@ -89,6 +89,7 @@ MainWindow::MainWindow(QWidget* parent)
   m_scene->setProblem(&m_problem);
   connect(m_scene, &GeometryScene::problemEdited, this, &MainWindow::onProblemEdited);
   connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
+  connect(m_scene, &GeometryScene::openSelectedRequested, this, &MainWindow::onOpenSelectedTriggered);
   connect(m_scene, &GeometryScene::zoomWindowSelected, this, &MainWindow::onZoomWindowSelected);
   connect(m_scene, &GeometryScene::aboutToEdit, this, &MainWindow::snapshotForUndo);
 
@@ -826,12 +827,13 @@ void MainWindow::onDeleteSelectedTriggered()
 void MainWindow::onOpenSelectedTriggered()
 {
   FemmItemKind kind;
-  int index;
-  if (!m_scene->selectedEntity(kind, index)) {
-    QMessageBox::information(this, "Open Selected", "Select exactly one item first.");
+  QVector<int> indices;
+  if (!m_scene->selectedEntities(kind, indices)) {
+    QMessageBox::information(this, "Open Selected",
+        m_scene->hasSelection() ? "Select entities of only one kind (nodes, segments, arcs, or block labels) at a time." : "Nothing selected.");
     return;
   }
-  onEntityDoubleClicked(kind, index);
+  openEntityProperties(kind, indices);
 }
 
 void MainWindow::onMaterialsTriggered()
@@ -964,32 +966,57 @@ void MainWindow::onPointPropsTriggered()
 
 void MainWindow::onEntityDoubleClicked(FemmItemKind kind, int index)
 {
+  openEntityProperties(kind, { index });
+}
+
+void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& indices)
+{
   bool accepted = false;
   switch (kind) {
-  case FemmItemKind::Node:
-    if (index >= 0 && index < m_problem.nodes.size()) {
-      NodePropDialog dlg(m_problem.nodes[index], m_problem, this);
+  case FemmItemKind::Node: {
+    QVector<FemmNode*> nodes;
+    for (int i : indices)
+      if (i >= 0 && i < m_problem.nodes.size())
+        nodes.push_back(&m_problem.nodes[i]);
+    if (!nodes.isEmpty()) {
+      NodePropDialog dlg(nodes, m_problem, this);
       accepted = dlg.exec() == QDialog::Accepted;
     }
     break;
-  case FemmItemKind::Segment:
-    if (index >= 0 && index < m_problem.segments.size()) {
-      SegmentPropDialog dlg(m_problem.segments[index], m_problem, this);
+  }
+  case FemmItemKind::Segment: {
+    QVector<FemmSegment*> segments;
+    for (int i : indices)
+      if (i >= 0 && i < m_problem.segments.size())
+        segments.push_back(&m_problem.segments[i]);
+    if (!segments.isEmpty()) {
+      SegmentPropDialog dlg(segments, m_problem, this);
       accepted = dlg.exec() == QDialog::Accepted;
     }
     break;
-  case FemmItemKind::Arc:
-    if (index >= 0 && index < m_problem.arcSegments.size()) {
-      ArcPropDialog dlg(m_problem.arcSegments[index], m_problem, this);
+  }
+  case FemmItemKind::Arc: {
+    QVector<FemmArcSegment*> arcs;
+    for (int i : indices)
+      if (i >= 0 && i < m_problem.arcSegments.size())
+        arcs.push_back(&m_problem.arcSegments[i]);
+    if (!arcs.isEmpty()) {
+      ArcPropDialog dlg(arcs, m_problem, this);
       accepted = dlg.exec() == QDialog::Accepted;
     }
     break;
-  case FemmItemKind::BlockLabel:
-    if (index >= 0 && index < m_problem.blockLabels.size()) {
-      BlockLabelPropDialog dlg(m_problem.blockLabels[index], m_problem, this);
+  }
+  case FemmItemKind::BlockLabel: {
+    QVector<FemmBlockLabel*> labels;
+    for (int i : indices)
+      if (i >= 0 && i < m_problem.blockLabels.size())
+        labels.push_back(&m_problem.blockLabels[i]);
+    if (!labels.isEmpty()) {
+      BlockLabelPropDialog dlg(labels, m_problem, this);
       accepted = dlg.exec() == QDialog::Accepted;
     }
     break;
+  }
   }
 
   if (accepted) {

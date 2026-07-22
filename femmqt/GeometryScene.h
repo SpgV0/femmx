@@ -2,9 +2,12 @@
 
 #include <QGraphicsScene>
 #include <QMultiHash>
+#include <QVector>
+
+#include "MeshOverlay.h"
 
 struct FemmProblem;
-struct MeshOverlay;
+class MeshOverlayItem;
 
 enum class FemmItemKind {
   Node = 0,
@@ -101,12 +104,19 @@ class GeometryScene : public QGraphicsScene {
   void syncSelectionToProblem();
   bool hasSelection() const { return !selectedItems().isEmpty(); }
 
-  // Fills `kind`/`index` and returns true if exactly one entity is
-  // currently selected -- for femm.rc's "Open Selected" (opens the same
-  // property dialog a double-click would, without needing to double-
-  // click). Keeps the QGraphicsItem::data() role encoding this scene
-  // uses internally out of MainWindow.
-  bool selectedEntity(FemmItemKind& kind, int& index) const;
+  // Fills `kind`/`indices` and returns true if the current selection is
+  // non-empty and every selected item is the same FemmItemKind -- for
+  // femm.rc's "Open Selected" (ID_OPEN_SELECTED), which classic FEMM
+  // binds to both the Edit menu and the Space bar and which operates on
+  // every currently-selected entity of one kind at once (see
+  // CFemmeDoc::OpNodeDlg/OpSegDlg/OpArcSegDlg/OpBlkDlg in femm/
+  // FemmeDoc.cpp -- each loops over all IsSelected==TRUE entries, not
+  // just one). Returns false (leaving outputs untouched) if nothing is
+  // selected or the selection mixes kinds, matching classic's own
+  // implicit restriction (its EditAction-mode selection can never mix
+  // kinds in the first place). Keeps the QGraphicsItem::data() role
+  // encoding this scene uses internally out of MainWindow.
+  bool selectedEntities(FemmItemKind& kind, QVector<int>& indices) const;
 
   // Mesh > Create/Show/Purge Mesh overlay (femm.rc's Mesh menu split --
   // separate from Solve, which meshes internally via SolveRunner::solve
@@ -140,7 +150,7 @@ class GeometryScene : public QGraphicsScene {
   void problemEdited();
 
   // Emitted right before a destructive edit (currently: Delete) actually
-  // mutates m_problem -- MainWindow connects this to its single-level undo
+  // mutates m_problem -- MainWindow connects this to push an undo-stack
   // snapshot. Move/Copy/Scale/Mirror instead call MainWindow's
   // snapshotForUndo() directly before invoking FemmProblemEdit, since
   // those are triggered from MainWindow's own menu handlers rather than
@@ -152,6 +162,12 @@ class GeometryScene : public QGraphicsScene {
   // etc.), so this scene only reports what was clicked rather than
   // depending on those dialog classes itself.
   void entityDoubleClicked(FemmItemKind kind, int index);
+
+  // Emitted on Space bar -- femm.rc/FemmeView.cpp::OnKeyDown binds
+  // VK_SPACE to the same ID_OPEN_SELECTED command as the Edit menu item,
+  // so this mirrors that rather than hardcoding the property-dialog logic
+  // here (MainWindow owns it, same reasoning as entityDoubleClicked above).
+  void openSelectedRequested();
 
   // Emitted on every mouse move over the canvas, in scene (model)
   // coordinates -- MainWindow shows this in a permanent status bar label
@@ -217,7 +233,13 @@ class GeometryScene : public QGraphicsScene {
   QGraphicsRectItem* m_zoomWindowRectItem = nullptr;
   QPointF m_zoomWindowStartPos;
 
-  QGraphicsItem* m_meshOverlayItem = nullptr;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
+  // a single QGraphicsPathItem built once from the WHOLE mesh -- see
+  // MeshOverlayItem's header comment for why that doesn't scale. m_mesh
+  // owns the data for m_meshOverlayItem's lifetime (mirrors
+  // SolutionWindow::m_solution / MeshSolutionItem).
+  MeshOverlay m_mesh;
+  MeshOverlayItem* m_meshOverlayItem = nullptr;
   bool m_showMesh = false;
 
   // Items currently wearing the onSelectionChanged() drop-shadow effect --
