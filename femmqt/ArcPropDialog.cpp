@@ -9,11 +9,24 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 
-ArcPropDialog::ArcPropDialog(FemmArcSegment& arc, const FemmProblem& problem, QWidget* parent)
-    : QDialog(parent)
-    , m_arc(arc)
+#include <algorithm>
+
+namespace {
+template <typename Getter>
+bool allSame(const QVector<FemmArcSegment*>& arcs, Getter get)
 {
-  setWindowTitle("Arc Segment Properties");
+  for (int i = 1; i < arcs.size(); i++)
+    if (get(arcs[i]) != get(arcs[0]))
+      return false;
+  return true;
+}
+} // namespace
+
+ArcPropDialog::ArcPropDialog(const QVector<FemmArcSegment*>& arcs, const FemmProblem& problem, QWidget* parent)
+    : QDialog(parent)
+    , m_arcs(arcs)
+{
+  setWindowTitle(arcs.size() == 1 ? "Arc Segment Properties" : QString("Arc Segment Properties (%1 arcs)").arg(arcs.size()));
 
   auto* form = new QFormLayout;
 
@@ -21,18 +34,27 @@ ArcPropDialog::ArcPropDialog(FemmArcSegment& arc, const FemmProblem& problem, QW
   m_boundary->addItem("<None>");
   for (const FemmBoundaryProp& b : problem.boundaryProps)
     m_boundary->addItem(b.name);
-  m_boundary->setCurrentIndex(qBound(0, arc.boundaryMarker, problem.boundaryProps.size()));
+  bool sameBoundary = allSame(arcs, [](FemmArcSegment* a) { return a->boundaryMarker; });
+  m_boundary->setCurrentIndex(sameBoundary ? qBound(0, arcs.first()->boundaryMarker, problem.boundaryProps.size()) : 0);
   form->addRow("Boundary:", m_boundary);
 
-  m_maxSeg = new QLineEdit(QString::number(arc.maxSideLength, 'g', 17), this);
+  // Matches OpArcSegDlg's own rule: always the average of the batch's
+  // mesh sizes (not an arbitrary single arc's value), even when they
+  // already agree (averaging a uniform set is a no-op).
+  double sumMaxSeg = 0;
+  for (FemmArcSegment* a : arcs)
+    sumMaxSeg += a->maxSideLength;
+  m_maxSeg = new QLineEdit(QString::number(sumMaxSeg / arcs.size(), 'g', 17), this);
   m_maxSeg->setValidator(new QDoubleValidator(0.001, 90.0, 17, m_maxSeg));
   form->addRow("Max Segment (deg):", m_maxSeg);
 
+  bool anyHidden = std::any_of(arcs.begin(), arcs.end(), [](FemmArcSegment* a) { return a->hidden; });
   m_hidden = new QCheckBox("Hide this arc in postprocessor", this);
-  m_hidden->setChecked(arc.hidden);
+  m_hidden->setChecked(anyHidden);
   form->addRow(QString(), m_hidden);
 
-  m_inGroup = new QLineEdit(QString::number(arc.inGroup), this);
+  bool sameGroup = allSame(arcs, [](FemmArcSegment* a) { return a->inGroup; });
+  m_inGroup = new QLineEdit(QString::number(sameGroup ? arcs.first()->inGroup : 0), this);
   m_inGroup->setValidator(new QIntValidator(0, 1000000, m_inGroup));
   form->addRow("In Group:", m_inGroup);
 
@@ -47,9 +69,11 @@ ArcPropDialog::ArcPropDialog(FemmArcSegment& arc, const FemmProblem& problem, QW
 
 void ArcPropDialog::onAccept()
 {
-  m_arc.boundaryMarker = m_boundary->currentIndex();
-  m_arc.maxSideLength = m_maxSeg->text().toDouble();
-  m_arc.hidden = m_hidden->isChecked();
-  m_arc.inGroup = m_inGroup->text().toInt();
+  for (FemmArcSegment* a : m_arcs) {
+    a->boundaryMarker = m_boundary->currentIndex();
+    a->maxSideLength = m_maxSeg->text().toDouble();
+    a->hidden = m_hidden->isChecked();
+    a->inGroup = m_inGroup->text().toInt();
+  }
   accept();
 }
