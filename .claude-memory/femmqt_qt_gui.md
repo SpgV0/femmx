@@ -4,7 +4,7 @@ description: "New Qt6-based GUI (femmqt/) built alongside the classic MFC GUI: m
 metadata:
   type: project
   originSessionId: 846a52dc-e5cc-4b0f-9a4f-7b5debeae297
-  modified: 2026-07-22T14:14:12.780Z
+  modified: 2026-07-22T16:53:41.291Z
 ---
 
 **Current state (2026-07-21, supersedes Round 10 below): the CLASSIC GUI
@@ -1105,4 +1105,44 @@ also needs the load-wait lesson from earlier in this doc: a short/naive
 CPU-stability check gives false positives mid-construction (seen again
 this round, a "stable" reading after only 39s when the real settle point
 was 150s+) -- prefer `Get-Process`'s own `.Responding` flag polled every
-few seconds over guessing from `cpu_times()` deltas.
+few seconds over guessing from `cpu_times()` deltas. Even `.Responding`
+itself gave one false-positive "responsive after 0.3s" right after a
+fresh launch on a later round -- treat a `.Responding=True` reading in
+the first ~10-20s post-launch with suspicion too, not just
+`IsHungAppWindow`; when in doubt, add a real minimum-elapsed floor before
+trusting either signal (`$sw.Elapsed.TotalSeconds -gt $minWait`).
+
+**Same day, third bug: Vector Plot "looks weird" on the transformer model
+(commit `772eb39`).** `paintVector()` sampled arrows by striding through
+`m_solution->elements` at a fixed ARRAY-INDEX step
+(`elements.size()/3000`) and sized every arrow off the WHOLE model's
+diagonal -- both assumptions silently depend on the mesh being roughly
+spatially uniform. On the real transformer file (fine mesh around the
+coil conductors, coarse mesh in the surrounding air -- a completely
+ordinary real-world mesh, not a pathological case), index order wasn't
+spatial order: the stride landed nearly all its samples inside the
+densely-meshed coil regions (rendering as solid white blobs from
+heavily-overlapping oversized arrows) and almost none in the coarse
+exterior (~10 stray specks visible). Fixed by sampling on a fixed 36x36
+SCREEN-SPACE grid over the exposed rect instead (one representative
+element per cell via the existing `elementsOverlapping` spatial index),
+with arrow length scaled to the cell size rather than the whole model.
+**General lesson for this mesh-heavy codebase: never assume element
+ARRAY INDEX correlates with spatial position, and never size a
+screen-drawn feature off the WHOLE model's extent when local mesh
+density can vary by orders of magnitude** -- both of the vector-plot
+bugs above have the same shape as the very first "invisible edges" bug
+this session (a rendering choice that implicitly assumed the mesh/data
+was more uniform than any real FEM model actually is). When something
+"looks weird" on a real model but the test/toy files look fine, check
+for exactly this class of uniformity assumption first.
+
+**Verification method used for both bugs above, faster and more reliable
+than fighting interactive menu automation on this huge file**:
+temporarily change the relevant default in `SolutionView.h` (e.g.
+`MeshSolutionItem::m_mode`'s or `m_grayscale`'s in-class default value),
+rebuild, launch fresh with ZERO interaction needed beyond waiting for
+load, screenshot, then revert the default and rebuild again -- confirm
+the revert is exact via `git diff` showing no changes to that file
+before committing the REAL fix. Only commit the file(s) containing the
+actual fix; never let a temporary debug default leak into a commit.
