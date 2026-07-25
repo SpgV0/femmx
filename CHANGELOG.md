@@ -1,4 +1,50 @@
-﻿17Jul2026 (v1.2.0)
+﻿19Jul2026 (v2.0.0)
+
+* Added `femmqt`: a new Qt6-based GUI, alongside the existing MFC one,
+  built out to full feature parity for magnetics (electrostatics, heat
+  flow, and current flow remain MFC-only for now). CAD-style geometry
+  editing (add/move/copy/scale/mirror, undo, grid snap, group
+  selection, Create Radius, Create Open Boundary/ABC, DXF import/
+  export); full property editing (Problem Properties, Material/
+  Boundary/Circuit/PointProp libraries, an external Materials Library,
+  per-entity dialogs including direct node-coordinate editing, BH-curve
+  editing); solve invocation via the same `triangle.exe` -> `fkn.exe`
+  pipeline the classic GUI uses; a Solution Viewer with Density and
+  Contour plots (with an optional toggle for field-direction arrows
+  along the contour lines), Point/Contour/Area tools, Plot X-Y,
+  Circuit Props, mesh/point overlays, and an Output Window; a light/
+  dark theme with its own muted color palette for drawing and
+  plotting; a CPU/GPU/RAM Load Monitor, Preferences, Recent Files, and
+  hover/cursor readouts throughout. Verified against real solved models
+  (textbook field comparisons, mesh/element-count matches, and
+  round-tripping files through both GUIs).
+* Added `.ansx`/`.femx`: binary caches for solved `.ans` files and `.fem`
+  geometry files, regenerated automatically whenever their source is
+  newer, so reopening a large solved model is a bulk read with no
+  per-line text parsing. Added to the classic MFC GUI too, so both GUIs
+  share the same fast-reopen caching and files stay interchangeable.
+* Added a two-way "Switch to Qt GUI"/"Switch to Classic GUI" command in
+  each app that hands the currently-open file to the other executable
+  (a `<PreferredGUI>` marker plus a relaunch), including a distinct,
+  always-visible button for it in femmqt's main window, not just a menu
+  item. `femm.ActiveFEMM`'s COM automation still points at `femmx.exe`
+  only -- `femmqt.exe` has no COM automation support yet. The classic
+  GUI keeps the default Start Menu shortcut; femmqt is still in active
+  development.
+* Extended the optional CUDA-accelerated linear solve (see v1.0.0) to
+  the other three solvers: `hsolv` (heat flow), `belasolv`
+  (electrostatics), and `csolv` (current flow), each with its own
+  `*_setgpuaccel`/`*_setredraw` Lua commands and `[GPUAccel]` file
+  persistence, mirroring `mi_setgpuaccel` exactly. `csolv` needed its
+  own CUDA kernel since its complex-symmetric system's convergence
+  criterion differs from the other solvers'.
+* Assorted fixes: the classic GUI's post-processor had a "Switch to Qt
+  GUI" menu item that was never wired into the MFC message map; the
+  Load Monitor's current-flow/electrostatics labels were swapped;
+  `manual.pdf` wasn't packaged into the installer; femmqt's "Zoom
+  Natural" could badly mis-frame real-world models.
+
+17Jul2026 (v1.2.0)
 
 * Extended the Dark Theme toggle to the entire application, not just the
   magnetics editor. New `femm/DarkMode.h`/`femm/DarkMode.cpp`: an
