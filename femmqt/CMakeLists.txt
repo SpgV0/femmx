@@ -145,6 +145,17 @@ endif()
 target_compile_options(femmqt PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
 target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 
+# Mirrors femm/CMakeLists.txt's identical block: femmqt.exe itself never
+# touches CUDA (it only shells out to fkn.exe/hsolv.exe/belasolv.exe/
+# csolv.exe), but it still needs to know at compile time whether the
+# solver executables it'll be packaged/installed alongside were built with
+# CUDA support, so FemmProblem's default GPUAccel can match -- defaulting
+# GPUAccel on for a non-CUDA build would pop up "built without CUDA
+# support" on every single solve (see fkn/spars.cpp), not just the first.
+if(ENABLE_CUDA_SOLVER)
+  target_compile_definitions(femmqt PRIVATE FEMM_CUDA_ENABLED)
+endif()
+
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
 # per user request to prioritize pan/zoom responsiveness on large meshes
 # via GPU-accelerated rendering -- SolutionGraphicsView sets a QOpenGLWidget

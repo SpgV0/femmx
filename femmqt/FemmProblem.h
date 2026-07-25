@@ -127,12 +127,24 @@ struct FemmProblem {
   double minAngle = 30;
   bool smartMesh = true;
   double depth = 1;
-  FemmLengthUnits lengthUnits = FemmLengthUnits::Inches;
+  // Defaults to Millimeters (SI), per direct user request -- previously
+  // Inches, matching the pre-fork FEMM 4.2 default.
+  FemmLengthUnits lengthUnits = FemmLengthUnits::Millimeters;
   FemmCoordinateType problemType = FemmCoordinateType::Planar;
   bool coordsPolar = false;
   double extZo = 0, extRo = 0, extRi = 0; // axisymmetric external region, optional
   int acSolver = 0;
+  // Mirrors femm/FemmeDoc.cpp's identical reasoning: only default GPU
+  // acceleration on when femmqt itself was built alongside CUDA-enabled
+  // solvers (see femmqt/CMakeLists.txt's FEMM_CUDA_ENABLED block) -- a
+  // plain build stays off by default, since flipping this unconditionally
+  // would pop up fkn.exe's "built without CUDA support" dialog on every
+  // single solve for a machine that never asked for GPU acceleration.
+#ifdef FEMM_CUDA_ENABLED
+  int gpuAccel = 1;
+#else
   int gpuAccel = 0;
+#endif
   int prevType = 0;
   QString prevSoln;
   QString comment;

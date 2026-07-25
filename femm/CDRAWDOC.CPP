@@ -57,7 +57,9 @@ CcdrawDoc::CcdrawDoc()
   d_depth = 1;
   d_frequency = 60;
   d_coord = 0;
-  d_length = 0;
+  // Millimeters (SI), per direct user request -- was 0 (inches), matching
+  // the pre-fork FEMM 4.2 default.
+  d_length = 1;
   d_type = 0;
 
   // Figure out what directory the executables
