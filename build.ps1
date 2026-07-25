@@ -336,7 +336,14 @@ if ($BuildArch -eq "64") {
     Set-Location ..
     New-Item -Path .\build_win_release32_triangle -ItemType directory -Force | Out-Null
     Set-Location build_win_release32_triangle
-    $cmake_args = "-A Win32 $latexFOUND ${install_prefix} -DSKIP_belasolv:BOOL=ON -DSKIP_csolv:BOOL=ON -DSKIP_liblua:BOOL=ON -DSKIP_ResizableLib:BOOL=ON -DSKIP_femm:BOOL=ON -DSKIP_femmplot:BOOL=ON   -DSKIP_fkn:BOOL=ON -DSKIP_hsolv:BOOL=ON -DSKIP_scifemm:BOOL=ON $AdditionalBuildSetup .."
+    # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-18:
+    # added -DSKIP_femmqt:BOOL=ON -- this pass only exists to build a
+    # 32-bit triangle.exe (see -ForceTriangle32bit's docstring above); the
+    # new Qt GUI has no 32-bit Qt6 kit available (the official Qt6
+    # installer no longer ships one), and is already built by the
+    # preceding x64 pass just above, so it must be skipped here the same
+    # way femm/fkn/etc already are.
+    $cmake_args = "-A Win32 $latexFOUND ${install_prefix} -DSKIP_belasolv:BOOL=ON -DSKIP_csolv:BOOL=ON -DSKIP_liblua:BOOL=ON -DSKIP_ResizableLib:BOOL=ON -DSKIP_femm:BOOL=ON -DSKIP_femmplot:BOOL=ON -DSKIP_femmqt:BOOL=ON   -DSKIP_fkn:BOOL=ON -DSKIP_hsolv:BOOL=ON -DSKIP_scifemm:BOOL=ON $AdditionalBuildSetup .."
     Write-Host "Configuring CMake project" -ForegroundColor Green
     Write-Host "CMake args: $cmake_args"
     $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args
@@ -386,7 +393,11 @@ if ($BuildArch -eq "64") {
 if ($BuildArch -eq "32") {
   New-Item -Path .\build_win_release32 -ItemType directory -Force | Out-Null
   Set-Location build_win_release32
-  $cmake_args = "-A Win32 $latexFOUND ${install_prefix} $AdditionalBuildSetup .."
+  # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-18:
+  # added -DSKIP_femmqt:BOOL=ON -- no 32-bit Qt6 kit is available (see the
+  # matching comment on the -ForceTriangle32bit path above), so a pure
+  # 32-bit build cannot include the Qt GUI.
+  $cmake_args = "-A Win32 $latexFOUND ${install_prefix} -DSKIP_femmqt:BOOL=ON $AdditionalBuildSetup .."
   Write-Host "Configuring CMake project" -ForegroundColor Green
   Write-Host "CMake args: $cmake_args"
   $proc = Start-Process -NoNewWindow -PassThru -FilePath $CMAKE_EXE -ArgumentList $cmake_args

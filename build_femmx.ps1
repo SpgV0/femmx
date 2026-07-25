@@ -176,6 +176,26 @@ Get-ChildItem -Path "$PSScriptRoot\bin" -File | ForEach-Object {
     Move-Item $_.FullName -Destination $variantDir -Force
   }
 }
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-18:
+# also move the Qt plugin subdirectories qt_generate_deploy_app_script()
+# places directly in bin\ during `--target install` (see
+# femmqt/CMakeLists.txt) into the variant folder. Without this,
+# femmqt.exe itself gets moved (it's a top-level file, caught by the loop
+# above) but its required Qt platform plugin does not, and it fails to
+# start with "no Qt platform plugin could be initialized". Named
+# allowlist (matching Qt's own deploy-tool plugin category names) rather
+# than "any directory found in bin\", deliberately: an unrelated stray
+# bin\cuda\ directory was found sitting there from an earlier, unrelated
+# build during development of this step, and a blanket move would have
+# silently relocated it into bin\plain\cuda\ -- exactly the kind of
+# leftover-garbage-on-disk mistake to avoid, not compound.
+$qtPluginDirs = @("generic", "iconengines", "imageformats", "networkinformation",
+  "platforms", "styles", "tls", "multimedia", "sqldrivers", "printsupport")
+Get-ChildItem -Path "$PSScriptRoot\bin" -Directory -ErrorAction SilentlyContinue |
+  Where-Object { $qtPluginDirs -contains $_.Name } |
+  ForEach-Object {
+    Move-Item $_.FullName -Destination $variantDir -Force
+  }
 
 Pop-Location
 
