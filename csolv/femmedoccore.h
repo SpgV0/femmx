@@ -18,6 +18,8 @@ class CFemmeDocCore {
   int LengthUnits;
   BOOL ProblemType;
   BOOL Coords;
+  int GPUAccel; // read from the saved [GPUAccel] field, passed through to
+                // CBigComplexLinProb::GPUAccel in MAIN.CPP (see spars_cuda.cu).
 
   // Axisymmetric external region parameters
   double extRo, extRi, extZo;

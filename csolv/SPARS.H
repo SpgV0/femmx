@@ -27,6 +27,10 @@ class CBigComplexLinProb {
   int NumNodes;
   double Precision;
   CComplex Lambda;
+  int GPUAccel; // 1 = try the CUDA-accelerated solve (see PBCGSolveGPU),
+                // falling back to the CPU path below on any failure or if
+                // this build wasn't compiled with CUDA support; 0 = CPU
+                // only (default).
 
   // member functions
 
@@ -37,6 +41,10 @@ class CBigComplexLinProb {
   // use to create/set entries in the matrix
   CComplex Get(int p, int q);
   int PBCGSolve(int flag); // flag==true if guess for V present;
+  bool PBCGSolveGPU(double res_o); // GPU path used by PBCGSolveMod when
+                                    // GPUAccel is set; see spars_cuda.cu.
+                                    // Returns false (never the only path)
+                                    // if unavailable or the solve fails.
   int QMRSolve(int flag);
   void MultA(CComplex* X, CComplex* Y);
   void MultConjA(CComplex* X, CComplex* Y);
