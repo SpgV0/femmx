@@ -112,6 +112,38 @@ Unicode True
 
 !insertmacro MUI_LANGUAGE "English"
 
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-25:
+; detect an existing installation before showing any wizard pages, and ask
+; the user whether to uninstall it first, rather than silently layering a
+; fresh install on top of (or alongside) an old one. Runs in .onInit (before
+; the Welcome page) so a "No" answer can bail out without making the user
+; click through License/Directory first. Replaces the old silent
+; auto-uninstall attempt that used to live at the top of the install
+; Section: that block called EnumRegKey (which enumerates the Nth *subkey*
+; by numeric index) with "QuietUninstallString" as the index argument --
+; that's a value name, not a subkey index, so it never actually detected an
+; existing install at all.
+Function .onInit
+    ClearErrors
+    ReadRegStr $0 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString"
+    IfErrors done
+
+    ReadRegStr $1 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "DisplayVersion"
+    MessageBox MB_YESNO|MB_ICONQUESTION \
+        "${PROJECT_NAME} $1 is already installed.$\n$\nUninstall it and continue installing this version?" \
+        IDYES do_uninstall
+    Abort
+
+    do_uninstall:
+        ; QuietUninstallString already includes _?=$INSTDIR (see the
+        ; WriteRegStr near the end of the install Section), which makes the
+        ; uninstaller run in-process instead of copy-and-relaunch, so
+        ; ExecWait genuinely blocks until removal is complete before this
+        ; installer lays down fresh files.
+        ExecWait '$0'
+    done:
+FunctionEnd
+
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
 # NSIS's `Name` directive (not previously set at all) drives the wizard
 # window's own title ("Welcome to <Name> Setup", the taskbar entry, etc.)
@@ -136,14 +168,6 @@ RequestExecutionLevel user
 
 # start default section
 Section
-    ClearErrors
-    EnumRegKey $0 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString"
-    IfErrors ContinueInstall KeyExist
-    KeyExist:
-        ReadRegStr $R0 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString"
-        ExecWait "$R0"
-
-    ContinueInstall:
     # top-level docs -- README.md is opened from the finish page's "View
     # README" checkbox (see MUI_FINISHPAGE_SHOWREADME above), so it needs
     # to actually be installed, not just referenced from the repo checkout.
