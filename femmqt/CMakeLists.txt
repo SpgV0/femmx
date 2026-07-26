@@ -128,6 +128,8 @@ qt_add_executable(femmqt WIN32
   HoverTooltip.cpp
   DensityPlotOptionsDialog.h
   DensityPlotOptionsDialog.cpp
+  PlotXYChartWidget.h
+  PlotXYChartWidget.cpp
   icons.qrc
 )
 

@@ -14,6 +14,7 @@
 #include "HoverTooltip.h"
 #include "IconTheme.h"
 #include "MainWindow.h"
+#include "PlotXYChartWidget.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -47,10 +48,12 @@
 #include <QPrintDialog>
 #include <QPrintPreviewDialog>
 #include <QPrinter>
+#include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -2044,12 +2047,6 @@ void SolutionWindow::onClearContourTriggered()
 
 void SolutionWindow::onPlotXYTriggered()
 {
-  // Simplified relative to the classic GUI's own interactive XY chart --
-  // no charting library is linked in this target (see femmqt/CMakeLists.txt),
-  // so this samples |A| and |B| at evenly-spaced points along the current
-  // contour and presents them as a plain table instead of a graphical
-  // plot. Still gives the same underlying data, just not plotted visually.
-  //
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // this used to just show an info box telling the user to go find the
   // separate Operation > Contours tool first, then come back here --
@@ -2081,7 +2078,14 @@ void SolutionWindow::onPlotXYTriggered()
     totalLen += segLen[i - 1];
   }
 
-  QString text = "arc length\tx\ty\t|A|\t|B|\n";
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+  // user report ("I just see the numbers") -- this used to only build the
+  // tab-separated text below. Now also collects the same samples into
+  // plain QVector<double>s so PlotXYChartWidget can draw them, and the
+  // text is kept (as CSV, comma- not tab-separated, for the Export CSV
+  // button) rather than just for display.
+  QVector<double> arcLen, xs, ys, aMags, bMags;
+  QString csv = "arc length,x,y,|A|,|B|\n";
   for (int s = 0; s <= samples; s++) {
     double target = totalLen * s / samples;
     double acc = 0;
@@ -2102,18 +2106,66 @@ void SolutionWindow::onPlotXYTriggered()
       const MeshSolutionElement& e = m_solution.elements[elem];
       bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
     }
-    text += QString("%1\t%2\t%3\t%4\t%5\n").arg(target, 0, 'g', 6).arg(pt.x(), 0, 'g', 6).arg(pt.y(), 0, 'g', 6).arg(aMag, 0, 'g', 6).arg(bMag, 0, 'g', 6);
+    arcLen.push_back(target);
+    xs.push_back(pt.x());
+    ys.push_back(pt.y());
+    aMags.push_back(aMag);
+    bMags.push_back(bMag);
+    csv += QString("%1,%2,%3,%4,%5\n").arg(target, 0, 'g', 6).arg(pt.x(), 0, 'g', 6).arg(pt.y(), 0, 'g', 6).arg(aMag, 0, 'g', 6).arg(bMag, 0, 'g', 6);
   }
 
   QDialog dlg(this);
   dlg.setWindowTitle("Plot X-Y along Contour");
-  dlg.resize(500, 400);
+  dlg.resize(600, 500);
   auto* layout = new QVBoxLayout(&dlg);
-  auto* view = new QPlainTextEdit(text, &dlg);
-  view->setReadOnly(true);
-  view->setLineWrapMode(QPlainTextEdit::NoWrap);
-  layout->addWidget(view);
+
+  auto* tabs = new QTabWidget(&dlg);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+  // direct user request ("select what to plot, only show one plot based
+  // on the selection") -- was always both |A| and |B| stacked; a combo
+  // box now picks which one PlotXYChartWidget actually draws.
+  auto* chartTab = new QWidget(tabs);
+  auto* chartLayout = new QVBoxLayout(chartTab);
+  auto* quantityCombo = new QComboBox(chartTab);
+  quantityCombo->addItem("|A|");
+  quantityCombo->addItem("|B|");
+  chartLayout->addWidget(quantityCombo);
+  auto* chart = new PlotXYChartWidget(arcLen, aMags, bMags, chartTab);
+  chartLayout->addWidget(chart);
+  connect(quantityCombo, &QComboBox::currentIndexChanged, chart, [chart](int index) {
+    chart->setQuantity(index == 0 ? PlotXYChartWidget::Quantity::AMag : PlotXYChartWidget::Quantity::BMag);
+  });
+  tabs->addTab(chartTab, "Chart");
+
+  QString tableText = "arc length\tx\ty\t|A|\t|B|\n";
+  for (int i = 0; i < arcLen.size(); i++)
+    tableText += QString("%1\t%2\t%3\t%4\t%5\n").arg(arcLen[i], 0, 'g', 6).arg(xs[i], 0, 'g', 6).arg(ys[i], 0, 'g', 6).arg(aMags[i], 0, 'g', 6).arg(bMags[i], 0, 'g', 6);
+  auto* table = new QPlainTextEdit(tableText, tabs);
+  table->setReadOnly(true);
+  table->setLineWrapMode(QPlainTextEdit::NoWrap);
+  tabs->addTab(table, "Table");
+
+  layout->addWidget(tabs);
+
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  QPushButton* exportCsvButton = buttons->addButton("Export CSV...", QDialogButtonBox::ActionRole);
+  QPushButton* exportPngButton = buttons->addButton("Export PNG...", QDialogButtonBox::ActionRole);
+  connect(exportCsvButton, &QPushButton::clicked, &dlg, [&dlg, csv]() {
+    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as CSV", QString(), "CSV Files (*.csv)");
+    if (path.isEmpty())
+      return;
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text) || file.write(csv.toUtf8()) < 0)
+      QMessageBox::warning(&dlg, "Export CSV", "Could not write \"" + path + "\".");
+  });
+  connect(exportPngButton, &QPushButton::clicked, &dlg, [&dlg, chart]() {
+    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as PNG", QString(), "PNG Files (*.png)");
+    if (path.isEmpty())
+      return;
+    if (!chart->grab().save(path, "PNG"))
+      QMessageBox::warning(&dlg, "Export PNG", "Could not write \"" + path + "\".");
+  });
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   layout->addWidget(buttons);
   dlg.exec();
