@@ -1,6 +1,7 @@
 #define _USE_MATH_DEFINES
 #include "SolutionView.h"
 
+#include "AnhFileIO.h"
 #include "AnsFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
@@ -11,6 +12,7 @@
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
 #include "GuiSwitch.h"
+#include "HeatFileIO.h"
 #include "HoverTooltip.h"
 #include "IconTheme.h"
 #include "MainWindow.h"
@@ -407,6 +409,13 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   // method's declaration in SolutionView.h for the nonlinear/laminated/
   // incremental-permeability cases not covered.
   case DensityQuantity::HMag: {
+    // See setThermalMode's header comment: muX/muY are repurposed to
+    // hold thermal conductivity for a thermal solution, so this formula
+    // (H = B/(mu_r*mu0)) would produce a plausible-looking but physically
+    // meaningless number -- fall back to flux magnitude instead, same as
+    // BMag/BReMag already correctly show without needing this branch.
+    if (m_thermalMode)
+      return std::hypot(e.B1re, e.B2re);
     constexpr double kMuo = 1.2566370614359173e-6;
     double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
@@ -518,6 +527,16 @@ void MeshSolutionItem::legendRange(double& lo, double& hi) const
 
 QString MeshSolutionItem::legendTitle() const
 {
+  // See setThermalMode's header comment -- BMag/BReMag/HMag(now falling
+  // back to flux magnitude, see elementQuantity)/LogBMag all show the
+  // same |heat flux| family of values for a thermal solution, so they
+  // share one label rather than the magnetics-specific text below.
+  // BImMag/JMag are left with their normal (always-zero, for thermal)
+  // labels -- harmless, and not worth a special case for a quantity no
+  // one would deliberately pick.
+  if (m_thermalMode && m_densityQuantity != DensityQuantity::BImMag && m_densityQuantity != DensityQuantity::JMag) {
+    return (m_densityQuantity == DensityQuantity::LogBMag) ? "log10(|Heat Flux|), log(W/m^2)" : "|Heat Flux|, W/m^2";
+  }
   switch (m_densityQuantity) {
   case DensityQuantity::BMag: return "|B|, Tesla";
   case DensityQuantity::BReMag: return "|B_re|, Tesla";
@@ -550,6 +569,12 @@ void MeshSolutionItem::setShowPoints(bool show)
 void MeshSolutionItem::setShowFieldArrows(bool show)
 {
   m_showFieldArrows = show;
+  update();
+}
+
+void MeshSolutionItem::setThermalMode(bool thermal)
+{
+  m_thermalMode = thermal;
   update();
 }
 
@@ -1321,6 +1346,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&Open Solution...", this, &SolutionWindow::onOpenTriggered, QKeySequence::Open);
+  fileMenu->addAction("Open &Heat Flow Solution...", this, &SolutionWindow::onOpenThermalTriggered);
   fileMenu->addAction("&Reload", this, &SolutionWindow::onReloadTriggered);
   fileMenu->addSeparator();
   fileMenu->addAction("Print Pre&view...", this, &SolutionWindow::onPrintPreviewTriggered);
@@ -1555,6 +1581,14 @@ void SolutionWindow::onOpenTriggered()
   openAnsFile(path);
 }
 
+void SolutionWindow::onOpenThermalTriggered()
+{
+  QString path = QFileDialog::getOpenFileName(this, "Open Solved Heat Flow Problem", QString(), "FEMM Heat Flow Solution Files (*.anh)");
+  if (path.isEmpty())
+    return;
+  openAnhFile(path);
+}
+
 void SolutionWindow::openAnsFile(const QString& path)
 {
   QFileInfo pathInfo(path);
@@ -1643,6 +1677,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_view->updateAntialiasingForScale();
   m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
+  m_thermalMode = false; // see openAnhFile's comment -- this window instance may be reused across both
 
   QString statusMsg = QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")
                            .arg(path)
@@ -1656,6 +1691,56 @@ void SolutionWindow::openAnsFile(const QString& path)
     statusMsg += QString(" -- geometry overlay unavailable: %1").arg(m_geometryOverlayError);
   statusBar()->showMessage(statusMsg);
   setWindowTitle(QString("FEMMX (Qt) - Solution Viewer - %1").arg(path));
+  addToRecentFiles(path);
+}
+
+void SolutionWindow::openAnhFile(const QString& path)
+{
+  // See MeshSolutionItem::setThermalMode's comment for the overall
+  // "repurpose MeshSolution's fields, reuse the rendering pipeline"
+  // approach -- no .anhx-equivalent fast binary cache this round (a real,
+  // separate follow-up, same reasoning as .ansx/.femx's own scoped
+  // introduction), so this always reads the .anh directly.
+  QElapsedTimer timer;
+  timer.start();
+  QString error;
+  FemmProblem problem;
+  if (!QFileInfo::exists(path)) {
+    QMessageBox::warning(this, "Open Failed", QStringLiteral("\"%1\" doesn't exist.").arg(path));
+    return;
+  }
+  if (!AnhFileIO::readAnh(path, problem, m_solution, error)) {
+    QMessageBox::warning(this, "Open Failed", error);
+    return;
+  }
+  m_axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
+  m_problemGeometry = problem;
+  m_geometryOverlayError.clear();
+  qint64 elapsedMs = timer.elapsed();
+
+  m_spatialIndexBuilt = false;
+  m_scene->clear();
+  m_contourVisual = nullptr;
+  m_contourPoints.clear();
+  m_item = new MeshSolutionItem(&m_solution);
+  m_item->setThermalMode(true);
+  m_item->setProblemGeometry(&m_problemGeometry);
+  m_scene->addItem(m_item);
+  m_view->fitInViewSafe(m_item->boundingRect());
+  m_view->updateAntialiasingForScale();
+  m_view->setLegendItem(m_item);
+  m_currentPath = path;
+  m_thermalMode = true;
+
+  QString statusMsg = QString("%1 -- %2 mesh nodes, %3 elements, |Heat Flux| %4 to %5 W/m^2 (loaded via .anh in %6 ms)")
+                           .arg(path)
+                           .arg(m_solution.nodes.size())
+                           .arg(m_solution.elements.size())
+                           .arg(m_solution.bMagMin, 0, 'g', 4)
+                           .arg(m_solution.bMagMax, 0, 'g', 4)
+                           .arg(elapsedMs);
+  statusBar()->showMessage(statusMsg);
+  setWindowTitle(QString("FEMMX (Qt) - Solution Viewer (Heat Flow) - %1").arg(path));
   addToRecentFiles(path);
 }
 
@@ -1779,6 +1864,24 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
   if (elem < 0) {
     statusText = QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6);
     tooltipText = statusText;
+  } else if (m_thermalMode) {
+    // See MeshSolutionItem::setThermalMode's comment -- Are holds
+    // Temperature, B1re/B2re hold heat flux Gx/Gy; H/J have no thermal
+    // meaning, so this is a separate, simpler branch rather than reusing
+    // the magnetics block below with relabeled text.
+    std::complex<double> T = interpolateA(scenePos, elem);
+    const MeshSolutionElement& e = m_solution.elements[elem];
+    double fluxMag = std::hypot(e.B1re, e.B2re);
+    statusText = QString("x = %1, y = %2   T = %3 K   |Heat Flux| = %4 W/m^2")
+                     .arg(scenePos.x(), 0, 'g', 6)
+                     .arg(scenePos.y(), 0, 'g', 6)
+                     .arg(T.real(), 0, 'g', 4)
+                     .arg(fluxMag, 0, 'g', 4);
+    tooltipText = QString("x = %1, y = %2\nT = %3 K\n|Heat Flux| = %4 W/m^2")
+                      .arg(scenePos.x(), 0, 'g', 6)
+                      .arg(scenePos.y(), 0, 'g', 6)
+                      .arg(T.real(), 0, 'g', 4)
+                      .arg(fluxMag, 0, 'g', 4);
   } else {
     std::complex<double> A = interpolateA(scenePos, elem);
     const MeshSolutionElement& e = m_solution.elements[elem];
@@ -1867,6 +1970,31 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
       statusBar()->showMessage("No mesh element at that point.");
       return;
     }
+    if (m_thermalMode) {
+      // See onCanvasHovered's identical branch/comment.
+      std::complex<double> T = interpolateA(scenePos, elem);
+      const MeshSolutionElement& e = m_solution.elements[elem];
+      double fluxMag = std::hypot(e.B1re, e.B2re);
+      QDialog dlg(this);
+      dlg.setWindowTitle("Point Properties");
+      auto* form = new QFormLayout(&dlg);
+      form->addRow("x, y:", new QLabel(QString("%1, %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6)));
+      form->addRow("T:", new QLabel(QString("%1 K").arg(T.real(), 0, 'g', 6)));
+      form->addRow("Heat Flux (Gx, Gy):", new QLabel(QString("%1, %2").arg(e.B1re, 0, 'g', 6).arg(e.B2re, 0, 'g', 6)));
+      form->addRow("|Heat Flux|:", new QLabel(QString("%1 W/m^2").arg(fluxMag, 0, 'g', 6)));
+      auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+      connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+      form->addRow(buttons);
+      appendOutput(QString("Point: x=%1, y=%2  T=%3 K  Heat Flux=(%4, %5)  |Heat Flux|=%6 W/m^2")
+                        .arg(scenePos.x(), 0, 'g', 6)
+                        .arg(scenePos.y(), 0, 'g', 6)
+                        .arg(T.real(), 0, 'g', 6)
+                        .arg(e.B1re, 0, 'g', 6)
+                        .arg(e.B2re, 0, 'g', 6)
+                        .arg(fluxMag, 0, 'g', 6));
+      dlg.exec();
+      break;
+    }
     std::complex<double> A = interpolateA(scenePos, elem);
     const MeshSolutionElement& e = m_solution.elements[elem];
     double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
@@ -1948,21 +2076,30 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     }
     double avgB = totalArea > 0 ? bSum / totalArea : 0;
 
+    // See MeshSolutionItem::setThermalMode's comment -- B1re/B2re are
+    // repurposed to hold heat flux Gx/Gy for a thermal solution, so avgB
+    // is already the correct area-weighted average |heat flux|; only the
+    // label/unit need to differ.
+    QString avgLabel = m_thermalMode ? "Area-weighted avg |Heat Flux|:" : "Area-weighted avg |B|:";
+    QString avgUnit = m_thermalMode ? "W/m^2" : "T";
+
     QDialog dlg(this);
     dlg.setWindowTitle("Area Properties");
     auto* form = new QFormLayout(&dlg);
     form->addRow("Block label index:", new QLabel(QString::number(lbl)));
     form->addRow("Elements:", new QLabel(QString::number(count)));
     form->addRow("Area:", new QLabel(QString("%1").arg(totalArea, 0, 'g', 6)));
-    form->addRow("Area-weighted avg |B|:", new QLabel(QString("%1 T").arg(avgB, 0, 'g', 6)));
+    form->addRow(avgLabel, new QLabel(QString("%1 %2").arg(avgB, 0, 'g', 6).arg(avgUnit)));
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
-    appendOutput(QString("Area: block label %1  elements=%2  area=%3  avg|B|=%4 T")
+    appendOutput(QString("Area: block label %1  elements=%2  area=%3  avg%4=%5 %6")
                       .arg(lbl)
                       .arg(count)
                       .arg(totalArea, 0, 'g', 6)
-                      .arg(avgB, 0, 'g', 6));
+                      .arg(m_thermalMode ? "|Heat Flux|" : "|B|")
+                      .arg(avgB, 0, 'g', 6)
+                      .arg(avgUnit));
     dlg.exec();
     break;
   }
@@ -2014,7 +2151,11 @@ void SolutionWindow::showContourIntegral()
     std::complex<double> aStart = interpolateA(m_contourPoints.first(), elemStart);
     std::complex<double> aEnd = interpolateA(m_contourPoints.last(), elemEnd);
     std::complex<double> delta = aEnd - aStart;
-    deltaAText = QString("%1, %2 (re, im)").arg(delta.real(), 0, 'g', 6).arg(delta.imag(), 0, 'g', 6);
+    // See MeshSolutionItem::setThermalMode's comment -- Are is repurposed
+    // to hold Temperature for a thermal solution, so this is really
+    // Delta T (always real-valued; the imaginary part shown is always 0).
+    deltaAText = m_thermalMode ? QString("%1 K").arg(delta.real(), 0, 'g', 6)
+                                : QString("%1, %2 (re, im)").arg(delta.real(), 0, 'g', 6).arg(delta.imag(), 0, 'g', 6);
   }
 
   QDialog dlg(this);
@@ -2022,7 +2163,7 @@ void SolutionWindow::showContourIntegral()
   auto* form = new QFormLayout(&dlg);
   form->addRow("Points:", new QLabel(QString::number(m_contourPoints.size())));
   form->addRow("Length:", new QLabel(QString("%1").arg(length, 0, 'g', 6)));
-  form->addRow("Delta A (end - start):", new QLabel(deltaAText));
+  form->addRow(m_thermalMode ? "Delta T (end - start):" : "Delta A (end - start):", new QLabel(deltaAText));
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   form->addRow(buttons);
@@ -2191,7 +2332,10 @@ void SolutionWindow::onReloadTriggered()
     QMessageBox::information(this, "Reload", "No solution loaded.");
     return;
   }
-  openAnsFile(m_currentPath);
+  if (m_thermalMode)
+    openAnhFile(m_currentPath);
+  else
+    openAnsFile(m_currentPath);
 }
 
 void SolutionWindow::onDensityOptionsTriggered()
@@ -2213,12 +2357,20 @@ void SolutionWindow::onProblemInfoTriggered()
   }
   FemmProblem problem;
   QString error;
-  // .ans shares .fem's tag format for its header/property section (see
-  // FemmFileIO.h) -- readFem happily parses that part and silently skips
-  // the trailing [Solution] mesh data it doesn't recognize, so this is a
-  // full second file read but a cheap one relative to actually parsing
-  // the mesh (which is already loaded in m_solution anyway).
-  if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
+  // .ans/.anh both share their respective non-solved format's tag set for
+  // this header/property section (see FemmFileIO.h/HeatFileIO.h) --
+  // readFem/readFeh happily parse that part and silently skip the
+  // trailing [Solution] mesh data they don't recognize, so this is a full
+  // second file read but a cheap one relative to actually parsing the
+  // mesh (which is already loaded in m_solution anyway). Branching by
+  // m_thermalMode (not file extension) matters here specifically because
+  // the two readers' PointProps/BdryProps/BlockProps sections share outer
+  // tag names but different inner ones -- readFem would still report the
+  // right COUNTS against a .anh (the outer "[Tag] = N" line matches), but
+  // with every entry's actual field values silently zeroed, and Frequency/
+  // ACSolver shown as meaningless defaults instead of just omitted.
+  bool ok = m_thermalMode ? HeatFileIO::readFeh(m_currentPath, problem, error) : FemmFileIO::readFem(m_currentPath, problem, error);
+  if (!ok) {
     QMessageBox::warning(this, "Problem Info", error);
     return;
   }
@@ -2227,13 +2379,20 @@ void SolutionWindow::onProblemInfoTriggered()
   dlg.setWindowTitle("Problem Info");
   auto* form = new QFormLayout(&dlg);
   form->addRow("File:", new QLabel(m_currentPath));
-  form->addRow("Frequency:", new QLabel(QString("%1 Hz").arg(problem.frequency, 0, 'g', 6)));
+  if (!m_thermalMode)
+    form->addRow("Frequency:", new QLabel(QString("%1 Hz").arg(problem.frequency, 0, 'g', 6)));
   form->addRow("Problem Type:", new QLabel(problem.problemType == FemmCoordinateType::Axisymmetric ? "Axisymmetric" : "Planar"));
   form->addRow("Depth:", new QLabel(QString::number(problem.depth, 'g', 6)));
   form->addRow("Precision:", new QLabel(QString::number(problem.precision, 'g', 3)));
-  form->addRow("Materials:", new QLabel(QString::number(problem.materialProps.size())));
-  form->addRow("Boundaries:", new QLabel(QString::number(problem.boundaryProps.size())));
-  form->addRow("Circuits:", new QLabel(QString::number(problem.circuitProps.size())));
+  if (m_thermalMode) {
+    form->addRow("Materials:", new QLabel(QString::number(problem.thermalMaterialProps.size())));
+    form->addRow("Boundaries:", new QLabel(QString::number(problem.thermalBoundaryProps.size())));
+    form->addRow("Conductors:", new QLabel(QString::number(problem.thermalConductorProps.size())));
+  } else {
+    form->addRow("Materials:", new QLabel(QString::number(problem.materialProps.size())));
+    form->addRow("Boundaries:", new QLabel(QString::number(problem.boundaryProps.size())));
+    form->addRow("Circuits:", new QLabel(QString::number(problem.circuitProps.size())));
+  }
   form->addRow("Mesh nodes:", new QLabel(QString::number(m_solution.nodes.size())));
   form->addRow("Mesh elements:", new QLabel(QString::number(m_solution.elements.size())));
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
@@ -2246,6 +2405,13 @@ void SolutionWindow::onCircuitPropsTriggered()
 {
   if (m_currentPath.isEmpty()) {
     QMessageBox::information(this, "Circuit Properties", "No solution loaded.");
+    return;
+  }
+  // Circuits are a magnetics-only concept (heat flow's node/segment-level
+  // "Conductor" analog has no per-element solved-current-style data this
+  // reader extracts at all yet -- see FemmThermalConductorProp's comment).
+  if (m_thermalMode) {
+    QMessageBox::information(this, "Circuit Properties", "Not applicable to a heat-flow solution.");
     return;
   }
   FemmProblem problem;
@@ -2322,6 +2488,14 @@ void SolutionWindow::onBhCurvesTriggered()
   // materials this *solved* problem used, for reference, not editing.
   if (m_currentPath.isEmpty()) {
     QMessageBox::information(this, "BH Curves", "No solution loaded.");
+    return;
+  }
+  // BH curves are a magnetics-only concept -- heat flow's nonlinear
+  // conductivity analog (FemmThermalMaterialProp::tkData) isn't wired
+  // into this viewer (see that field's comment: read/preserved, not yet
+  // exposed to any dialog, including this read-only one).
+  if (m_thermalMode) {
+    QMessageBox::information(this, "BH Curves", "Not applicable to a heat-flow solution.");
     return;
   }
   FemmProblem problem;
@@ -2536,14 +2710,23 @@ void SolutionWindow::onOpenRecentFile()
     updateRecentFilesMenu();
     return;
   }
-  // A recent-files entry might be a .fem (geometry, from MainWindow's own
-  // shared list) rather than a .ans/.ansx -- route it back to a geometry
-  // editor window instead of trying to open it here.
+  // A recent-files entry might be a .fem/.feh (geometry, from MainWindow's
+  // own shared list) rather than a solved .ans/.ansx/.anh -- route it back
+  // to a geometry editor window instead of trying to open it here. See
+  // MainWindow::onOpenRecentFile's identical .fem-vs-.feh routing fix for
+  // why suffix (not a blind default) decides which MainWindow method runs.
   QString suffix = QFileInfo(path).suffix();
+  if (suffix.compare("anh", Qt::CaseInsensitive) == 0) {
+    openAnhFile(path);
+    return;
+  }
   if (suffix.compare("ans", Qt::CaseInsensitive) != 0 && suffix.compare("ansx", Qt::CaseInsensitive) != 0) {
     auto* window = new MainWindow();
     window->show();
-    window->openFile(path);
+    if (suffix.compare("feh", Qt::CaseInsensitive) == 0)
+      window->openThermalFile(path);
+    else
+      window->openFile(path);
     return;
   }
   openAnsFile(path);

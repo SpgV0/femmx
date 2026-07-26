@@ -38,6 +38,14 @@ SegmentPropDialog::SegmentPropDialog(const QVector<FemmSegment*>& segments, cons
   m_boundary->setCurrentIndex(sameBoundary ? qBound(0, segments.first()->boundaryMarker, problem.boundaryProps.size()) : 0);
   form->addRow("Boundary:", m_boundary);
 
+  m_thermalBoundary = new QComboBox(this);
+  m_thermalBoundary->addItem("<None>");
+  for (const FemmThermalBoundaryProp& b : problem.thermalBoundaryProps)
+    m_thermalBoundary->addItem(b.name);
+  bool sameThermalBoundary = allSame(segments, [](FemmSegment* s) { return s->thermalBoundaryMarker; });
+  m_thermalBoundary->setCurrentIndex(sameThermalBoundary ? qBound(0, segments.first()->thermalBoundaryMarker, problem.thermalBoundaryProps.size()) : 0);
+  form->addRow("Boundary (Heat Flow):", m_thermalBoundary);
+
   // Matches OpSegDlg's own mixed-selection rule: automesh wins if ANY
   // selected segment is on automesh; otherwise pre-fill with the average
   // of their mesh sizes (not an arbitrary single segment's value).
@@ -88,6 +96,7 @@ void SegmentPropDialog::onAccept()
 {
   for (FemmSegment* s : m_segments) {
     s->boundaryMarker = m_boundary->currentIndex();
+    s->thermalBoundaryMarker = m_thermalBoundary->currentIndex();
     s->maxSideLength = m_automesh->isChecked() ? -1.0 : m_meshSize->text().toDouble();
     s->hidden = m_hidden->isChecked();
     s->inGroup = m_inGroup->text().toInt();

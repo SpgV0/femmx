@@ -55,6 +55,8 @@ qt_add_executable(femmqt WIN32
   FemmProblem.h
   FemmFileIO.h
   FemmFileIO.cpp
+  HeatFileIO.h
+  HeatFileIO.cpp
   FemmProblemEdit.h
   FemmProblemEdit.cpp
   GeometryScene.h
@@ -66,6 +68,8 @@ qt_add_executable(femmqt WIN32
   MeshSolution.h
   AnsFileIO.h
   AnsFileIO.cpp
+  AnhFileIO.h
+  AnhFileIO.cpp
   AnsxFileIO.h
   AnsxFileIO.cpp
   SolutionView.h
@@ -86,6 +90,12 @@ qt_add_executable(femmqt WIN32
   CircuitPropDialog.cpp
   MaterialPropDialog.h
   MaterialPropDialog.cpp
+  ThermalPointPropDialog.h
+  ThermalPointPropDialog.cpp
+  ThermalBoundaryPropDialog.h
+  ThermalBoundaryPropDialog.cpp
+  ThermalMaterialPropDialog.h
+  ThermalMaterialPropDialog.cpp
   NodePropDialog.h
   NodePropDialog.cpp
   SegmentPropDialog.h
@@ -116,6 +126,10 @@ qt_add_executable(femmqt WIN32
   MaterialLibraryIO.cpp
   MaterialLibraryDialog.h
   MaterialLibraryDialog.cpp
+  ThermalMaterialLibraryIO.h
+  ThermalMaterialLibraryIO.cpp
+  ThermalMaterialLibraryDialog.h
+  ThermalMaterialLibraryDialog.cpp
   OpenBoundaryDialog.h
   OpenBoundaryDialog.cpp
   DxfIO.h

@@ -41,13 +41,13 @@ void waitPumpingEvents(QProcess& proc)
 
 } // namespace
 
-bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
+bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QString& errorMessage, FemmPhysicsType physicsType)
 {
   QFileInfo fi(femPath);
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
   QString workingDir = fi.absolutePath();
 
-  if (!MeshBuilder::writePolyAndPbc(problem, rootPath, errorMessage))
+  if (!MeshBuilder::writePolyAndPbc(problem, rootPath, errorMessage, physicsType))
     return false;
 
   double minAngle = std::min(problem.minAngle + kMinAngleBump, kMinAngleMax);
@@ -73,31 +73,51 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
   return true;
 }
 
-bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
+bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QString& errorMessage, FemmPhysicsType physicsType)
 {
-  QFileInfo fi(femPath);
+  QFileInfo fi(filePath);
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
   QString workingDir = fi.absolutePath();
 
-  if (!mesh(problem, femPath, errorMessage))
+  if (!mesh(problem, filePath, errorMessage, physicsType))
     return false;
 
-  QProcess fkn;
-  fkn.setWorkingDirectory(workingDir);
-  fkn.start(solverDir() + "/fkn.exe", QStringList{ rootPath });
-  if (!fkn.waitForStarted(10000)) {
+  const bool thermal = (physicsType == FemmPhysicsType::HeatFlow);
+  QProcess solver;
+  solver.setWorkingDirectory(workingDir);
+  solver.start(solverDir() + (thermal ? "/hsolv.exe" : "/fkn.exe"), QStringList{ rootPath });
+  if (!solver.waitForStarted(10000)) {
     errorMessage = "Problem executing the solver.";
     return false;
   }
-  waitPumpingEvents(fkn);
+  waitPumpingEvents(solver);
 
-  if (fkn.exitStatus() != QProcess::NormalExit) {
-    errorMessage = "fkn.exe terminated abnormally.";
+  if (solver.exitStatus() != QProcess::NormalExit) {
+    errorMessage = QStringLiteral("%1 terminated abnormally.").arg(thermal ? "hsolv.exe" : "fkn.exe");
     return false;
   }
 
+  if (thermal) {
+    // hsolv/MAIN.CPP's own exit codes -- confirmed directly, NOT the same
+    // mapping as fkn.exe's below (no code 1 at all, and hsolv reuses code
+    // 7 for two different failures -- "problem loading .feh file" at
+    // startup and "couldn't write results to disk" at the end -- an
+    // existing quirk in hsolv's own code, not something to paper over
+    // with a guessed disambiguation).
+    switch (solver.exitCode()) {
+    case 0: return true;
+    case 2: errorMessage = "problem loading mesh"; return false;
+    case 3: errorMessage = "problem loading previous solution"; return false;
+    case 4: errorMessage = "problem renumbering node points"; return false;
+    case 5: errorMessage = "couldn't allocate enough space for matrices"; return false;
+    case 6: errorMessage = "Couldn't solve the problem"; return false;
+    case 7: errorMessage = "problem loading the .feh file, or couldn't write results to disk"; return false;
+    default: errorMessage = QStringLiteral("hsolv.exe exited with unrecognized code %1").arg(solver.exitCode()); return false;
+    }
+  }
+
   // Exit code mapping mirrors femm/FemmeView.cpp:2804-2817 exactly.
-  switch (fkn.exitCode()) {
+  switch (solver.exitCode()) {
   case 0: return true;
   case 1: errorMessage = "Material properties have not been defined for all regions"; return false;
   case 2: errorMessage = "problem loading mesh"; return false;
@@ -106,6 +126,6 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QStr
   case 5: errorMessage = "Couldn't solve the problem"; return false;
   case 6: errorMessage = "couldn't write results to disk"; return false;
   case 7: errorMessage = "problem loading input file"; return false;
-  default: errorMessage = QStringLiteral("fkn.exe exited with unrecognized code %1").arg(fkn.exitCode()); return false;
+  default: errorMessage = QStringLiteral("fkn.exe exited with unrecognized code %1").arg(solver.exitCode()); return false;
   }
 }

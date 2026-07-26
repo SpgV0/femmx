@@ -66,6 +66,23 @@ class MeshSolutionItem : public QGraphicsItem {
   // just means nothing to draw yet.
   void setProblemGeometry(const FemmProblem* problem);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+  // direct user request to view thermal (heat-flow) results too (Round
+  // 6) -- rather than a parallel thermal rendering pipeline, this reuses
+  // the existing one: AnhFileIO::readAnh repurposes MeshSolutionNode::Are
+  // to hold nodal temperature and MeshSolutionElement::B1re/B2re to hold
+  // heat flux Gx/Gy (see that file's header comment), so Contour Plot
+  // already draws correct isotherms and Density Plot's BMag/BReMag/
+  // LogBMag already draw correct |heat flux| with NO code change here.
+  // The one quantity that WOULD silently show a plausible-but-physically-
+  // meaningless number is HMag (divides by muX*mu0, and muX is itself
+  // repurposed to hold thermal conductivity) -- this flag makes
+  // elementQuantity() fall back to flux magnitude for that case instead,
+  // and legendTitle()/hover-and-Point-tool text (SolutionWindow) show
+  // Temperature/Heat Flux labels instead of A/B/H/J ones.
+  void setThermalMode(bool thermal);
+  bool thermalMode() const { return m_thermalMode; }
+
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // per user request for "all the different heatmap possibilities" the
   // classic GUI offers (femm/FemmviewView.cpp's DensityPlot 1-10 for AC,
@@ -215,6 +232,7 @@ class MeshSolutionItem : public QGraphicsItem {
   bool m_showFieldArrows = false;
   const FemmProblem* m_problemGeometry = nullptr;
   void paintProblemGeometry(QPainter* painter, const QRectF& exposedRect);
+  bool m_thermalMode = false;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // was a single m_nodeBMagAvg (|B| only) -- generalized to one
@@ -367,9 +385,15 @@ class SolutionWindow : public QMainWindow {
   explicit SolutionWindow(QWidget* parent = nullptr);
 
   void openAnsFile(const QString& path);
+  // Heat-flow counterpart -- see MeshSolutionItem::setThermalMode's
+  // comment for the shared-rendering-pipeline reasoning (Round 6). No
+  // .anhx-equivalent fast-cache this round (see AnhFileIO.h) -- always
+  // reads the .anh directly.
+  void openAnhFile(const QString& path);
 
   private slots:
   void onOpenTriggered();
+  void onOpenThermalTriggered();
   void onReloadTriggered();
   void onCanvasClicked(QPointF scenePos);
   void onCanvasHovered(QPointF scenePos);
@@ -470,6 +494,11 @@ class SolutionWindow : public QMainWindow {
   // out-param) rather than re-reading the source file's header on every
   // hover.
   bool m_axisymmetric = false;
+  // Set by openAnhFile(), cleared by openAnsFile() -- gates the hover/
+  // Point-tool text (onCanvasHovered/onCanvasClicked) between the
+  // magnetics A/B/H/J block and a simpler Temperature/Heat-Flux one. See
+  // MeshSolutionItem::setThermalMode's comment for the rendering side.
+  bool m_thermalMode = false;
 
   SolutionToolMode m_toolMode = SolutionToolMode::None;
   QAction* m_pointToolAction = nullptr;

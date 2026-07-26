@@ -43,6 +43,10 @@ class BlockLabelPropDialog : public QDialog {
   QVector<FemmBlockLabel*> m_labels;
 
   QComboBox* m_material = nullptr;
+  // Heat flow's material assignment, independent of m_material above --
+  // see FemmBlockLabel::thermalBlockTypeIndex's comment. Same "<Hole>"
+  // leading-entry convention as m_material.
+  QComboBox* m_thermalMaterial = nullptr;
   QComboBox* m_circuit = nullptr;
   QCheckBox* m_automesh = nullptr;
   QLineEdit* m_meshSize = nullptr;
@@ -58,5 +62,6 @@ class BlockLabelPropDialog : public QDialog {
   // onAccept() tell "user left it on <Multiple>" apart from "user picked
   // the same entry <Multiple> happened to sit next to."
   bool m_materialHasMultiplePlaceholder = false;
+  bool m_thermalMaterialHasMultiplePlaceholder = false;
   bool m_circuitHasMultiplePlaceholder = false;
 };

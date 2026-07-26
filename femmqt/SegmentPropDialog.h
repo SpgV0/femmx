@@ -33,6 +33,9 @@ class SegmentPropDialog : public QDialog {
   private:
   QVector<FemmSegment*> m_segments;
   QComboBox* m_boundary = nullptr;
+  // Heat flow's boundary assignment, independent of m_boundary above --
+  // see FemmSegment::thermalBoundaryMarker's comment.
+  QComboBox* m_thermalBoundary = nullptr;
   QCheckBox* m_automesh = nullptr;
   QLineEdit* m_meshSize = nullptr;
   QCheckBox* m_hidden = nullptr;

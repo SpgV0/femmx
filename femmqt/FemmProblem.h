@@ -53,6 +53,65 @@ struct FemmCircuitProp {
   int circType = 0; // 0 = parallel, 1 = series
 };
 
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: heat-
+// flow counterparts to the magnetics property structs above, added per
+// direct user request to solve both magnetics and thermal problems on the
+// same femmqt geometry. Field names/semantics confirmed directly against
+// femm/hd_nosebl.h (hdrawdata::CMaterialProp/CBoundaryProp/CPointProp),
+// femm/HDRAWDOC.CPP's .feh tag reader, and femm/hd_BdryDlg.cpp's
+// boundary-type combo box -- not a re-derivation. These are deliberately
+// separate structs/lists from the magnetics ones above (not a shared/
+// merged type) -- the classic GUI itself keeps
+// magnetics and heat flow as fully separate Doc/View hierarchies with no
+// shared property base class, and this mirrors that precedent.
+struct FemmThermalMaterialProp {
+  QString name;
+  double Kx = 1, Ky = 1; // thermal conductivity, W/(m*K)
+  double Kt = 3; // volumetric heat capacity, MJ/(m^3*K)
+  double qv = 0; // volumetric heat generation, W/m^3
+  // Nonlinear k(T) curve, only meaningful if non-empty (linear material
+  // otherwise, using Kx/Ky directly) -- read/written but not yet editable
+  // in the material dialog, mirroring FemmMaterialProp::bhData exactly.
+  QVector<QPair<double, double>> tkData;
+};
+
+struct FemmThermalBoundaryProp {
+  QString name;
+  // Matches hd_BdryDlg.cpp's IDC_HD_BDRYFORMAT combo box exactly:
+  int bdryFormat = 0; // 0 = Fixed Temperature (uses Tset)
+                       // 1 = Heat Flux (uses qs)
+                       // 2 = Convection (uses qs, h, Tinf)
+                       // 3 = Radiation (uses qs, h, Tinf, beta, TinfRad)
+                       // 4 = Periodic, 5 = Antiperiodic -- NOT supported by
+                       //     femmqt yet, same as magnetics' own periodic/
+                       //     antiperiodic boundaries (see FemmBoundaryProp)
+  double Tset = 0;
+  double qs = 0;
+  double beta = 0, h = 0, Tinf = 0, TinfRad = 0;
+};
+
+struct FemmThermalPointProp {
+  QString name;
+  double Tp = 0; // prescribed nodal temperature, K -- <Tp> in .feh
+  double qp = 0; // point heat generation, W
+};
+
+// Heat flow's node/segment/arc-level analog to magnetics' block-level
+// FemmCircuitProp ("Conductor" in the .feh format/classic UI, not
+// "Circuit"). Read/written so a femmqt round-trip of a classic-GUI .feh
+// doesn't silently drop a file's conductor definitions, mirroring
+// FemmMaterialProp::bhData's "preserve, don't yet expose editing"
+// precedent -- femmqt has no UI to create/assign these yet, and
+// MeshBuilder doesn't encode the per-entity conductor index into the
+// mesh (a real follow-up, see Round 6's plan for why this is harder than
+// it looks: unlike circuits, conductors are node/segment-level, not
+// block-label-level).
+struct FemmThermalConductorProp {
+  QString name;
+  double Tc = 0, qc = 0;
+  int circType = 0; // 0 = parallel (fixed T), 1 = series (fixed net q) -- matches FemmCircuitProp::circType
+};
+
 struct FemmNode {
   double x = 0, y = 0;
   // 0 = none, else 1-based index into pointProps -- NOT boundaryProps.
@@ -68,6 +127,12 @@ struct FemmNode {
   int pointPropIndex = 0;
   int inGroup = 0;
   bool isSelected = false;
+  // 0 = none, else 1-based index into thermalPointProps -- independent of
+  // pointPropIndex above, so the same node can carry a magnetics point
+  // property AND a thermal point property at once (see FemmProblem's
+  // Round 6 comment on why geometry is shared between physics types).
+  int thermalPointPropIndex = 0;
+  int thermalConductorIndex = 0; // 0 = none, else 1-based into thermalConductorProps -- see FemmThermalConductorProp
 };
 
 struct FemmSegment {
@@ -77,6 +142,10 @@ struct FemmSegment {
   bool hidden = false;
   int inGroup = 0;
   bool isSelected = false;
+  // 0 = none, else 1-based index into thermalBoundaryProps -- independent
+  // of boundaryMarker above, same reasoning as FemmNode::thermalPointPropIndex.
+  int thermalBoundaryMarker = 0;
+  int thermalConductorIndex = 0; // see FemmNode::thermalConductorIndex
 };
 
 struct FemmArcSegment {
@@ -88,6 +157,8 @@ struct FemmArcSegment {
   int inGroup = 0;
   double mySideLength = 1;
   bool isSelected = false;
+  int thermalBoundaryMarker = 0; // see FemmSegment::thermalBoundaryMarker
+  int thermalConductorIndex = 0; // see FemmNode::thermalConductorIndex
 };
 
 // A block label with blockTypeIndex < 0 is a hole ("<No Mesh>" in the .fem
@@ -105,6 +176,10 @@ struct FemmBlockLabel {
   bool isExternal = false;
   bool isDefault = false;
   bool isSelected = false;
+  // -1 = hole for thermal purposes, else 1-based index into
+  // thermalMaterialProps -- independent of blockTypeIndex above, same
+  // reasoning as FemmNode::thermalPointPropIndex.
+  int thermalBlockTypeIndex = -1;
 };
 
 enum class FemmLengthUnits {
@@ -119,6 +194,17 @@ enum class FemmLengthUnits {
 enum class FemmCoordinateType {
   Planar = 0,
   Axisymmetric = 1,
+};
+
+// Which physics a mesh/solve operation targets -- a plain parameter for
+// MeshBuilder/SolveRunner (Round 6), not stored in FemmProblem itself and
+// not a UI "mode": both physics types' properties can be edited on the
+// same FemmProblem at once (see the per-entity dialogs' "(Heat Flow)"
+// fields), this just tells the mesh writer/solve invocation which of the
+// two parallel property/index sets to encode and which solver exe to run.
+enum class FemmPhysicsType {
+  Magnetics,
+  HeatFlow,
 };
 
 struct FemmProblem {
@@ -153,6 +239,19 @@ struct FemmProblem {
   QVector<FemmBoundaryProp> boundaryProps;
   QVector<FemmMaterialProp> materialProps;
   QVector<FemmCircuitProp> circuitProps;
+
+  // Heat-flow property lists, parallel to the magnetics ones above -- see
+  // FemmThermalMaterialProp's comment for why these are separate lists
+  // rather than folded into the magnetics ones. Top-level scalar fields
+  // above (precision/minAngle/depth/lengthUnits/problemType/coordsPolar/
+  // extZo,Ro,Ri/gpuAccel/comment) are mesh/solve-level settings that
+  // apply the same way to either physics type and are deliberately NOT
+  // duplicated; frequency/acSolver are AC-magnetics-only and are simply
+  // omitted when writing a .feh (heat flow is steady-state only).
+  QVector<FemmThermalPointProp> thermalPointProps;
+  QVector<FemmThermalBoundaryProp> thermalBoundaryProps;
+  QVector<FemmThermalMaterialProp> thermalMaterialProps;
+  QVector<FemmThermalConductorProp> thermalConductorProps;
 
   QVector<FemmNode> nodes;
   QVector<FemmSegment> segments;

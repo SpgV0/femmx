@@ -212,6 +212,87 @@ void FemmProblemEdit::deleteCircuitProp(FemmProblem& p, int index)
   p.circuitProps.remove(index);
 }
 
+int FemmProblemEdit::countThermalPointPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmNode& node : p.nodes)
+    if (node.thermalPointPropIndex == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteThermalPointProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.thermalPointProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmNode& node : p.nodes) {
+    if (node.thermalPointPropIndex == marker)
+      node.thermalPointPropIndex = 0;
+    else if (node.thermalPointPropIndex > marker)
+      node.thermalPointPropIndex--;
+  }
+  p.thermalPointProps.remove(index);
+}
+
+int FemmProblemEdit::countThermalBoundaryPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmSegment& s : p.segments)
+    if (s.thermalBoundaryMarker == marker)
+      n++;
+  for (const FemmArcSegment& a : p.arcSegments)
+    if (a.thermalBoundaryMarker == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteThermalBoundaryProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.thermalBoundaryProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmSegment& s : p.segments) {
+    if (s.thermalBoundaryMarker == marker)
+      s.thermalBoundaryMarker = 0;
+    else if (s.thermalBoundaryMarker > marker)
+      s.thermalBoundaryMarker--;
+  }
+  for (FemmArcSegment& a : p.arcSegments) {
+    if (a.thermalBoundaryMarker == marker)
+      a.thermalBoundaryMarker = 0;
+    else if (a.thermalBoundaryMarker > marker)
+      a.thermalBoundaryMarker--;
+  }
+  p.thermalBoundaryProps.remove(index);
+}
+
+int FemmProblemEdit::countThermalMaterialPropReferences(const FemmProblem& p, int index)
+{
+  int marker = index + 1;
+  int n = 0;
+  for (const FemmBlockLabel& b : p.blockLabels)
+    if (b.thermalBlockTypeIndex == marker)
+      n++;
+  return n;
+}
+
+void FemmProblemEdit::deleteThermalMaterialProp(FemmProblem& p, int index)
+{
+  if (index < 0 || index >= p.thermalMaterialProps.size())
+    return;
+  int marker = index + 1;
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (b.thermalBlockTypeIndex == marker)
+      b.thermalBlockTypeIndex = -1; // reverts to a hole, matching deleteMaterialProp's own convention
+    else if (b.thermalBlockTypeIndex > marker)
+      b.thermalBlockTypeIndex--;
+  }
+  p.thermalMaterialProps.remove(index);
+}
+
 void FemmProblemEdit::moveSelected(FemmProblem& p, double dx, double dy)
 {
   for (FemmNode& n : p.nodes) {

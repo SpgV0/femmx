@@ -49,6 +49,19 @@ void deleteMaterialProp(FemmProblem& p, int index);
 int countCircuitPropReferences(const FemmProblem& p, int index);
 void deleteCircuitProp(FemmProblem& p, int index);
 
+// Heat-flow counterparts of the three functions above, operating on each
+// entity's thermal* index instead of its magnetics one -- see
+// FemmProblem.h's Round 6 comment for why these are independent indices
+// on the same shared geometry, not aliases of the magnetics ones.
+int countThermalPointPropReferences(const FemmProblem& p, int index);
+void deleteThermalPointProp(FemmProblem& p, int index);
+
+int countThermalBoundaryPropReferences(const FemmProblem& p, int index);
+void deleteThermalBoundaryProp(FemmProblem& p, int index);
+
+int countThermalMaterialPropReferences(const FemmProblem& p, int index);
+void deleteThermalMaterialProp(FemmProblem& p, int index);
+
 // Geometry transforms on the current selection -- mirror classic FEMM's
 // CFemmeDoc::Move/Copy/Scale/Mirror, which iterate `if (xxx[i].IsSelected)`
 // over each entity list. This codebase's selection lives on the Qt side

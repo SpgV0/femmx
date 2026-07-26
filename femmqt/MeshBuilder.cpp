@@ -58,8 +58,9 @@ bool arcCircle(double x0, double y0, double x1, double y1, double arcLengthDeg,
 
 } // namespace
 
-bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath, QString& errorMessage)
+bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath, QString& errorMessage, FemmPhysicsType physicsType)
 {
+  const bool thermal = (physicsType == FemmPhysicsType::HeatFlow);
   QVector<WorkNode> nodes;
   QVector<WorkSegment> segments;
 
@@ -84,7 +85,8 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
     WorkNode wn;
     wn.x = n.x;
     wn.y = n.y;
-    wn.marker = (n.pointPropIndex == 0) ? 0 : (n.pointPropIndex + 1);
+    int pointPropIndex = thermal ? n.thermalPointPropIndex : n.pointPropIndex;
+    wn.marker = (pointPropIndex == 0) ? 0 : (pointPropIndex + 1);
     nodes.push_back(wn);
   }
 
@@ -96,7 +98,8 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
     double x1 = p.nodes[s.n1].x, y1 = p.nodes[s.n1].y;
     double dx = x1 - x0, dy = y1 - y0;
     double lineLen = std::hypot(dx, dy);
-    int segMarker = (s.boundaryMarker == 0) ? 0 : -(s.boundaryMarker + 1);
+    int boundaryMarker = thermal ? s.thermalBoundaryMarker : s.boundaryMarker;
+    int segMarker = (boundaryMarker == 0) ? 0 : -(boundaryMarker + 1);
 
     int k;
     if (s.maxSideLength < 0)
@@ -145,7 +148,8 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
       continue;
     double x0 = p.nodes[arc.n0].x, y0 = p.nodes[arc.n0].y;
     double x1 = p.nodes[arc.n1].x, y1 = p.nodes[arc.n1].y;
-    int segMarker = (arc.boundaryMarker == 0) ? 0 : -(arc.boundaryMarker + 1);
+    int arcBoundaryMarker = thermal ? arc.thermalBoundaryMarker : arc.boundaryMarker;
+    int segMarker = (arcBoundaryMarker == 0) ? 0 : -(arcBoundaryMarker + 1);
 
     double cx, cy, R;
     if (!arcCircle(x0, y0, x1, y1, arc.arcLength, cx, cy, R)) {
@@ -198,9 +202,11 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
 
   // holes (femm/writepoly.cpp:274-283)
   QVector<int> holeIndices;
-  for (int i = 0; i < p.blockLabels.size(); i++)
-    if (p.blockLabels[i].blockTypeIndex < 0)
+  for (int i = 0; i < p.blockLabels.size(); i++) {
+    int blockTypeIndex = thermal ? p.blockLabels[i].thermalBlockTypeIndex : p.blockLabels[i].blockTypeIndex;
+    if (blockTypeIndex < 0)
       holeIndices.push_back(i);
+  }
   out << holeIndices.size() << "\n";
   for (int k = 0; k < holeIndices.size(); k++) {
     const FemmBlockLabel& b = p.blockLabels[holeIndices[k]];
@@ -224,9 +230,11 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
 
   // regional attributes (femm/writepoly.cpp:308-319)
   QVector<int> regionIndices;
-  for (int i = 0; i < p.blockLabels.size(); i++)
-    if (p.blockLabels[i].blockTypeIndex >= 0)
+  for (int i = 0; i < p.blockLabels.size(); i++) {
+    int blockTypeIndex = thermal ? p.blockLabels[i].thermalBlockTypeIndex : p.blockLabels[i].blockTypeIndex;
+    if (blockTypeIndex >= 0)
       regionIndices.push_back(i);
+  }
   out << regionIndices.size() << "\n";
   for (int k = 0; k < regionIndices.size(); k++) {
     const FemmBlockLabel& b = p.blockLabels[regionIndices[k]];
