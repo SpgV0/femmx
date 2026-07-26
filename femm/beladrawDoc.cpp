@@ -56,7 +56,9 @@ CbeladrawDoc::CbeladrawDoc()
   d_minangle = DEFAULT_MINIMUM_ANGLE;
   d_depth = 1;
   d_coord = 0;
-  d_length = 0;
+  // Millimeters (SI), per direct user request -- was 0 (inches), matching
+  // the pre-fork FEMM 4.2 default.
+  d_length = 1;
   d_type = 0;
 
   // Figure out what directory the executables
@@ -111,6 +113,16 @@ BOOL CbeladrawDoc::OnNewDocument()
   Coords = d_coord;
   ProblemNote = "Add comments here.";
   extRo = extRi = extZo = 0;
+
+  // GPUAccel=0 by default -- flipping this unconditionally would have
+  // belasolv report GPU acceleration requested on plain (non-CUDA)
+  // builds too, only to fall back to the CPU solver every time. See
+  // CFemmeDoc::OnNewDocument's identical reasoning.
+#ifdef FEMM_CUDA_ENABLED
+  GPUAccel = 1;
+#else
+  GPUAccel = 0;
+#endif
 
   // reset view to default attributes
   CbeladrawView* pView;
@@ -1401,6 +1413,13 @@ BOOL CbeladrawDoc::OnOpenDocument(LPCTSTR lpszPathName)
       q[0] = NULL;
     }
 
+    // Whether to try the optional CUDA-accelerated linear solve
+    if (_strnicmp(q, "[gpuaccel]", 10) == 0) {
+      v = StripKey(s);
+      sscanf(v, "%i", &GPUAccel);
+      q[0] = NULL;
+    }
+
     // Minimum Angle Constraint for finite element mesh
     if (_strnicmp(q, "[minangle]", 10) == 0) {
       v = StripKey(s);
@@ -1928,6 +1947,7 @@ BOOL CbeladrawDoc::OnSaveDocument(LPCTSTR lpszPathName)
 
   fprintf(fp, "[Format]      =  1\n");
   fprintf(fp, "[Precision]   =  %.17g\n", Precision);
+  fprintf(fp, "[GPUAccel]    =  %i\n", GPUAccel);
   fprintf(fp, "[MinAngle]    =  %.17g\n", MinAngle);
   fprintf(fp, "[DoSmartMesh] =  %i\n", SmartMesh);
   fprintf(fp, "[Depth]       =  %.17g\n", Depth);

@@ -1,5 +1,13 @@
 - [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femmx (formerly femm_mods, then femm_plus, now SpgV0/femmx) for review
-- [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA-accelerated linear solve shipped (commit f19a90e): 0% error, 1.32x speedup on 70K nodes, opt-in via mi_setgpuaccel
+- [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA solve opt-in via mi_setgpuaccel; AC/harmonic reliably faster, but DC/real-valued speedup is unconfirmed/conflicting as of 2026-07-20 — verify before citing either number
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
 - [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged
+- [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, merge --no-ff to rc+main, push all
+- [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs; COM uses bin\plain\/bin\cuda\; git clean -fdx bin/ after a killed build; missing DLL can silently hang, not error
+- [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
+- [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — magnetics-only; classic GUI is the default again as of 2026-07-21 (Qt-default was reverted)
+- [Validate numerical ports empirically](validate_numerical_ports_empirically.md) — don't trust a from-scratch re-derivation of a classic-FEMM formula; check against the classic GUI's real output
+- [CUDA solve ported to all 4 solvers](hsolv_thermal_cuda_port.md) — fkn's CUDA PCG/PBCG solve ported to hsolv, belasolv, csolv too (+ *_setgpuaccel/*_setredraw); csolv needed its own kernel (different convergence criterion); no real-hardware speedup number yet for the 3 new ones
+- [Qt GUI scope deferred](qt_gui_scope_deferred.md) — new non-magnetics physics work goes in the classic GUI + solvers, not femmqt, per direct instruction
+- [pyfemm is pip-installed](pyfemm_is_pip_installed.md) — test/*.py's `import femm` is the PyPI package, not this repo's incomplete pyfemm/ dir

@@ -99,6 +99,8 @@ set(femm_SOURCES
   femmplotView.h
   FemmviewDoc.h
   FemmviewView.h
+  FemxFileIO.h
+  AnsxFileIO.h
   fullmatrix.h
   GapIntegral.h
   GapPlotDlg.h
@@ -280,6 +282,8 @@ set(femm_SOURCES
   femmplotDoc.cpp
   femmplotView.cpp
   FemmviewDoc.cpp
+  FemxFileIO.cpp
+  AnsxFileIO.cpp
   femmviewLua.cpp
   FemmviewView.cpp
   fullmatrix.cpp
@@ -369,4 +373,13 @@ set(femm_SOURCES
 add_executable(femmx WIN32 ${femm_SOURCES})
 target_include_directories(femmx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(femmx liblua ResizableLib)
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: see
+# FEMM_CUDA_ENABLED's use in FemmeDoc.cpp -- lets this GUI default new
+# problems to GPUAccel=1 only when it's actually being built as the CUDA
+# variant (root CMakeLists.txt's ENABLE_CUDA_SOLVER, shared with
+# fkn/CMakeLists.txt so both halves of a `build_femmx.ps1 -Cuda` build
+# agree on which variant they are).
+if(ENABLE_CUDA_SOLVER)
+  target_compile_definitions(femmx PRIVATE FEMM_CUDA_ENABLED)
+endif()
 install(TARGETS femmx DESTINATION "${INSTALL_BIN_DIR}")

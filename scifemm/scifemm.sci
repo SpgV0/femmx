@@ -4341,6 +4341,18 @@ function mi_smartmesh(n)
 	callfemm(['mi_smartmesh(' , num(n) , ')' ]);
 endfunction
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-07-21.
+// mi_setgpuaccel(flag): flag=1 asks fkn.exe to try its optional CUDA-
+// accelerated linear solve for this problem; it transparently falls
+// back to the normal CPU solve if fkn.exe wasn't built with CUDA
+// support, or if the GPU solve fails for any reason. flag=0 (default)
+// is CPU-only. Persisted in the .fem file as [GPUAccel], same
+// mechanism as the existing AC solver choice. Matches octavefemm's own
+// mi_setgpuaccel.m, which this binding was missing.
+function mi_setgpuaccel(n)
+	callfemm(['mi_setgpuaccel(' , num(n) , ')' ]);
+endfunction
+
 function ei_smartmesh(n)
 	callfemm(['ei_smartmesh(' , num(n) , ')' ]);
 endfunction

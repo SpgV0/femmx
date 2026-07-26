@@ -1,0 +1,10 @@
+// Windows executable icon for femmqt.exe -- reuses the same FEMMX app
+// icon already used for the installer (script.nsi's MUI_ICON) and for
+// the classic GUI's own femmx.exe (femm/femm.rc's IDR_MAINFRAME), rather
+// than introducing a second icon asset. Windows uses whichever ICON
+// resource appears FIRST in a .rc file as the executable's default icon
+// (Explorer, taskbar, Alt+Tab, the window's own title-bar icon) --
+// resource ID value doesn't matter for that, only the first-listed icon
+// does. Without this, Qt's qt_add_executable() produces a plain
+// unbranded exe with no custom icon at all.
+IDI_ICON1 ICON "..\\femm\\res\\idr_mainframe.ico"
