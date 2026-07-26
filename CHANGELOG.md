@@ -43,6 +43,18 @@
   Load Monitor's current-flow/electrostatics labels were swapped;
   `manual.pdf` wasn't packaged into the installer; femmqt's "Zoom
   Natural" could badly mis-frame real-world models.
+* New problems default to millimeters (previously inches) and to CUDA
+  acceleration on when built alongside CUDA-enabled solvers (previously
+  always off by default), in both GUIs.
+* Installer: detects an existing FEMMX install on launch and offers to
+  uninstall it first, instead of silently installing alongside it.
+* femmqt Plot X-Y gained an actual line chart (with CSV/PNG export)
+  instead of a bare text table, plus a quantity selector (|A|/|B|)
+  showing one plot at a time.
+* Fixed a stale drag-trail artifact in femmqt's geometry editor: rapid
+  node/block-label dragging could leave visibly-brighter ghost patches
+  behind from repeated antialiased grid-dot repainting; now fixed via
+  background caching.
 
 17Jul2026 (v1.2.0)
 
