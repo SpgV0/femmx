@@ -32,6 +32,10 @@ bin/
 *.vcxproj.user
 *.pdf
 *.dvi
+
+# femmqt binary caches, regenerated on demand from the sibling .fem/.ans
+*.femx
+*.ansx
 manual.ps
 manual/cflow.tex
 manual/heatflow.tex
