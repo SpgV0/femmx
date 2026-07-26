@@ -30,6 +30,15 @@
 # come out equal). The correctness tests in those same files are still
 # run and are meaningful even without a GPU present (see their docstrings).
 #
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+# ENABLE_CUDA_SOLVER is one shared root CMakeLists.txt option covering
+# all four solvers now (fkn, hsolv, belasolv, csolv -- see
+# hsolv_thermal_cuda_port in Claude memory), so this job's existing
+# -DENABLE_CUDA_SOLVER=ON build already compiles all of them with CUDA;
+# added thermal_gpu_solver_test.py, electrostatic_gpu_solver_test.py,
+# and currentflow_gpu_solver_test.py's correctness checks alongside the
+# existing two, same is_faster_when_available deselection.
+#
 # Pinned to CUDA 12.6 rather than the action's newer default: CUDA 13.x
 # dropped support for compute capability sm_60, one of the four
 # architectures fkn/CMakeLists.txt's FEMM_CUDA_ARCHS builds for by
@@ -65,11 +74,77 @@
 # dependent, the likeliest real-world failure mode in a fresh CI runner)
 # can only ever cost this one optional artifact, never the build/tests/
 # installer that the rest of this job produces.
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+# added an "Install Qt6" step (both jobs, right before the "Build FEMM"
+# step) so CI actually compiles and validates femmqt, the new Qt6-based
+# GUI (femmqt/, see femmqt/CMakeLists.txt) -- it's now the default GUI
+# the installer ships (script.nsi), so leaving it completely unbuilt by
+# CI would be a real coverage gap. jurplel/install-qt-action sets the
+# CMAKE_PREFIX_PATH *environment* variable, which CMake's find_package()
+# reads automatically (documented CMake behavior, no extra -D flags
+# needed here) -- so no build.ps1/CMakeLists.txt changes were needed
+# beyond installing Qt before the build step runs. Version/arch
+# (6.11.1, win64_msvc2022_64) match the MSVC 2022 64-bit kit this was
+# developed and verified against locally. modules: 'qtsvg' is needed
+# because femmqt/CMakeLists.txt requires the Svg component (toolbar
+# icons, see IconTheme.cpp) -- unlike Qt5, QtSvg is a separate add-on
+# module aqtinstall doesn't fetch by default, and femmqt/CMakeLists.txt's
+# find_package(Qt6 QUIET COMPONENTS Widgets Svg) only succeeds if every
+# requested component is present, so omitting this would silently skip
+# building femmqt in CI again (gracefully, per the fallback mentioned
+# below, just not usefully).
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# pinned version down to 6.9.3 (from 6.11.1) -- confirmed directly (both
+# via `aqt list-qt windows desktop --arch <version>` run locally, and raw
+# `curl` against download.qt.io) that the entire 6.11.x/6.12.x release
+# line's Updates.xml is currently unreachable from aqtinstall's mirror
+# (download.qt.io lists e.g. qt6_6111_msvc2022_64/ in its own directory
+# index with a real date, but 404s the moment that URL is actually
+# fetched -- a mirror-propagation gap on Qt's side, not anything in this
+# workflow or femmqt/CMakeLists.txt). This surfaced as `continue-on-error`
+# silently absorbing the failure every run (job stayed green, but the
+# "Install Qt6" step itself failed with "python.exe ... exit code 1" --
+# aqtinstall is a Python tool -- and femmqt was never actually being
+# built/validated as a result). 6.9.3 confirmed working via the same
+# local reproduction. femmqt only uses Widgets+Svg, nothing 6.11-specific,
+# so this doesn't need to track the exact version installed locally
+# (C:\Qt\6.11.1\msvc2022_64) -- just needs *a* working Qt6 MSVC kit with
+# those two components. Revisit once Qt's mirrors catch up on 6.11.x+.
+#
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
+# also dropped `modules: 'qtsvg'` -- that was needed for 6.11.1 (QtSvg is
+# a separate addon module there), but for 6.9.3 it's the opposite problem:
+# `aqt list-qt windows desktop --archives 6.9.3 win64_msvc2022_64` shows
+# qtsvg as part of the *base* desktop kit's own archive list, not
+# `--modules`' addon list, so requesting it via `-m qtsvg` fails outright
+# ("packages ['qtsvg'] were not found while parsing XML of package
+# information"). Confirmed directly via aqt locally. No modules: line
+# needed at all now -- Svg comes bundled automatically.
+#
+# Marked continue-on-error: true, matching the LaTeX-install reasoning
+# just above -- a flaky Qt download/network hiccup in a fresh runner is
+# a real, likely failure mode, and should only ever cost femmqt's build
+# coverage, never the femm/fkn/triangle build, the test suite, or the
+# installer. This is safe specifically because femmqt/CMakeLists.txt
+# itself already degrades gracefully (find_package(Qt6 QUIET ...) +
+# early return()) when Qt6 isn't found, rather than failing the whole
+# CMake configure -- added the same day after confirming CI would
+# otherwise hard-fail outright (find_package(Qt6 REQUIRED ...) previously
+# took the entire configure down, not just this target, on any runner
+# without Qt6, which is every CI runner as of this change).
 name: FEMMX Continuous Integration
 
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
+# switched from running on every push/pull_request to manual-only
+# (workflow_dispatch). This workflow now builds femm+femmqt+fkn+triangle
+# and installs Qt6 on every run, which is a real amount of CI minutes for
+# a repo that's currently getting frequent commits -- manual triggering
+# avoids burning that on every intermediate push, at the cost of needing
+# to remember to run it (from the Actions tab, or `gh workflow run`)
+# before relying on its result, e.g. before a release.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -83,6 +158,16 @@ jobs:
     - name: 'Install NSIS'
       shell: pwsh
       run: choco install nsis -y --no-progress
+
+    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
+      continue-on-error: true
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.9.3'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
+        cache: true
 
     - name: 'Build FEMM'
       shell: pwsh
@@ -200,6 +285,16 @@ jobs:
       shell: pwsh
       run: choco install nsis -y --no-progress
 
+    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
+      continue-on-error: true
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.9.3'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
+        cache: true
+
     - name: 'Install CUDA Toolkit'
       id: cuda-toolkit
       uses: Jimver/cuda-toolkit@v0.2.35
@@ -229,7 +324,7 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
-        python -m pytest ${{ github.workspace }}/test/gpu_solver_test.py ${{ github.workspace }}/test/ac_gpu_solver_test.py -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
+        python -m pytest ${{ github.workspace }}/test/gpu_solver_test.py ${{ github.workspace }}/test/ac_gpu_solver_test.py ${{ github.workspace }}/test/thermal_gpu_solver_test.py ${{ github.workspace }}/test/electrostatic_gpu_solver_test.py ${{ github.workspace }}/test/currentflow_gpu_solver_test.py -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
 
     - name: 'Restore femm.ActiveFEMM COM registration'
       if: always()

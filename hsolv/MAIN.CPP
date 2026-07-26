@@ -99,6 +99,7 @@ void old_main(void* inptr)
   CBigLinProb L;
   L.TheView = TheView;
   L.Precision = Doc.Precision;
+  L.GPUAccel = Doc.GPUAccel;
 
   if (L.Create(Doc.NumNodes + Doc.NumCircProps, Doc.BandWidth) == FALSE) {
     MsgBox("couldn't allocate enough space for matrices");

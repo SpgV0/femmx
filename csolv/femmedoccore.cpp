@@ -119,6 +119,7 @@ BOOL CFemmeDocCore::OnOpenDocument()
   NumLineProps = 0;
   NumBlockProps = 0;
   NumCircProps = 0;
+  GPUAccel = 0;
 
   // parse the file
 
@@ -129,6 +130,13 @@ BOOL CFemmeDocCore::OnOpenDocument()
     if (_strnicmp(q, "[precision]", 11) == 0) {
       v = StripKey(s);
       sscanf(v, "%lf", &Precision);
+      q[0] = NULL;
+    }
+
+    // Whether to try the optional CUDA-accelerated linear solve
+    if (_strnicmp(q, "[gpuaccel]", 10) == 0) {
+      v = StripKey(s);
+      sscanf(v, "%i", &GPUAccel);
       q[0] = NULL;
     }
 

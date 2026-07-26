@@ -1,3 +1,9 @@
+% Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
+% documented ci_setgpuaccel (Problem Commands), added alongside the
+% CUDA-accelerated linear solve ported to csolv (see csolv/spars_cuda.cu).
+% Also documented ci_setredraw (Editing Commands), mirroring magnetics'
+% mi_setredraw (see femm/CDRAWLUA.CPP).
+
 \section{Current Flow Preprocessor Lua Command Set}
 
 A number of different commands are available in the preprocessor.
@@ -158,6 +164,14 @@ should be set to 1.
 \item {\tt ci\_loadsolution()} loads and displays the solution corresponding to the
 current geometry.
 
+\item{\tt ci\_setgpuaccel(flag)} Sets whether {\tt csolv} should try
+its optional CUDA-accelerated linear solve for this problem. Set {\tt
+flag} to {\tt 1} to request GPU acceleration, or {\tt 0} (the default)
+for the normal CPU solve. If {\tt csolv} was not built with CUDA
+support, or if no usable GPU is found at run time, the solve
+transparently falls back to the CPU solver. This setting is saved with
+the problem file, mirroring magnetics' {\tt mi\_setgpuaccel}.
+
 \item {\tt ci\_setfocus("documentname")} Switches the
 electrostatics input file upon which Lua commands are to act. If
 more than one electrostatics input file is being edited at a time,
@@ -212,6 +226,13 @@ objects.
 
 \texttt{editaction} 0 --nodes, 1 -- lines (segments), 2 --block labels, 3 --
 arc segments, 4- group
+
+\item{\tt ci\_setredraw(flag)} Suspends or resumes the canvas redraw
+while editing. Set {\tt flag} to {\tt 0} to suspend redraw before a
+batch of edit operations ({\em e.g.} many {\tt ci\_copytranslate} or
+{\tt ci\_copyrotate} calls on a densely-drawn model), and back to {\tt
+1} (the default state) afterward to resume it and force a single
+refresh. Mirrors magnetics' {\tt mi\_setredraw}.
 
 \item{\tt mi\_createradius(x, y, r)} turns a corner located at {\tt (x,y)} into a curve of radius {\tt r}.
 
