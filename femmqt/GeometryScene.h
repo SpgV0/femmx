@@ -67,6 +67,24 @@ class GeometryScene : public QGraphicsScene {
   // read live from AppTheme on every paint.
   void refreshTheme();
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+  // user report ("artifacts still shown when dragging a node... cleared
+  // away if you pass another window on top or you zoom out") -- node/
+  // block-label markers used to stay a constant on-screen size via
+  // QGraphicsItem::ItemIgnoresTransformations, but Qt's dirty-rect
+  // tracking for that flag is unreliable during rapid position changes
+  // (confirmed directly, at length -- see NodeItem::itemChange's own
+  // history), leaving stale trails a plain invalidate()/update() fix
+  // could only partially clear. Replaced with the same technique already
+  // proven for segment/arc hit-testing (see widenedHitShape): markers now
+  // use NORMAL scene-space geometry sized from the CURRENT view scale, so
+  // Qt's standard (correctly-functioning) per-item dirty tracking applies
+  // -- no special-casing needed at all. Since that geometry depends on
+  // zoom, GeometryView calls this after every operation that changes its
+  // transform (wheel zoom, zoomBy(), fitInViewSafe(), resetZoomTransform())
+  // so each marker's local rect/path stays correctly sized.
+  void refreshFixedPixelItemSizes();
+
   // Full rebuild from the current problem state -- clears and re-adds
   // every item. Used after structural edits (add/delete) where an
   // incremental patch isn't worth the bookkeeping; drag-move instead
@@ -98,6 +116,23 @@ class GeometryScene : public QGraphicsScene {
   // signal directly, plus the "only once per gesture" bookkeeping they'd
   // otherwise have to duplicate.
   void snapshotOnceForDrag();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+  // user report ("draw 5 points, need to undo more than 5 times") --
+  // addNodeItem()/addBlockLabelItem() call setPos() to give a freshly
+  // created item its initial position, which fires the exact same
+  // itemChange(ItemPositionHasChanged) path as a real user drag, so every
+  // single Add Node/Add Block Label click was pushing TWO undo snapshots
+  // (one explicit, from handleToolClick's aboutToEdit(), plus one spurious
+  // one from the new item's own creation-time setPos()). Worse, rebuild()
+  // (called on file open, New, AND every Undo) does the same for every
+  // node/label in the problem, so undoing could silently inject a phantom
+  // extra snapshot into its own stack. addNodeItem()/addBlockLabelItem()
+  // set this true around their setPos() call; NodeItem/BlockLabelItem::
+  // itemChange skip snapshotting (and the redundant data/segment resync --
+  // the position they're being set to already came from m_problem, so
+  // there's nothing to sync) while it's set.
+  bool isSettingInitialItemPosition() const { return m_settingInitialItemPosition; }
 
   // Grid display/snap -- mirrors FemmeView.cpp's ShowGrid/SnapGrid/
   // GridSize. Snapping applies both to newly-placed nodes/block labels
@@ -242,6 +277,12 @@ class GeometryScene : public QGraphicsScene {
   QMultiHash<int, QGraphicsItem*> m_segmentItemsByNode;
   QMultiHash<int, QGraphicsItem*> m_arcItemsByNode;
 
+  // block label index -> its crosshair marker item -- separate from
+  // m_blockNameItems below (that's the adjacent text label). Needed so
+  // refreshFixedPixelItemSizes() can find every marker to resize on zoom,
+  // the same reason m_nodeItems exists.
+  QHash<int, QGraphicsItem*> m_blockLabelItems;
+
   int m_pendingNode = -1; // first node clicked while in AddSegment/AddArc mode, -1 if none yet
 
   // Last-used arc parameters, offered as the default the next time the Add
@@ -263,6 +304,9 @@ class GeometryScene : public QGraphicsScene {
   // See snapshotOnceForDrag()'s own comment -- reset on every mouse
   // release so the NEXT drag gesture gets its own single snapshot.
   bool m_dragSnapshotTaken = false;
+
+  // See isSettingInitialItemPosition()'s own comment.
+  bool m_settingInitialItemPosition = false;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
   // a single QGraphicsPathItem built once from the WHOLE mesh -- see

@@ -365,8 +365,7 @@ void MainWindow::onNewTriggered()
   m_currentPath.clear();
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
-  m_view->resetTransform();
-  m_view->scale(1, -1);
+  m_view->resetZoomTransform();
   updateTitle();
   statusBar()->showMessage("New problem");
 }
@@ -1049,12 +1048,12 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
 // no reason to duplicate that state on this side.
 void MainWindow::onZoomIn()
 {
-  m_view->scale(2.0, 2.0);
+  m_view->zoomBy(2.0);
 }
 
 void MainWindow::onZoomOut()
 {
-  m_view->scale(0.5, 0.5);
+  m_view->zoomBy(0.5);
 }
 
 void MainWindow::onZoomNatural()

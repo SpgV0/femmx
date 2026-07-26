@@ -39,6 +39,22 @@ class GeometryView : public QGraphicsView {
   // cursor as intended.
   void fitInViewSafe(const QRectF& rect);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: node/
+  // block-label markers keep a constant on-screen size by sizing their own
+  // scene-space geometry from the current view scale (see GeometryScene::
+  // refreshFixedPixelItemSizes()) rather than QGraphicsItem::
+  // ItemIgnoresTransformations (whose interaction with MinimalViewportUpdate
+  // turned out to be unreliable during drags -- see that method's own
+  // comment for the full story). That means every operation which changes
+  // this view's transform needs to re-trigger the resize afterward.
+  // QGraphicsView has no single "transform changed" signal to hook once,
+  // so each call site threads this through explicitly instead (matching
+  // SolutionGraphicsView's own updateAntialiasingForScale(), which already
+  // does the same for a different reason) -- use these instead of calling
+  // scale()/resetTransform() directly.
+  void zoomBy(double factor);
+  void resetZoomTransform();
+
   protected:
   void wheelEvent(QWheelEvent* event) override;
   // Fusion 360-style multi-select: holding Shift while left-dragging on
@@ -56,4 +72,8 @@ class GeometryView : public QGraphicsView {
   // RubberBandDrag correctly once *any* prior click had focused this
   // view, and never did on a truly fresh window.
   void showEvent(QShowEvent* event) override;
+
+  private:
+  // See zoomBy()/resetZoomTransform()'s own comment.
+  void refreshMarkerSizes();
 };

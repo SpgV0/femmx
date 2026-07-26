@@ -39,6 +39,21 @@ constexpr int IndexKey = 1;
 constexpr double kNodeHandlePixelRadius = 5.0;
 constexpr double kBlockLabelPixelRadius = 6.0;
 
+// Scene-units-per-screen-pixel scale factor for whatever view this item is
+// currently attached to -- shared by widenedHitShape (segment/arc hit-test
+// tolerance) and NodeItem/BlockLabelItem's refreshFixedSize() below, both
+// of which need to convert a fixed SCREEN-pixel distance into scene units
+// regardless of zoom level or the model's real-world length units.
+double viewScaleFor(const QGraphicsItem* item)
+{
+  double scale = 1.0;
+  if (item->scene() && !item->scene()->views().isEmpty()) {
+    const QTransform t = item->scene()->views().first()->transform();
+    scale = std::hypot(t.m11(), t.m12());
+  }
+  return scale > 0.0 ? scale : 1.0;
+}
+
 // Plain QGraphicsItem subclass (not QObject-based -- QGraphicsItem isn't
 // QObject unless you go through QGraphicsObject, and this needs neither
 // signals nor slots), so it needs no moc processing and can live entirely
@@ -65,19 +80,33 @@ class NodeItem : public QGraphicsEllipseItem {
     // automated add-segment clicks worked for the first pair of nodes
     // but silently did nothing for subsequent already-connected ones).
     setZValue(1.0);
-    // Keep node handles a constant screen size regardless of view zoom --
-    // without this, a node's world-space radius (a small fraction of the
-    // model's bounding box, see g_nodeRadius) can render as 1-2 screen
-    // pixels for typical zoom levels, making nodes nearly impossible to
-    // click precisely (confirmed directly: automated clicks landing
-    // exactly on a node's last-known position still missed it). Standard
-    // CAD-editor behavior is fixed-size selection handles independent of
-    // zoom, not world-scaled ones -- safe for a symmetric circle since
-    // the view's y-flip (see MainWindow's view->scale(1,-1)) doesn't
-    // change how a circle looks either way.
-    setFlag(QGraphicsItem::ItemIgnoresTransformations);
     setData(KindKey, static_cast<int>(FemmItemKind::Node));
     setData(IndexKey, nodeIndex);
+  }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: was
+  // ItemIgnoresTransformations (kept a constant on-screen size regardless
+  // of view zoom -- without SOME such mechanism, a node's world-space
+  // radius, a small fraction of the model's bounding box, can render as
+  // 1-2 screen pixels at typical zoom, making nodes nearly impossible to
+  // click precisely, confirmed directly earlier this session). That flag's
+  // interaction with QGraphicsView's MinimalViewportUpdate dirty-rect
+  // tracking turned out to be unreliable during rapid position changes,
+  // leaving stale drag trails no reasonable amount of manual invalidate()
+  // patching could fully clear (see the git history for the extent of
+  // that investigation). This achieves the same constant-screen-size
+  // effect through NORMAL scene-space geometry instead -- the same
+  // "fixed pixel tolerance / current view scale" technique already
+  // proven for segment/arc hit-testing (see widenedHitShape) -- so Qt's
+  // standard, correctly-functioning per-item dirty tracking applies with
+  // no special-casing at all. Called once right after constructing/
+  // adding the item (needs item->scene() to resolve the view, so can't
+  // run any earlier) and again whenever GeometryView's transform changes
+  // (see refreshFixedPixelItemSizes()).
+  void refreshFixedSize()
+  {
+    double r = kNodeHandlePixelRadius / viewScaleFor(this);
+    setRect(-r, -r, 2 * r, 2 * r);
   }
 
   protected:
@@ -87,11 +116,17 @@ class NodeItem : public QGraphicsEllipseItem {
     // returning a modified value) affects the drag itself, not just where
     // it lands, matching how classic FEMM applies grid snap to "the
     // current mouse position" for every interaction, not just placement.
-    if (change == ItemPositionChange && m_scene && m_scene->snapToGrid()) {
+    // Skipped while the item is being given its initial position (creation
+    // in addNodeItem(), or every node during rebuild()) -- see
+    // isSettingInitialItemPosition()'s comment: that position already came
+    // from m_problem and must be reproduced exactly, not silently shifted
+    // to the nearest grid point.
+    if (change == ItemPositionChange && m_scene && m_scene->snapToGrid() && !m_scene->isSettingInitialItemPosition()) {
       QPointF center = value.toPointF() + rect().center();
       return m_scene->snapPoint(center) - rect().center();
     }
-    if (change == ItemPositionHasChanged && m_problem && m_nodeIndex >= 0 && m_nodeIndex < m_problem->nodes.size()) {
+    if (change == ItemPositionHasChanged && m_problem && m_nodeIndex >= 0 && m_nodeIndex < m_problem->nodes.size()
+        && m_scene && !m_scene->isSettingInitialItemPosition()) {
       // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-25:
       // per user report ("undo does not work for all the drawing
       // operations") -- this mutated m_problem on every single drag frame
@@ -100,13 +135,19 @@ class NodeItem : public QGraphicsEllipseItem {
       // actually emits on the FIRST call within one press-drag-release
       // gesture (see its own comment), so this doesn't flood the 20-step
       // undo stack with near-duplicate frames from a single drag.
-      if (m_scene)
-        m_scene->snapshotOnceForDrag();
+      //
+      // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26:
+      // added the isSettingInitialItemPosition() guard above -- without
+      // it, addNodeItem()'s own setPos() call (giving a freshly created
+      // node its initial position) fired this exact same branch, pushing a
+      // second, spurious undo snapshot on top of the one handleToolClick()
+      // already took, and rebuild() (file open/New/every Undo) did the
+      // same once per node. See that method's comment for the full story.
+      m_scene->snapshotOnceForDrag();
       QPointF center = value.toPointF() + rect().center();
       m_problem->nodes[m_nodeIndex].x = center.x();
       m_problem->nodes[m_nodeIndex].y = center.y();
-      if (m_scene)
-        m_scene->onNodeMoved(m_nodeIndex);
+      m_scene->onNodeMoved(m_nodeIndex);
     }
     return QGraphicsEllipseItem::itemChange(change, value);
   }
@@ -144,6 +185,24 @@ class BlockLabelItem : public QGraphicsPathItem {
     return p;
   }
 
+  // See NodeItem::refreshFixedSize()'s own comment -- same fix (constant
+  // on-screen size via scene-space geometry sized from the current view
+  // scale, instead of ItemIgnoresTransformations), applied to the
+  // block-label crosshair marker instead of a node's filled circle.
+  // Rebuilds both the hit-test radius and the painted crosshair itself,
+  // since both were previously sized in a fixed local coordinate space
+  // that ItemIgnoresTransformations made behave like a fixed pixel size.
+  void refreshFixedSize()
+  {
+    m_hitRadius = kBlockLabelPixelRadius / viewScaleFor(this);
+    QPainterPath path;
+    path.moveTo(-m_hitRadius, 0);
+    path.lineTo(m_hitRadius, 0);
+    path.moveTo(0, -m_hitRadius);
+    path.lineTo(0, m_hitRadius);
+    setPath(path);
+  }
+
   protected:
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-25: was
   // missing entirely -- this item was ItemIsMovable but never synced a
@@ -155,18 +214,23 @@ class BlockLabelItem : public QGraphicsPathItem {
   // Same pattern as NodeItem's own itemChange now: grid-snap the drag
   // itself, sync the committed position back to m_problem, and take one
   // undo snapshot per drag gesture (not per frame).
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26:
+  // added isSettingInitialItemPosition() guards -- same bug as NodeItem's
+  // itemChange (see its comment): addBlockLabelItem()'s own setPos() call
+  // fired this exact branch too, so every Add Block Label click pushed a
+  // spurious second undo snapshot on top of handleToolClick()'s real one,
+  // and rebuild() did the same once per label.
   QVariant itemChange(GraphicsItemChange change, const QVariant& value) override
   {
-    if (change == ItemPositionChange && m_scene && m_scene->snapToGrid())
+    if (change == ItemPositionChange && m_scene && m_scene->snapToGrid() && !m_scene->isSettingInitialItemPosition())
       return m_scene->snapPoint(value.toPointF());
-    if (change == ItemPositionHasChanged && m_problem && m_labelIndex >= 0 && m_labelIndex < m_problem->blockLabels.size()) {
-      if (m_scene)
-        m_scene->snapshotOnceForDrag();
+    if (change == ItemPositionHasChanged && m_problem && m_labelIndex >= 0 && m_labelIndex < m_problem->blockLabels.size()
+        && m_scene && !m_scene->isSettingInitialItemPosition()) {
+      m_scene->snapshotOnceForDrag();
       QPointF pos = value.toPointF();
       m_problem->blockLabels[m_labelIndex].x = pos.x();
       m_problem->blockLabels[m_labelIndex].y = pos.y();
-      if (m_scene)
-        m_scene->onBlockLabelMoved(m_labelIndex);
+      m_scene->onBlockLabelMoved(m_labelIndex);
     }
     return QGraphicsPathItem::itemChange(change, value);
   }
@@ -225,15 +289,8 @@ constexpr double kLineHitPixelTolerance = 8.0;
 // zoom level or the model's real-world length units.
 QPainterPath widenedHitShape(const QPainterPath& path, const QGraphicsItem* item)
 {
-  double scale = 1.0;
-  if (item->scene() && !item->scene()->views().isEmpty()) {
-    const QTransform t = item->scene()->views().first()->transform();
-    scale = std::hypot(t.m11(), t.m12());
-  }
-  if (scale <= 0.0)
-    scale = 1.0;
   QPainterPathStroker stroker;
-  stroker.setWidth(kLineHitPixelTolerance / scale);
+  stroker.setWidth(kLineHitPixelTolerance / viewScaleFor(item));
   return stroker.createStroke(path);
 }
 
@@ -424,6 +481,7 @@ void GeometryScene::rebuild()
   m_segmentItemsByNode.clear();
   m_arcItemsByNode.clear();
   m_blockNameItems.clear();
+  m_blockLabelItems.clear();
   m_zoomWindowRectItem = nullptr;
   // clear() above already deleted this along with everything else -- an
   // edit invalidates any previous mesh anyway (matches classic FEMM's own
@@ -435,17 +493,27 @@ void GeometryScene::rebuild()
   m_mesh = MeshOverlay();
   m_pendingNode = -1;
 
-  if (!m_problem)
-    return;
+  if (m_problem) {
+    for (int i = 0; i < m_problem->segments.size(); i++)
+      addSegmentItem(i);
+    for (int i = 0; i < m_problem->arcSegments.size(); i++)
+      addArcItem(i);
+    for (int i = 0; i < m_problem->nodes.size(); i++)
+      addNodeItem(i);
+    for (int i = 0; i < m_problem->blockLabels.size(); i++)
+      addBlockLabelItem(i);
+  }
 
-  for (int i = 0; i < m_problem->segments.size(); i++)
-    addSegmentItem(i);
-  for (int i = 0; i < m_problem->arcSegments.size(); i++)
-    addArcItem(i);
-  for (int i = 0; i < m_problem->nodes.size(); i++)
-    addNodeItem(i);
-  for (int i = 0; i < m_problem->blockLabels.size(); i++)
-    addBlockLabelItem(i);
+  // Cheap safety-net full-scene update() -- rebuild() only runs on
+  // discrete actions (file open, New, Undo/Redo), never per-frame, so
+  // this costs nothing noticeable. Originally added because node/block-
+  // label markers' old ItemIgnoresTransformations flag made Qt's
+  // MinimalViewportUpdate dirty-tracking unreliable on delete (a stale
+  // grey square was left behind exactly where an undone node used to
+  // be); kept as insurance now that those markers use normal scene-space
+  // geometry instead (see NodeItem::refreshFixedSize()), since rebuild()
+  // deletes and recreates EVERY item, not just markers.
+  update();
 }
 
 void GeometryScene::refreshTheme()
@@ -453,6 +521,19 @@ void GeometryScene::refreshTheme()
   setBackgroundBrush(AppTheme::background());
   rebuild();
   update();
+}
+
+void GeometryScene::refreshFixedPixelItemSizes()
+{
+  // static_cast, not qgraphicsitem_cast/dynamic_cast: NodeItem/BlockLabelItem
+  // are plain (non-QObject) types private to this .cpp file, and
+  // m_nodeItems/m_blockLabelItems only ever hold instances of them (see
+  // addNodeItem()/addBlockLabelItem(), the only places that populate
+  // these hashes).
+  for (QGraphicsItem* item : std::as_const(m_nodeItems))
+    static_cast<NodeItem*>(item)->refreshFixedSize();
+  for (QGraphicsItem* item : std::as_const(m_blockLabelItems))
+    static_cast<BlockLabelItem*>(item)->refreshFixedSize();
 }
 
 void GeometryScene::setToolMode(GeometryToolMode mode)
@@ -478,10 +559,13 @@ void GeometryScene::addNodeItem(int index)
   pen.setWidth(0);
   auto* item = new NodeItem(index, m_problem, this,
       QRectF(-kNodeHandlePixelRadius, -kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius, 2 * kNodeHandlePixelRadius));
+  m_settingInitialItemPosition = true;
   item->setPos(n.x, n.y);
+  m_settingInitialItemPosition = false;
   item->setPen(pen);
   item->setBrush(QBrush(AppTheme::nodeColor()));
   addItem(item);
+  item->refreshFixedSize(); // needs item->scene() (just set by addItem() above) to resolve the view's current scale
   m_nodeItems[index] = item;
 }
 
@@ -543,9 +627,9 @@ void GeometryScene::addBlockLabelItem(int index)
   auto* item = new BlockLabelItem(path, r, index, m_problem, this);
   item->setPen(pen);
   addItem(item);
+  item->refreshFixedSize(); // needs item->scene() (just set by addItem() above) to resolve the view's current scale
   item->setFlag(QGraphicsItem::ItemIsMovable);
   item->setFlag(QGraphicsItem::ItemIsSelectable);
-  item->setFlag(QGraphicsItem::ItemIgnoresTransformations);
   // Required for itemChange's ItemPositionChange/ItemPositionHasChanged
   // to fire at all (see NodeItem's identical flag) -- this was simply
   // missing here before, which is exactly why dragging a label never
@@ -557,7 +641,10 @@ void GeometryScene::addBlockLabelItem(int index)
   item->setZValue(1.0);
   item->setData(KindKey, static_cast<int>(FemmItemKind::BlockLabel));
   item->setData(IndexKey, index);
+  m_settingInitialItemPosition = true;
   item->setPos(b.x, b.y);
+  m_settingInitialItemPosition = false;
+  m_blockLabelItems[index] = item;
 
   // Matches femm.rc's "Show Block Names" (ID_VIEW_SHOWNAMES) -- shows the
   // assigned material's name (or "<None>" for a hole) next to the label,
