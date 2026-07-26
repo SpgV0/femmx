@@ -38,8 +38,9 @@ MaterialLibraryDialog::MaterialLibraryDialog(FemmProblem& problem, QWidget* pare
   resize(420, 520);
 
   QString error;
-  QString path = QCoreApplication::applicationDirPath() + "/matlib.dat";
-  MaterialLibraryIO::load(path, m_root, error);
+  QString matPath = QCoreApplication::applicationDirPath() + "/matlib.dat";
+  QString heatPath = QCoreApplication::applicationDirPath() + "/heatlib.dat";
+  MaterialLibraryIO::load(matPath, heatPath, m_root, error);
 
   auto* layout = new QVBoxLayout(this);
 

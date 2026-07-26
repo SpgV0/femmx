@@ -29,6 +29,19 @@ struct FemmBoundaryProp {
   double innerAngle = 0, outerAngle = 0;
 };
 
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
+// direct user request, one unified material carries BOTH magnetics and
+// heat-flow properties together -- a physical material (e.g. "Copper")
+// really does have both an electrical/magnetic character and a thermal
+// one, so femmqt models it as one entry rather than two independently-
+// assigned ones. A material sourced from only one side (e.g. a plain
+// magnetics .fem with no paired .feh, or a matlib.dat entry with no
+// heatlib.dat counterpart -- see MaterialLibraryIO's merge) simply leaves
+// the other side's fields at 0 ("empty"/not specified), not a fabricated
+// default -- deliberately 0 rather than e.g. Kx=Ky=1, so a blank thermal
+// side is visually obvious in the dialog rather than looking like real
+// data. FemmBlockLabel::blockTypeIndex is the single index into this
+// list used by both physics types (see that field's own comment).
 struct FemmMaterialProp {
   QString name;
   double muX = 1, muY = 1;
@@ -45,6 +58,18 @@ struct FemmMaterialProp {
   // otherwise, using muX/muY directly) -- Phase 1 reads/preserves these on
   // round-trip but the material dialog doesn't expose editing them yet.
   QVector<QPair<double, double>> bhData;
+
+  // Heat-flow side, field names/semantics confirmed directly against
+  // femm/hd_nosebl.h and femm/HDRAWDOC.CPP's .feh tag reader -- see
+  // HeatFileIO.h. 0/empty (not e.g. Kx=Ky=1) means "no thermal data" --
+  // see this struct's own header comment.
+  double Kx = 0, Ky = 0; // thermal conductivity, W/(m*K)
+  double Kt = 0; // volumetric heat capacity, MJ/(m^3*K)
+  double qv = 0; // volumetric heat generation, W/m^3
+  // Nonlinear k(T) curve, only meaningful if non-empty (linear material
+  // otherwise, using Kx/Ky directly) -- read/written but not yet editable
+  // in the material dialog, mirroring bhData exactly.
+  QVector<QPair<double, double>> tkData;
 };
 
 struct FemmCircuitProp {
@@ -54,27 +79,20 @@ struct FemmCircuitProp {
 };
 
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: heat-
-// flow counterparts to the magnetics property structs above, added per
-// direct user request to solve both magnetics and thermal problems on the
-// same femmqt geometry. Field names/semantics confirmed directly against
-// femm/hd_nosebl.h (hdrawdata::CMaterialProp/CBoundaryProp/CPointProp),
-// femm/HDRAWDOC.CPP's .feh tag reader, and femm/hd_BdryDlg.cpp's
-// boundary-type combo box -- not a re-derivation. These are deliberately
-// separate structs/lists from the magnetics ones above (not a shared/
-// merged type) -- the classic GUI itself keeps
-// magnetics and heat flow as fully separate Doc/View hierarchies with no
-// shared property base class, and this mirrors that precedent.
-struct FemmThermalMaterialProp {
-  QString name;
-  double Kx = 1, Ky = 1; // thermal conductivity, W/(m*K)
-  double Kt = 3; // volumetric heat capacity, MJ/(m^3*K)
-  double qv = 0; // volumetric heat generation, W/m^3
-  // Nonlinear k(T) curve, only meaningful if non-empty (linear material
-  // otherwise, using Kx/Ky directly) -- read/written but not yet editable
-  // in the material dialog, mirroring FemmMaterialProp::bhData exactly.
-  QVector<QPair<double, double>> tkData;
-};
-
+// flow counterparts to the magnetics boundary/point property structs
+// above, added per direct user request to solve both magnetics and
+// thermal problems on the same femmqt geometry. Field names/semantics
+// confirmed directly against femm/hd_nosebl.h (hdrawdata::
+// CBoundaryProp/CPointProp), femm/HDRAWDOC.CPP's .feh tag reader, and
+// femm/hd_BdryDlg.cpp's boundary-type combo box -- not a re-derivation.
+// Unlike materials (see FemmMaterialProp's comment, merged into one
+// struct/list per direct user request), boundary conditions and point
+// sources don't have a natural "same physical thing" unification --
+// magnetics' fixed-A/mixed boundary and heat flow's fixed-temperature/
+// convection boundary are conceptually different constraints even when
+// applied to the same segment, so these stay separate structs/lists,
+// matching the classic GUI's own fully separate Doc/View hierarchies per
+// physics type.
 struct FemmThermalBoundaryProp {
   QString name;
   // Matches hd_BdryDlg.cpp's IDC_HD_BDRYFORMAT combo box exactly:
@@ -166,7 +184,12 @@ struct FemmArcSegment {
 // meaningless for a hole and left at its default.
 struct FemmBlockLabel {
   double x = 0, y = 0;
-  int blockTypeIndex = -1; // -1 = hole, else 1-based index into materialProps
+  // -1 = hole, else 1-based index into materialProps -- used for BOTH
+  // magnetics and heat flow (see FemmMaterialProp's comment): a block
+  // label assigned to "Copper" solves with that same material's magnetic
+  // properties in a magnetics solve and its thermal properties in a
+  // heat-flow solve, since they're the same in-memory entry.
+  int blockTypeIndex = -1;
   double maxArea = 0; // mesh triangle area constraint, 0 = <No Mesh Constraint>
   int circuitIndex = 0; // 0 = none, else 1-based index into circuitProps
   double magDir = 0; // degrees
@@ -176,10 +199,6 @@ struct FemmBlockLabel {
   bool isExternal = false;
   bool isDefault = false;
   bool isSelected = false;
-  // -1 = hole for thermal purposes, else 1-based index into
-  // thermalMaterialProps -- independent of blockTypeIndex above, same
-  // reasoning as FemmNode::thermalPointPropIndex.
-  int thermalBlockTypeIndex = -1;
 };
 
 enum class FemmLengthUnits {
@@ -240,17 +259,17 @@ struct FemmProblem {
   QVector<FemmMaterialProp> materialProps;
   QVector<FemmCircuitProp> circuitProps;
 
-  // Heat-flow property lists, parallel to the magnetics ones above -- see
-  // FemmThermalMaterialProp's comment for why these are separate lists
-  // rather than folded into the magnetics ones. Top-level scalar fields
-  // above (precision/minAngle/depth/lengthUnits/problemType/coordsPolar/
+  // Heat-flow boundary/point/conductor property lists, parallel to the
+  // magnetics ones above -- see FemmThermalBoundaryProp's comment for why
+  // these stay separate lists (unlike materials, folded into materialProps
+  // above per direct user request). Top-level scalar fields above
+  // (precision/minAngle/depth/lengthUnits/problemType/coordsPolar/
   // extZo,Ro,Ri/gpuAccel/comment) are mesh/solve-level settings that
   // apply the same way to either physics type and are deliberately NOT
   // duplicated; frequency/acSolver are AC-magnetics-only and are simply
   // omitted when writing a .feh (heat flow is steady-state only).
   QVector<FemmThermalPointProp> thermalPointProps;
   QVector<FemmThermalBoundaryProp> thermalBoundaryProps;
-  QVector<FemmThermalMaterialProp> thermalMaterialProps;
   QVector<FemmThermalConductorProp> thermalConductorProps;
 
   QVector<FemmNode> nodes;

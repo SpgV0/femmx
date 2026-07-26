@@ -2385,7 +2385,9 @@ void SolutionWindow::onProblemInfoTriggered()
   form->addRow("Depth:", new QLabel(QString::number(problem.depth, 'g', 6)));
   form->addRow("Precision:", new QLabel(QString::number(problem.precision, 'g', 3)));
   if (m_thermalMode) {
-    form->addRow("Materials:", new QLabel(QString::number(problem.thermalMaterialProps.size())));
+    // Materials are unified (see FemmMaterialProp's comment) -- same
+    // count either way, so just problem.materialProps.size() below.
+    form->addRow("Materials:", new QLabel(QString::number(problem.materialProps.size())));
     form->addRow("Boundaries:", new QLabel(QString::number(problem.thermalBoundaryProps.size())));
     form->addRow("Conductors:", new QLabel(QString::number(problem.thermalConductorProps.size())));
   } else {
@@ -2491,9 +2493,9 @@ void SolutionWindow::onBhCurvesTriggered()
     return;
   }
   // BH curves are a magnetics-only concept -- heat flow's nonlinear
-  // conductivity analog (FemmThermalMaterialProp::tkData) isn't wired
-  // into this viewer (see that field's comment: read/preserved, not yet
-  // exposed to any dialog, including this read-only one).
+  // conductivity analog (FemmMaterialProp::tkData) isn't wired into this
+  // viewer (see that field's comment: read/preserved, shown only as a
+  // note in MaterialPropDialog, not plotted anywhere including here).
   if (m_thermalMode) {
     QMessageBox::information(this, "BH Curves", "Not applicable to a heat-flow solution.");
     return;

@@ -135,9 +135,9 @@ bool AnhFileIO::readAnh(const QString& path, FemmProblem& problem, MeshSolution&
     // the identical NumHoles-then-NumBlockLabels .feh-format sections in
     // file order).
     if (e.lbl >= 0 && e.lbl < problem.blockLabels.size()) {
-      int matIdx = problem.blockLabels[e.lbl].thermalBlockTypeIndex - 1; // 1-based -> 0-based
-      if (matIdx >= 0 && matIdx < problem.thermalMaterialProps.size()) {
-        const FemmThermalMaterialProp& mat = problem.thermalMaterialProps[matIdx];
+      int matIdx = problem.blockLabels[e.lbl].blockTypeIndex - 1; // 1-based -> 0-based
+      if (matIdx >= 0 && matIdx < problem.materialProps.size()) {
+        const FemmMaterialProp& mat = problem.materialProps[matIdx];
         e.muX = mat.Kx; // repurposed: thermal conductivity -- see AnhFileIO.h
         e.muY = mat.Ky;
       }

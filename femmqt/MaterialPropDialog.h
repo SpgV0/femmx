@@ -8,12 +8,16 @@ class QLineEdit;
 class QComboBox;
 class QLabel;
 
-// Edits a single FemmMaterialProp in place. muX/muY are still shown and
-// editable even for a material with BH data (edited via "Edit BH
-// Curve..." -> BHCurveDialog), since a note next to them clarifies
-// they're ignored by the solver whenever bhData is non-empty (matching
-// fkn.exe's own precedence), rather than hiding fields a saved file might
-// already have meaningful values in.
+// Edits a single FemmMaterialProp in place -- both its magnetic AND
+// thermal properties, since a material now carries both (see
+// FemmMaterialProp's own comment, Round 6: one materials library shared
+// between magnetics and heat flow, per direct user request). muX/muY are
+// still shown and editable even for a material with BH data (edited via
+// "Edit BH Curve..." -> BHCurveDialog), since a note next to them
+// clarifies they're ignored by the solver whenever bhData is non-empty
+// (matching fkn.exe's own precedence), rather than hiding fields a saved
+// file might already have meaningful values in -- Kx/Ky and tkData have
+// the identical relationship on the thermal side.
 class MaterialPropDialog : public QDialog {
   Q_OBJECT
 
@@ -26,6 +30,7 @@ class MaterialPropDialog : public QDialog {
 
   private:
   void updateBhNote();
+  void updateTkNote();
 
   FemmMaterialProp& m_prop;
 
@@ -46,4 +51,12 @@ class MaterialPropDialog : public QDialog {
   QLineEdit* m_lamFill = nullptr;
   QLineEdit* m_nStrands = nullptr;
   QLineEdit* m_wireD = nullptr;
+
+  // Heat-flow fields -- see FemmMaterialProp's comment on why 0 means
+  // "no thermal data" rather than a fabricated default.
+  QLineEdit* m_kx = nullptr;
+  QLineEdit* m_ky = nullptr;
+  QLabel* m_tkNote = nullptr;
+  QLineEdit* m_kt = nullptr;
+  QLineEdit* m_qv = nullptr;
 };

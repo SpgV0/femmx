@@ -200,13 +200,14 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
   for (int i = 0; i < segments.size(); i++)
     out << i << "\t" << segments[i].n0 << "\t" << segments[i].n1 << "\t" << segments[i].marker << "\n";
 
-  // holes (femm/writepoly.cpp:274-283)
+  // holes (femm/writepoly.cpp:274-283) -- blockTypeIndex is shared between
+  // physics types now (see FemmMaterialProp's comment), so hole/region
+  // detection doesn't need the `thermal` branch the point/boundary
+  // markers above do.
   QVector<int> holeIndices;
-  for (int i = 0; i < p.blockLabels.size(); i++) {
-    int blockTypeIndex = thermal ? p.blockLabels[i].thermalBlockTypeIndex : p.blockLabels[i].blockTypeIndex;
-    if (blockTypeIndex < 0)
+  for (int i = 0; i < p.blockLabels.size(); i++)
+    if (p.blockLabels[i].blockTypeIndex < 0)
       holeIndices.push_back(i);
-  }
   out << holeIndices.size() << "\n";
   for (int k = 0; k < holeIndices.size(); k++) {
     const FemmBlockLabel& b = p.blockLabels[holeIndices[k]];
@@ -230,11 +231,9 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
 
   // regional attributes (femm/writepoly.cpp:308-319)
   QVector<int> regionIndices;
-  for (int i = 0; i < p.blockLabels.size(); i++) {
-    int blockTypeIndex = thermal ? p.blockLabels[i].thermalBlockTypeIndex : p.blockLabels[i].blockTypeIndex;
-    if (blockTypeIndex >= 0)
+  for (int i = 0; i < p.blockLabels.size(); i++)
+    if (p.blockLabels[i].blockTypeIndex >= 0)
       regionIndices.push_back(i);
-  }
   out << regionIndices.size() << "\n";
   for (int k = 0; k < regionIndices.size(); k++) {
     const FemmBlockLabel& b = p.blockLabels[regionIndices[k]];

@@ -52,22 +52,6 @@ BlockLabelPropDialog::BlockLabelPropDialog(const QVector<FemmBlockLabel*>& label
   }
   form->addRow("Block Type:", m_material);
 
-  m_thermalMaterial = new QComboBox(this);
-  bool sameThermalMaterial = allSame(labels, [](FemmBlockLabel* l) { return l->thermalBlockTypeIndex; });
-  m_thermalMaterialHasMultiplePlaceholder = !sameThermalMaterial;
-  if (m_thermalMaterialHasMultiplePlaceholder)
-    m_thermalMaterial->addItem("<Multiple>");
-  m_thermalMaterial->addItem("<Hole>");
-  for (const FemmThermalMaterialProp& m : problem.thermalMaterialProps)
-    m_thermalMaterial->addItem(m.name);
-  if (sameThermalMaterial) {
-    FemmBlockLabel* l0 = labels.first();
-    m_thermalMaterial->setCurrentIndex(l0->thermalBlockTypeIndex < 0 ? 0 : qBound(0, l0->thermalBlockTypeIndex, problem.thermalMaterialProps.size()));
-  } else {
-    m_thermalMaterial->setCurrentIndex(0); // "<Multiple>"
-  }
-  form->addRow("Block Type (Heat Flow):", m_thermalMaterial);
-
   m_circuit = new QComboBox(this);
   bool sameCircuit = allSame(labels, [](FemmBlockLabel* l) { return l->circuitIndex; });
   m_circuitHasMultiplePlaceholder = !sameCircuit;
@@ -173,17 +157,12 @@ void BlockLabelPropDialog::onAccept()
   bool materialTouched = !(m_materialHasMultiplePlaceholder && m_material->currentIndex() == 0);
   int matIdx = m_material->currentIndex() - (m_materialHasMultiplePlaceholder ? 1 : 0);
 
-  bool thermalMaterialTouched = !(m_thermalMaterialHasMultiplePlaceholder && m_thermalMaterial->currentIndex() == 0);
-  int thermalMatIdx = m_thermalMaterial->currentIndex() - (m_thermalMaterialHasMultiplePlaceholder ? 1 : 0);
-
   bool circuitTouched = !(m_circuitHasMultiplePlaceholder && m_circuit->currentIndex() == 0);
   int circIdx = m_circuit->currentIndex() - (m_circuitHasMultiplePlaceholder ? 1 : 0);
 
   for (FemmBlockLabel* l : m_labels) {
     if (materialTouched)
       l->blockTypeIndex = (matIdx == 0) ? -1 : matIdx;
-    if (thermalMaterialTouched)
-      l->thermalBlockTypeIndex = (thermalMatIdx == 0) ? -1 : thermalMatIdx;
     if (circuitTouched)
       l->circuitIndex = circIdx;
     l->maxArea = m_automesh->isChecked() ? 0.0 : (M_PI * std::pow(m_meshSize->text().toDouble(), 2) / 4.0);

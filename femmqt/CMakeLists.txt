@@ -94,8 +94,6 @@ qt_add_executable(femmqt WIN32
   ThermalPointPropDialog.cpp
   ThermalBoundaryPropDialog.h
   ThermalBoundaryPropDialog.cpp
-  ThermalMaterialPropDialog.h
-  ThermalMaterialPropDialog.cpp
   NodePropDialog.h
   NodePropDialog.cpp
   SegmentPropDialog.h
@@ -126,10 +124,6 @@ qt_add_executable(femmqt WIN32
   MaterialLibraryIO.cpp
   MaterialLibraryDialog.h
   MaterialLibraryDialog.cpp
-  ThermalMaterialLibraryIO.h
-  ThermalMaterialLibraryIO.cpp
-  ThermalMaterialLibraryDialog.h
-  ThermalMaterialLibraryDialog.cpp
   OpenBoundaryDialog.h
   OpenBoundaryDialog.cpp
   DxfIO.h

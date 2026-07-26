@@ -1,6 +1,7 @@
 #include "MaterialLibraryIO.h"
 
 #include <QFile>
+#include <QHash>
 #include <QRegularExpression>
 #include <QTextStream>
 
@@ -35,10 +36,10 @@ QVector<QString> splitFields(const QString& line)
   return out;
 }
 
-// Parses one <BeginBlock>...<EndBlock> material -- field set/tags match
-// FemmFileIO.cpp's BlockProps case exactly (both ultimately mirror
-// femm/FemmeDoc.cpp's .fem writer for a CMaterialProp).
-bool readBlock(QTextStream& in, FemmMaterialProp& m)
+// Parses one <BeginBlock>...<EndBlock> material's MAGNETIC fields --
+// tags match FemmFileIO.cpp's BlockProps case exactly (both ultimately
+// mirror femm/FemmeDoc.cpp's .fem writer for a CMaterialProp).
+bool readMagBlock(QTextStream& in, FemmMaterialProp& m)
 {
   QString line;
   while (!in.atEnd()) {
@@ -92,9 +93,10 @@ bool readBlock(QTextStream& in, FemmMaterialProp& m)
   return false; // ran off the end of the file without <EndBlock>
 }
 
-// Parses the children of a folder (or the implicit top-level "folder")
-// until a matching <EndFolder> (or end of file, for the top level).
-void readChildren(QTextStream& in, MaterialLibraryNode& node)
+// Parses the children of a matlib.dat folder (or the implicit top-level
+// "folder") until a matching <EndFolder> (or end of file, for the top
+// level).
+void readMagChildren(QTextStream& in, MaterialLibraryNode& node)
 {
   while (!in.atEnd()) {
     QString line = in.readLine().trimmed();
@@ -110,21 +112,16 @@ void readChildren(QTextStream& in, MaterialLibraryNode& node)
       QString t, v;
       if (splitTagValue(nameLine, t, v) && t == "FolderName")
         child.name = unquote(v);
-      readChildren(in, child);
+      readMagChildren(in, child);
       node.children.push_back(child);
     } else if (line == "<BeginBlock>") {
       MaterialLibraryNode child;
       child.isFolder = false;
-      if (readBlock(in, child.material)) {
+      if (readMagBlock(in, child.material)) {
         // MaterialLibraryNode::name is what populateTree() displays --
         // for a folder it comes from <FolderName>, but a block's own name
-        // only ever lands in child.material.name (set by readBlock() from
-        // <BlockName>). Without this, every leaf material in the tree
-        // renders as a real, selectable, functional item with no visible
-        // text at all -- confirmed directly: clicking the blank row and
-        // hitting Add to Problem correctly added the right material by
-        // name, proving the data was always fine and only the tree
-        // display's copy of the name was missing.
+        // only ever lands in child.material.name (set by readMagBlock()
+        // from <BlockName>).
         child.name = child.material.name;
         node.children.push_back(child);
       }
@@ -132,18 +129,144 @@ void readChildren(QTextStream& in, MaterialLibraryNode& node)
   }
 }
 
+// Flat name(lowercased) -> thermal fields, built from heatlib.dat --
+// heatlib.dat's own folder structure ("Metallic Solids"/"Gases at 1
+// atm"/...) doesn't correspond to matlib.dat's ("Iron & Steel"/"Coils"/
+// ...), so rather than a doomed folder-path merge, materials are matched
+// by NAME alone across the two files.
+struct ThermalFields {
+  double Kx = 0, Ky = 0, Kt = 0, qv = 0;
+  QVector<QPair<double, double>> tkData;
+};
+
+bool readHeatBlock(QTextStream& in, QString& name, ThermalFields& t)
+{
+  QString line;
+  while (!in.atEnd()) {
+    line = in.readLine();
+    if (line.trimmed() == "<EndBlock>")
+      return true;
+    QString tag, v;
+    if (!splitTagValue(line, tag, v))
+      continue;
+    if (tag == "BlockName")
+      name = unquote(v);
+    else if (tag == "Kx")
+      t.Kx = v.toDouble();
+    else if (tag == "Ky")
+      t.Ky = v.toDouble();
+    else if (tag == "Kt")
+      t.Kt = v.toDouble();
+    else if (tag == "qv")
+      t.qv = v.toDouble();
+    else if (tag == "TKPoints") {
+      int n = v.toInt();
+      for (int k = 0; k < n && !in.atEnd(); k++) {
+        QVector<QString> f = splitFields(in.readLine());
+        if (f.size() >= 2)
+          t.tkData.push_back({ f[0].toDouble(), f[1].toDouble() });
+      }
+    }
+  }
+  return false;
+}
+
+void readHeatChildren(QTextStream& in, QHash<QString, ThermalFields>& flat)
+{
+  while (!in.atEnd()) {
+    QString line = in.readLine().trimmed();
+    if (line == "<EndFolder>")
+      return;
+    if (line == "<BeginFolder>") {
+      // Folder name itself is irrelevant here -- heatlib.dat's structure
+      // is discarded, only leaf name -> fields matters (see ThermalFields'
+      // comment). Still needs to be consumed (one line) to keep the
+      // stream aligned.
+      in.readLine();
+      readHeatChildren(in, flat);
+    } else if (line == "<BeginBlock>") {
+      QString name;
+      ThermalFields t;
+      if (readHeatBlock(in, name, t) && !name.isEmpty())
+        flat.insert(name.toLower(), t);
+    }
+  }
+}
+
+// Recursively applies a match from `flat` (removing it once consumed) to
+// every leaf in `node`, by name.
+void mergeThermalInto(MaterialLibraryNode& node, QHash<QString, ThermalFields>& flat)
+{
+  if (node.isFolder) {
+    for (MaterialLibraryNode& child : node.children)
+      mergeThermalInto(child, flat);
+    return;
+  }
+  auto it = flat.find(node.material.name.toLower());
+  if (it != flat.end()) {
+    node.material.Kx = it->Kx;
+    node.material.Ky = it->Ky;
+    node.material.Kt = it->Kt;
+    node.material.qv = it->qv;
+    node.material.tkData = it->tkData;
+    flat.erase(it);
+  }
+}
+
 } // namespace
 
-bool MaterialLibraryIO::load(const QString& path, MaterialLibraryNode& root, QString& errorMessage)
+bool MaterialLibraryIO::load(const QString& matlibPath, const QString& heatlibPath, MaterialLibraryNode& root, QString& errorMessage)
 {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    errorMessage = QStringLiteral("Could not open \"%1\" for reading.").arg(path);
-    return false;
-  }
   root = MaterialLibraryNode();
   root.isFolder = true;
-  QTextStream in(&file);
-  readChildren(in, root);
-  return true;
+  QStringList errors;
+
+  QFile matFile(matlibPath);
+  if (matFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QTextStream in(&matFile);
+    readMagChildren(in, root);
+  } else {
+    errors << QStringLiteral("Could not open \"%1\" for reading.").arg(matlibPath);
+  }
+
+  QHash<QString, ThermalFields> heatFlat;
+  QFile heatFile(heatlibPath);
+  if (heatFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QTextStream in(&heatFile);
+    readHeatChildren(in, heatFlat);
+  } else {
+    errors << QStringLiteral("Could not open \"%1\" for reading.").arg(heatlibPath);
+  }
+
+  mergeThermalInto(root, heatFlat);
+
+  // Whatever's left in heatFlat had no name match anywhere in matlib.dat
+  // -- keep them rather than silently dropping heatlib.dat-only materials
+  // (e.g. "Water" or gas entries with no magnetics-library counterpart).
+  if (!heatFlat.isEmpty()) {
+    MaterialLibraryNode extra;
+    extra.isFolder = true;
+    extra.name = "Heat Flow Materials (no magnetics match)";
+    for (auto it = heatFlat.constBegin(); it != heatFlat.constEnd(); ++it) {
+      MaterialLibraryNode leaf;
+      leaf.isFolder = false;
+      leaf.material.name = it.key();
+      // it.key() is lowercased (the map's own key normalization) --
+      // display/leaf material name should keep its original casing,
+      // which the map itself doesn't retain, so leaf.material.name falls
+      // back to the lowercased key here as a small, disclosed exception
+      // rather than tracking a separate original-casing map for a
+      // secondary, fallback-only display path.
+      leaf.material.Kx = it->Kx;
+      leaf.material.Ky = it->Ky;
+      leaf.material.Kt = it->Kt;
+      leaf.material.qv = it->qv;
+      leaf.material.tkData = it->tkData;
+      extra.children.push_back(leaf);
+    }
+    root.children.push_back(extra);
+  }
+
+  errorMessage = errors.join("\n");
+  return errors.size() < 2; // fully failed only if BOTH files were unreadable
 }

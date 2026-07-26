@@ -269,30 +269,6 @@ void FemmProblemEdit::deleteThermalBoundaryProp(FemmProblem& p, int index)
   p.thermalBoundaryProps.remove(index);
 }
 
-int FemmProblemEdit::countThermalMaterialPropReferences(const FemmProblem& p, int index)
-{
-  int marker = index + 1;
-  int n = 0;
-  for (const FemmBlockLabel& b : p.blockLabels)
-    if (b.thermalBlockTypeIndex == marker)
-      n++;
-  return n;
-}
-
-void FemmProblemEdit::deleteThermalMaterialProp(FemmProblem& p, int index)
-{
-  if (index < 0 || index >= p.thermalMaterialProps.size())
-    return;
-  int marker = index + 1;
-  for (FemmBlockLabel& b : p.blockLabels) {
-    if (b.thermalBlockTypeIndex == marker)
-      b.thermalBlockTypeIndex = -1; // reverts to a hole, matching deleteMaterialProp's own convention
-    else if (b.thermalBlockTypeIndex > marker)
-      b.thermalBlockTypeIndex--;
-  }
-  p.thermalMaterialProps.remove(index);
-}
-
 void FemmProblemEdit::moveSelected(FemmProblem& p, double dx, double dy)
 {
   for (FemmNode& n : p.nodes) {

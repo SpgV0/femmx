@@ -29,8 +29,6 @@
 #include "SolutionView.h"
 #include "SolveRunner.h"
 #include "ThermalBoundaryPropDialog.h"
-#include "ThermalMaterialLibraryDialog.h"
-#include "ThermalMaterialPropDialog.h"
 #include "ThermalPointPropDialog.h"
 
 #include <QActionGroup>
@@ -191,16 +189,17 @@ MainWindow::MainWindow(QWidget* parent)
   problemMenu->addAction("&Circuits...", this, &MainWindow::onCircuitsTriggered);
   problemMenu->addAction("Poi&nt Properties...", this, &MainWindow::onPointPropsTriggered);
   problemMenu->addSeparator();
-  // Heat flow's property lists, parallel to the magnetics ones above --
-  // per direct user request to solve both magnetics and thermal problems
-  // sharing the same geometry (Round 6). No separate "Physics Mode"
-  // toggle: each entity's property dialog (see openEntityProperties)
-  // already shows both a magnetics AND a heat-flow assignment field side
-  // by side, so these menu commands just need their own explicit labels
-  // rather than an ambiguous shared "Materials..." meaning different
-  // things depending on some global mode.
-  problemMenu->addAction("Heat Flow &Materials...", this, &MainWindow::onThermalMaterialsTriggered);
-  problemMenu->addAction("Heat Flow Materials L&ibrary...", this, &MainWindow::onThermalMaterialsLibraryTriggered);
+  // Heat flow's boundary/point property lists, parallel to the magnetics
+  // ones above -- per direct user request to solve both magnetics and
+  // thermal problems sharing the same geometry (Round 6). No separate
+  // "Physics Mode" toggle: each entity's property dialog (see
+  // openEntityProperties) already shows both a magnetics AND a heat-flow
+  // assignment field side by side, so these menu commands just need their
+  // own explicit labels rather than an ambiguous shared "Boundary
+  // Properties..." meaning different things depending on some global
+  // mode. No Heat Flow Materials/Materials Library entry -- materials
+  // are unified (see FemmMaterialProp's comment), so "Materials..."/
+  // "Materials Library..." above already cover both physics types.
   problemMenu->addAction("Heat Flow B&oundary Properties...", this, &MainWindow::onThermalBoundaryPropsTriggered);
   problemMenu->addAction("Heat Flow Point P&roperties...", this, &MainWindow::onThermalPointPropsTriggered);
 
@@ -881,13 +880,6 @@ void MainWindow::onMaterialsLibraryTriggered()
   markEdited();
 }
 
-void MainWindow::onThermalMaterialsLibraryTriggered()
-{
-  ThermalMaterialLibraryDialog dlg(m_problem, this);
-  dlg.exec();
-  markEdited();
-}
-
 void MainWindow::onPreferencesTriggered()
 {
   bool wasDark = AppTheme::isDark();
@@ -1207,38 +1199,6 @@ void MainWindow::onPointPropsTriggered()
     markEdited();
   };
   PropertyListDialog dlg("Point Properties", "point property", cb, this);
-  dlg.exec();
-}
-
-void MainWindow::onThermalMaterialsTriggered()
-{
-  PropertyListDialog::Callbacks cb;
-  cb.count = [this]() { return m_problem.thermalMaterialProps.size(); };
-  cb.nameAt = [this](int i) { return m_problem.thermalMaterialProps[i].name; };
-  cb.editAt = [this](int i) {
-    ThermalMaterialPropDialog dlg(m_problem.thermalMaterialProps[i], this);
-    if (dlg.exec() == QDialog::Accepted)
-      markEdited();
-  };
-  cb.addNew = [this]() {
-    FemmThermalMaterialProp m;
-    m.name = uniqueName(m_problem.thermalMaterialProps, "New Material");
-    m_problem.thermalMaterialProps.push_back(m);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmThermalMaterialProp m = m_problem.thermalMaterialProps[i];
-    m.name = uniqueName(m_problem.thermalMaterialProps, m.name);
-    m_problem.thermalMaterialProps.push_back(m);
-    markEdited();
-  };
-  cb.referenceCount = [this](int i) { return FemmProblemEdit::countThermalMaterialPropReferences(m_problem, i); };
-  cb.remove = [this](int i) {
-    FemmProblemEdit::deleteThermalMaterialProp(m_problem, i);
-    m_scene->rebuild();
-    markEdited();
-  };
-  PropertyListDialog dlg("Heat Flow Materials", "material", cb, this);
   dlg.exec();
 }
 

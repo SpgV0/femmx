@@ -63,13 +63,15 @@ class MainWindow : public QMainWindow {
   void onBoundaryPropsTriggered();
   void onCircuitsTriggered();
   void onPointPropsTriggered();
-  // Heat-flow counterparts of the three above, editing thermalMaterialProps/
-  // thermalBoundaryProps/thermalPointProps instead -- no thermal Circuits
-  // equivalent yet (see FemmThermalConductorProp's comment, Round 6).
-  void onThermalMaterialsTriggered();
+  // Heat-flow counterparts of onBoundaryPropsTriggered/onPointPropsTriggered
+  // above, editing thermalBoundaryProps/thermalPointProps instead -- no
+  // thermal Circuits equivalent yet (see FemmThermalConductorProp's
+  // comment, Round 6), and no thermal Materials equivalent at all:
+  // materials are unified (see FemmMaterialProp's comment), so
+  // onMaterialsTriggered/onMaterialsLibraryTriggered above already cover
+  // both physics types.
   void onThermalBoundaryPropsTriggered();
   void onThermalPointPropsTriggered();
-  void onThermalMaterialsLibraryTriggered();
   void onExteriorRegionTriggered();
   void onMaterialsLibraryTriggered();
   void onPreferencesTriggered();

@@ -175,9 +175,15 @@ bool HeatFileIO::readFeh(const QString& path, FemmProblem& problem, QString& err
         problem.thermalBoundaryProps.push_back(b);
       }
     } else if (tag == "BlockProps") {
+      // Populates the unified problem.materialProps -- see
+      // FemmMaterialProp's comment (Round 6): a material carries both
+      // magnetic and thermal fields, and readFeh always starts from a
+      // fresh FemmProblem (no magnetics data to preserve), so a freshly
+      // read .feh's materials simply have their magnetic fields at
+      // FemmMaterialProp's own struct defaults.
       int n = value.toInt();
       for (int i = 0; i < n; i++) {
-        FemmThermalMaterialProp m;
+        FemmMaterialProp m;
         while (nextLine()) {
           if (line.trimmed() == "<EndBlock>")
             break;
@@ -205,7 +211,7 @@ bool HeatFileIO::readFeh(const QString& path, FemmProblem& problem, QString& err
             }
           }
         }
-        problem.thermalMaterialProps.push_back(m);
+        problem.materialProps.push_back(m);
       }
     } else if (tag == "ConductorProps") {
       int n = value.toInt();
@@ -288,7 +294,6 @@ bool HeatFileIO::readFeh(const QString& path, FemmProblem& problem, QString& err
         hole.x = f[0].toDouble();
         hole.y = f[1].toDouble();
         hole.blockTypeIndex = -1;
-        hole.thermalBlockTypeIndex = -1;
         hole.inGroup = f[2].toInt();
         problem.blockLabels.push_back(hole);
       }
@@ -301,7 +306,7 @@ bool HeatFileIO::readFeh(const QString& path, FemmProblem& problem, QString& err
         FemmBlockLabel lbl;
         lbl.x = f[0].toDouble();
         lbl.y = f[1].toDouble();
-        lbl.thermalBlockTypeIndex = f[2].toInt();
+        lbl.blockTypeIndex = f[2].toInt();
         double sideLen = f[3].toDouble();
         lbl.maxArea = (sideLen > 0) ? (M_PI * sideLen * sideLen / 4.0) : 0.0;
         lbl.inGroup = f[4].toInt();
@@ -385,8 +390,13 @@ bool HeatFileIO::writeFeh(const QString& path, const FemmProblem& p, QString& er
     out << "  <EndBdry>\n";
   }
 
-  out << "[BlockProps]  = " << p.thermalMaterialProps.size() << "\n";
-  for (const FemmThermalMaterialProp& m : p.thermalMaterialProps) {
+  // Writes the unified problem.materialProps' thermal fields only -- see
+  // FemmMaterialProp's comment (Round 6). This must enumerate the SAME
+  // list, in the SAME order, that writeFem's own BlockProps section
+  // writes, since a block label's blockTypeIndex now refers to one
+  // shared list regardless of which file is being written.
+  out << "[BlockProps]  = " << p.materialProps.size() << "\n";
+  for (const FemmMaterialProp& m : p.materialProps) {
     out << "  <BeginBlock>\n";
     out << "    <BlockName> = \"" << m.name << "\"\n";
     out << "    <Kx> = " << g17(m.Kx) << "\n";
@@ -434,18 +444,18 @@ bool HeatFileIO::writeFeh(const QString& path, const FemmProblem& p, QString& er
 
   int holeCount = 0;
   for (const FemmBlockLabel& b : p.blockLabels)
-    if (b.thermalBlockTypeIndex < 0)
+    if (b.blockTypeIndex < 0)
       holeCount++;
   out << "[NumHoles] = " << holeCount << "\n";
   for (const FemmBlockLabel& b : p.blockLabels)
-    if (b.thermalBlockTypeIndex < 0)
+    if (b.blockTypeIndex < 0)
       out << g17(b.x) << "\t" << g17(b.y) << "\t" << b.inGroup << "\n";
 
   out << "[NumBlockLabels] = " << (p.blockLabels.size() - holeCount) << "\n";
   for (const FemmBlockLabel& b : p.blockLabels) {
-    if (b.thermalBlockTypeIndex < 0)
+    if (b.blockTypeIndex < 0)
       continue;
-    out << g17(b.x) << "\t" << g17(b.y) << "\t" << b.thermalBlockTypeIndex << "\t";
+    out << g17(b.x) << "\t" << g17(b.y) << "\t" << b.blockTypeIndex << "\t";
     if (b.maxArea > 0)
       out << g17(std::sqrt(4.0 * b.maxArea / M_PI)) << "\t";
     else

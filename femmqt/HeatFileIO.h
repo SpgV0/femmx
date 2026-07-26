@@ -12,21 +12,25 @@ struct FemmProblem;
 // not re-derived -- see FemmProblem.h's Round 6 comment for the thermal
 // struct fields this reads/writes.
 //
-// Reads/writes only the thermal-specific sections of a FemmProblem
-// (thermalPointProps/thermalBoundaryProps/thermalMaterialProps/
-// thermalConductorProps, plus each node/segment/arc/block-label's thermal
-// index) plus the shared top-level scalar fields (precision/minAngle/
-// depth/lengthUnits/problemType/coordsPolar/extZo,Ro,Ri/gpuAccel/comment)
-// -- geometry (nodes/segments/arcs/block-label positions) is written too,
-// since .feh is a standalone, independently-openable file exactly like
-// .fem is, but the geometry itself is expected to already match what a
-// paired .fem (if any) describes.
+// Reads/writes the thermal-specific sections of a FemmProblem
+// (thermalPointProps/thermalBoundaryProps/thermalConductorProps, plus
+// each node/segment/arc's thermal index) plus the shared top-level
+// scalar fields (precision/minAngle/depth/lengthUnits/problemType/
+// coordsPolar/extZo,Ro,Ri/gpuAccel/comment) -- geometry (nodes/segments/
+// arcs/block-label positions) is written too, since .feh is a
+// standalone, independently-openable file exactly like .fem is, but the
+// geometry itself is expected to already match what a paired .fem (if
+// any) describes. materialProps' THERMAL fields (Kx/Ky/Kt/qv/tkData) are
+// also read/written here -- materials are unified across both physics
+// types (see FemmMaterialProp's comment), so this reads/writes the same
+// list writeFem does, just a different subset of each entry's fields.
 namespace HeatFileIO {
 
 // Returns true and fills `problem` on success -- geometry/thermal fields
-// only; magnetics fields are left at FemmProblem's defaults. On failure,
-// returns false and fills `errorMessage` with a short, user-presentable
-// reason.
+// only; magnetics-specific fields (on both the problem and each
+// material) are left at FemmProblem's/FemmMaterialProp's own struct
+// defaults. On failure, returns false and fills `errorMessage` with a
+// short, user-presentable reason.
 bool readFeh(const QString& path, FemmProblem& problem, QString& errorMessage);
 
 bool writeFeh(const QString& path, const FemmProblem& problem, QString& errorMessage);
