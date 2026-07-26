@@ -1,4 +1,26 @@
-﻿19Jul2026 (v2.0.0)
+﻿26Jul2026 (v2.1.0)
+
+* `femmqt` gained thermal (heat-flow) problem support alongside its
+  existing magnetics support, sharing the same geometry, materials-
+  library workflow, and property-editing UI between the two physics
+  types -- draw once, solve magnetics, then assign thermal materials/
+  boundaries to the same nodes/segments/arcs/block labels and solve heat
+  flow too. Every entity's property dialog shows a second "(Heat Flow)"
+  field alongside its existing magnetics one rather than a separate mode
+  switch; the Problem menu gained parallel Heat Flow Materials/Boundary/
+  Point Properties commands and a Heat Flow Materials Library browsing
+  `heatlib.dat`. Reads/writes `.feh`/`.anh` (byte-for-byte verified
+  against real `hsolv`-produced files) and drives `hsolv.exe` through the
+  same `triangle.exe` mesh pipeline `fkn.exe` already uses. The Solution
+  Viewer's existing Density/Contour plots and Point/Contour/Area tools
+  now show temperature and heat flux for a solved heat-flow problem
+  (verified against a real solved model: Contour Plot rendered correct
+  isotherms, and a clicked point's heat-flux vector pointed radially
+  outward from the source, matching the underlying physics). Scoped
+  entirely to `femmqt` -- the classic MFC GUI and every solver executable
+  are unmodified.
+
+19Jul2026 (v2.0.0)
 
 * Added `femmqt`: a new Qt6-based GUI, alongside the existing MFC one,
   built out to full feature parity for magnetics (electrostatics, heat
