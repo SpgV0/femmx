@@ -18,18 +18,26 @@ namespace {
 // order/labels exactly (see this dialog's header comment) -- kept as
 // plain strings rather than MeshSolutionItem::legendTitle(q) since these
 // are the combo's own item text, not the per-quantity groupbox caption
-// below it.
+// below it. Indices match DensityQuantity's enum order exactly.
 const char* kQuantityLabels[DensityPlotOptionsDialog::kNumQuantities] = {
   "|B| (Tesla)",
   "|B_re| (Tesla)",
   "|B_im| (Tesla)",
-  "log10(|B|)",
   "|H| (Amp/m)",
-  "|Js+Je| (MA/m^2)",
+  "|H_re| (Amp/m)",
+  "|H_im| (Amp/m)",
+  "|J| (MA/m^2)",
+  "|J_re| (MA/m^2)",
+  "|J_im| (MA/m^2)",
+  "log10(|B|)",
 };
+// Matches femm/cv_DPlotDlg2.cpp's OnInitDialog listtype==1 (DC) case --
+// only the magnitude/log quantities (no Re/Im split, meaningless for a
+// real-valued DC solution) -- indices into kQuantityLabels/DensityQuantity.
+const int kDcQuantityOrder[] = { 0, 3, 6, 9 }; // BMag, HMag, JMag, LogBMag
 }
 
-DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool legendVisible, QWidget* parent)
+DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool legendVisible, bool isAcSolution, QWidget* parent)
     : QDialog(parent)
     , m_item(item)
     , m_showLegend(legendVisible)
@@ -40,8 +48,17 @@ DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool 
 
   auto* form = new QFormLayout;
   m_quantityCombo = new QComboBox(this);
-  for (int i = 0; i < kNumQuantities; i++)
-    m_quantityCombo->addItem(kQuantityLabels[i]);
+  if (isAcSolution) {
+    for (int i = 0; i < kNumQuantities; i++) {
+      m_comboToQuantity.push_back(i);
+      m_quantityCombo->addItem(kQuantityLabels[i]);
+    }
+  } else {
+    for (int i : kDcQuantityOrder) {
+      m_comboToQuantity.push_back(i);
+      m_quantityCombo->addItem(kQuantityLabels[i]);
+    }
+  }
   form->addRow("Quantity:", m_quantityCombo);
   layout->addLayout(form);
 
@@ -89,8 +106,17 @@ DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool 
     }
   }
 
+  // m_currentQtyIndex is always the REAL DensityQuantity index (into the
+  // full 10-space m_useCustom/m_lo/m_hi arrays above); the combo's own
+  // position only matches it 1:1 when isAcSolution -- for DC, find which
+  // filtered combo slot the item's current (necessarily DC-valid, since a
+  // freshly-opened DC file's MeshSolutionItem defaults to BMag) quantity
+  // maps to.
   m_currentQtyIndex = static_cast<int>(item->densityQuantity());
-  m_quantityCombo->setCurrentIndex(m_currentQtyIndex);
+  int initialCombo = m_comboToQuantity.indexOf(m_currentQtyIndex);
+  if (initialCombo < 0)
+    initialCombo = 0;
+  m_quantityCombo->setCurrentIndex(initialCombo);
   loadFieldsFromLocal(m_currentQtyIndex);
   rangeBox->setTitle(QString("Range for %1").arg(item->legendTitle(static_cast<DensityQuantity>(m_currentQtyIndex))));
 
@@ -131,16 +157,18 @@ void DensityPlotOptionsDialog::loadFieldsFromLocal(int qIndex)
   updateFieldsEnabled();
 }
 
-void DensityPlotOptionsDialog::onQuantityChanged(int index)
+void DensityPlotOptionsDialog::onQuantityChanged(int comboIndex)
 {
   // Matches classic's OnSelchangeDplottype: stash the outgoing
   // quantity's fields, then load whatever was last stashed for the
-  // incoming one -- see this class's header comment.
+  // incoming one -- see this class's header comment. comboIndex is the
+  // combo's own (possibly DC-filtered) position -- translate through
+  // m_comboToQuantity to get the real DensityQuantity index.
   saveFieldsToLocal(m_currentQtyIndex);
-  m_currentQtyIndex = index;
+  m_currentQtyIndex = m_comboToQuantity[comboIndex];
   loadFieldsFromLocal(m_currentQtyIndex);
   if (auto* rangeBox = qobject_cast<QGroupBox*>(m_customRange->parentWidget()))
-    rangeBox->setTitle(QString("Range for %1").arg(m_item->legendTitle(static_cast<DensityQuantity>(index))));
+    rangeBox->setTitle(QString("Range for %1").arg(m_item->legendTitle(static_cast<DensityQuantity>(m_currentQtyIndex))));
 }
 
 void DensityPlotOptionsDialog::onAccept()

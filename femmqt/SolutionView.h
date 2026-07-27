@@ -88,7 +88,15 @@ class MeshSolutionItem : public QGraphicsItem {
   // GetJA, ported faithfully including the circuit term since it reads
   // fkn.exe's own solved output rather than re-deriving it) -- MA/m^2,
   // matching femm.rc's own "|Js+Je|, MA/m^2" label and units.
-  enum class DensityQuantity { BMag, BReMag, BImMag, LogBMag, HMag, JMag };
+  // Modified by Claude (Anthropic), noreply@anthropic.com: extended to all
+  // 10 quantities femm/cv_DPlotDlg2.cpp's OnInitDialog listtype==2 (AC)
+  // case offers (was missing Re/Im of H and J) and reordered to match its
+  // combo exactly -- |B|, Re(B), Im(B), |H|, Re(H), Im(H), |J|, Re(J),
+  // Im(J), log10(|B|) -- so DensityPlotOptionsDialog's AC combo can be a
+  // direct 1:1 port instead of a subset. Nothing outside this app
+  // persists these values (no .ans/.fem field, no QSettings key), so
+  // reordering the existing 6 is safe.
+  enum class DensityQuantity { BMag, BReMag, BImMag, HMag, HReMag, HImMag, JMag, JReMag, JImMag, LogBMag };
   void setDensityQuantity(DensityQuantity q);
   DensityQuantity densityQuantity() const { return m_densityQuantity; }
 
@@ -234,9 +242,9 @@ class MeshSolutionItem : public QGraphicsItem {
   bool m_smooth = true;
   // See setGrayscale/setCustomRange's declarations above.
   bool m_grayscale = false;
-  bool m_useCustomRange[6] = { false, false, false, false, false, false };
-  double m_customLo[6] = { 0, 0, 0, 0, 0, 0 };
-  double m_customHi[6] = { 0, 0, 0, 0, 0, 0 };
+  bool m_useCustomRange[10] = {};
+  double m_customLo[10] = {};
+  double m_customHi[10] = {};
   bool m_showMesh = false;
   bool m_showPoints = false;
   bool m_showBlockNames = false;

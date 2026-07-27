@@ -412,16 +412,27 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   // last bit or two). Exact for linear materials only -- see this
   // method's declaration in SolutionView.h for the nonlinear/laminated/
   // incremental-permeability cases not covered.
-  case DensityQuantity::HMag: {
+  case DensityQuantity::HMag:
+  case DensityQuantity::HReMag:
+  case DensityQuantity::HImMag: {
     constexpr double kMuo = 1.2566370614359173e-6;
     double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    if (q == DensityQuantity::HReMag)
+      return std::hypot(h1re, h2re);
+    if (q == DensityQuantity::HImMag)
+      return std::hypot(h1im, h2im);
     return std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
   }
   // jRe/jIm are precomputed once (AnsFileIO::readAns) -- see
   // MeshSolutionElement's comment for why (needs nodal A, not available
-  // from a single element at paint time).
+  // from a single element at paint time). Re(J)/Im(J) match femm/
+  // FemmviewView.cpp's PlotFluxDensity cases 8/9 exactly (fabs of each
+  // component alone, not a magnitude of a 2-vector like B/H -- J is a
+  // single complex scalar for a 2-D problem, not a planar vector).
   case DensityQuantity::JMag: return std::hypot(e.jRe, e.jIm);
+  case DensityQuantity::JReMag: return std::fabs(e.jRe);
+  case DensityQuantity::JImMag: return std::fabs(e.jIm);
   }
   return 0;
 }
@@ -528,9 +539,13 @@ QString MeshSolutionItem::legendTitle(DensityQuantity q) const
   case DensityQuantity::BMag: return "|B|, Tesla";
   case DensityQuantity::BReMag: return "|B_re|, Tesla";
   case DensityQuantity::BImMag: return "|B_im|, Tesla";
-  case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
   case DensityQuantity::HMag: return "|H|, Amp/m";
+  case DensityQuantity::HReMag: return "|H_re|, Amp/m";
+  case DensityQuantity::HImMag: return "|H_im|, Amp/m";
   case DensityQuantity::JMag: return "|Js+Je|, MA/m^2";
+  case DensityQuantity::JReMag: return "|Js+Je|_re, MA/m^2";
+  case DensityQuantity::JImMag: return "|Js+Je|_im, MA/m^2";
+  case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
   }
   return QString();
 }
@@ -2514,7 +2529,7 @@ void SolutionWindow::onDensityOptionsTriggered()
   // below can put the checkmark back where it belongs instead of leaving
   // Density checked despite nothing having actually switched.
   bool wasContour = m_item->plotMode() == MeshSolutionItem::PlotMode::Contour;
-  DensityPlotOptionsDialog dlg(m_item, m_view->legendVisible(), this);
+  DensityPlotOptionsDialog dlg(m_item, m_view->legendVisible(), m_frequency != 0, this);
   if (dlg.exec() == QDialog::Accepted) {
     m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
     if (m_densityAction)
