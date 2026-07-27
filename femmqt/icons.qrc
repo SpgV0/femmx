@@ -17,6 +17,7 @@
     <file alias="mirror.svg">toolbar_icons/mirror.svg</file>
     <file alias="create_radius.svg">toolbar_icons/create_radius.svg</file>
     <file alias="delete.svg">toolbar_icons/delete.svg</file>
+    <file alias="select_circle.svg">toolbar_icons/select_circle.svg</file>
     <file alias="open_boundary.svg">toolbar_icons/open_boundary.svg</file>
     <file alias="zoom_in.svg">toolbar_icons/zoom_in.svg</file>
     <file alias="zoom_out.svg">toolbar_icons/zoom_out.svg</file>

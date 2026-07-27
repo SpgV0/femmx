@@ -54,6 +54,7 @@ class MainWindow : public QMainWindow {
   void onPrintPreviewTriggered();
   void onPrintSetupTriggered();
   void onDeleteSelectedTriggered();
+  void onSelectByCircleTriggered();
   void onOpenSelectedTriggered();
   void onCopyBitmapTriggered();
   void onEntityDoubleClicked(FemmItemKind kind, int index);

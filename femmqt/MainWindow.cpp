@@ -102,6 +102,7 @@ MainWindow::MainWindow(QWidget* parent)
   connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
   connect(m_scene, &GeometryScene::openSelectedRequested, this, &MainWindow::onOpenSelectedTriggered);
   connect(m_scene, &GeometryScene::zoomWindowSelected, this, &MainWindow::onZoomWindowSelected);
+  connect(m_scene, &GeometryScene::selectByCircleCompleted, this, [this]() { m_selectToolAction->setChecked(true); });
   connect(m_scene, &GeometryScene::aboutToEdit, this, &MainWindow::snapshotForUndo);
 
   m_view = new GeometryView(m_scene, this);
@@ -301,6 +302,12 @@ MainWindow::MainWindow(QWidget* parent)
   addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", "Undo the last operation", &MainWindow::onUndoTriggered);
   addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", "Open the properties dialog for the currently selected entity", &MainWindow::onOpenSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", "Delete the selected objects", &MainWindow::onDeleteSelectedTriggered);
+  // Matches femm.rc's IDR_FEMMETYPE toolbar's ID_FD_SELECTCIRC, right next
+  // to ID_SELECTWND (that one has no femmqt equivalent since it's just
+  // rubber-band drag-select, already the Select tool's default behavior)
+  // -- toolbar-only in the classic GUI, no menu item, found missing during
+  // a full icon-by-icon toolbar audit.
+  addThemedAction(editToolBar, ":/icons/select_circle.svg", "Select by Circle", "Drag out a circle -- everything inside it gets selected", &MainWindow::onSelectByCircleTriggered);
   editToolBar->addSeparator();
   addThemedAction(editToolBar, ":/icons/move.svg", "Move", "Move the selected objects", &MainWindow::onMoveSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/copy.svg", "Copy", "Copy the selected objects", &MainWindow::onCopySelectedTriggered);
@@ -935,6 +942,14 @@ void MainWindow::onDeleteSelectedTriggered()
     return;
   }
   m_scene->deleteSelectedItem();
+}
+
+void MainWindow::onSelectByCircleTriggered()
+{
+  // Arms the one-shot drag; GeometryScene::mouseReleaseEvent does the
+  // actual selection and reverts back to Select mode itself, same pattern
+  // as onZoomWindowTriggered.
+  m_scene->setToolMode(GeometryToolMode::SelectCircle);
 }
 
 void MainWindow::onOpenSelectedTriggered()

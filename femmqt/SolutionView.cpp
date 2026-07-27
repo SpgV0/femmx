@@ -1586,6 +1586,39 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
   menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
 
+  // Matches femm.rc's IDR_LEFTBAR -- confirmed in femm/MainFrm.cpp that
+  // m_leftbar (Zoom/Pan/Grid) is shared across every doc type's frame,
+  // including the postprocessor (FV_toolBar1) -- so the classic Solution
+  // Viewer has this toolbar too, not just the geometry editor. Found
+  // missing during a full icon-by-icon toolbar audit (the earlier passes
+  // were menu/dialog-level only). Reuses the exact same QAction objects
+  // the Zoom/View menus above already created (not copies), same pattern
+  // as MainWindow::MainWindow's own Navigate toolbar.
+  QToolBar* navToolBar = addToolBar("Navigate");
+  addToolBar(Qt::LeftToolBarArea, navToolBar);
+  navToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  navToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(navToolBar, ":/icons/zoom_in.svg", "Zoom In", "Zoom in", &SolutionWindow::onZoomIn);
+  addThemedAction(navToolBar, ":/icons/zoom_out.svg", "Zoom Out", "Zoom out", &SolutionWindow::onZoomOut);
+  addThemedAction(navToolBar, ":/icons/zoom_natural.svg", "Natural", "Zoom to fit the entire mesh", &SolutionWindow::onZoomNatural);
+  addThemedAction(navToolBar, ":/icons/zoom_window.svg", "Window", "Drag a rectangle to zoom into", &SolutionWindow::onZoomWindowTriggered);
+  navToolBar->addSeparator();
+  addThemedAction(navToolBar, ":/icons/pan_up.svg", "Scroll Up", "Move the view up", &SolutionWindow::onPanUp);
+  addThemedAction(navToolBar, ":/icons/pan_down.svg", "Scroll Down", "Move the view down", &SolutionWindow::onPanDown);
+  addThemedAction(navToolBar, ":/icons/pan_left.svg", "Scroll Left", "Move the view left", &SolutionWindow::onPanLeft);
+  addThemedAction(navToolBar, ":/icons/pan_right.svg", "Scroll Right", "Move the view right", &SolutionWindow::onPanRight);
+  navToolBar->addSeparator();
+  navToolBar->addAction(showGridAction);
+  showGridAction->setIcon(IconTheme::themedToolIcon(":/icons/show_grid.svg"));
+  showGridAction->setToolTip("Show grid points");
+  m_themedActions.push_back({ showGridAction, ":/icons/show_grid.svg" });
+  navToolBar->addAction(snapGridAction);
+  snapGridAction->setIcon(IconTheme::themedToolIcon(":/icons/snap_grid.svg"));
+  snapGridAction->setToolTip("Snap new points and drags to the nearest grid point");
+  m_themedActions.push_back({ snapGridAction, ":/icons/snap_grid.svg" });
+  addThemedAction(navToolBar, ":/icons/set_grid.svg", "Set Grid", "Change the grid spacing", &SolutionWindow::onSetGridTriggered);
+  HoverTooltip::installOn(navToolBar);
+
   // Matches femm.rc's IDR_FEMMVIEWTYPE toolbar -- every one of these
   // already exists as a menu item above; per direct user request (the
   // Solution Viewer had no toolbar icons at all, text menus only) this

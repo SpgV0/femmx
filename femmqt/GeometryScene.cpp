@@ -735,6 +735,21 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     event->accept();
     return;
   }
+  if (event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::SelectCircle) {
+    m_selectCircleStartPos = event->scenePos();
+    if (!m_selectCircleItem) {
+      m_selectCircleItem = new QGraphicsEllipseItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_selectCircleItem->setPen(pen);
+      m_selectCircleItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_selectCircleItem);
+    }
+    m_selectCircleItem->setRect(QRectF(m_selectCircleStartPos, QSizeF(0, 0)));
+    m_selectCircleItem->setVisible(true);
+    event->accept();
+    return;
+  }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     QGraphicsScene::mousePressEvent(event);
     return;
@@ -748,6 +763,12 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
   if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
     m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, event->scenePos()).normalized());
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::SelectCircle && m_selectCircleItem && m_selectCircleItem->isVisible()) {
+    double r = QLineF(m_selectCircleStartPos, event->scenePos()).length();
+    m_selectCircleItem->setRect(QRectF(m_selectCircleStartPos.x() - r, m_selectCircleStartPos.y() - r, 2 * r, 2 * r));
     event->accept();
     return;
   }
@@ -766,6 +787,16 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
     if (r.width() > 1e-9 && r.height() > 1e-9)
       emit zoomWindowSelected(r);
     setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's ZoomWndFlag reset
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::SelectCircle && m_selectCircleItem && m_selectCircleItem->isVisible()) {
+    double r = QLineF(m_selectCircleStartPos, event->scenePos()).length();
+    m_selectCircleItem->setVisible(false);
+    if (r > 1e-9)
+      selectByCircle(m_selectCircleStartPos, r);
+    setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's SelectCircFlag reset
+    emit selectByCircleCompleted();
     event->accept();
     return;
   }
@@ -1134,6 +1165,48 @@ void GeometryScene::selectByGroup(int groupNumber)
     if (matches)
       item->setSelected(true);
   }
+}
+
+bool GeometryScene::selectByCircle(QPointF center, double radius)
+{
+  if (!m_problem)
+    return false;
+  clearSelection();
+  auto within = [&](double x, double y) { return QLineF(center, QPointF(x, y)).length() <= radius; };
+  bool foundAny = false;
+  const auto all = items();
+  for (QGraphicsItem* item : all) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    bool matches = false;
+    switch (kind) {
+    case FemmItemKind::Node:
+      matches = index >= 0 && index < m_problem->nodes.size() && within(m_problem->nodes[index].x, m_problem->nodes[index].y);
+      break;
+    case FemmItemKind::BlockLabel:
+      matches = index >= 0 && index < m_problem->blockLabels.size() && within(m_problem->blockLabels[index].x, m_problem->blockLabels[index].y);
+      break;
+    case FemmItemKind::Segment:
+      if (index >= 0 && index < m_problem->segments.size()) {
+        const FemmSegment& s = m_problem->segments[index];
+        if (s.n0 >= 0 && s.n0 < m_problem->nodes.size() && s.n1 >= 0 && s.n1 < m_problem->nodes.size())
+          matches = within(m_problem->nodes[s.n0].x, m_problem->nodes[s.n0].y) && within(m_problem->nodes[s.n1].x, m_problem->nodes[s.n1].y);
+      }
+      break;
+    case FemmItemKind::Arc:
+      if (index >= 0 && index < m_problem->arcSegments.size()) {
+        const FemmArcSegment& a = m_problem->arcSegments[index];
+        if (a.n0 >= 0 && a.n0 < m_problem->nodes.size() && a.n1 >= 0 && a.n1 < m_problem->nodes.size())
+          matches = within(m_problem->nodes[a.n0].x, m_problem->nodes[a.n0].y) && within(m_problem->nodes[a.n1].x, m_problem->nodes[a.n1].y);
+      }
+      break;
+    }
+    if (matches) {
+      item->setSelected(true);
+      foundAny = true;
+    }
+  }
+  return foundAny;
 }
 
 void GeometryScene::applyGroupToSelected(int groupNumber)

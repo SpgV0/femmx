@@ -25,6 +25,12 @@ enum class GeometryToolMode {
   // One-shot: next click-drag defines a rectangle to zoom into, then
   // reverts to Select -- mirrors FemmeView.cpp's OnZoomWnd/ZoomWndFlag.
   ZoomWindow,
+  // One-shot: next click-drag defines a circle (center = press point,
+  // radius = drag distance); on release, everything inside it is
+  // selected, then reverts to Select -- mirrors FemmeView.cpp's
+  // OnFDSelectCirc/SelectCircFlag. Toolbar-only in the classic GUI (no
+  // menu item), found missing during a full icon-by-icon toolbar audit.
+  SelectCircle,
 };
 
 // Editable rendering of a FemmProblem's geometry. Holds a non-owning
@@ -194,6 +200,15 @@ class GeometryScene : public QGraphicsScene {
   void selectByGroup(int groupNumber);
   void applyGroupToSelected(int groupNumber);
 
+  // Selects every node/block-label whose point falls within the given
+  // circle, and every segment/arc whose BOTH endpoint nodes do -- exact
+  // match to femm/FemmeView.cpp's OnLButtonUp SelectCircFlag==2 branch
+  // (its EditAction==4 case, since this app's Select mode isn't
+  // restricted to one entity type at a time the way classic's Node/
+  // Segment/Arc/Block toolbar modes are). Returns true if anything was
+  // selected. Used by GeometryToolMode::SelectCircle's one-shot drag.
+  bool selectByCircle(QPointF center, double radius);
+
   // Deletes one selected item (matching femm.rc's "Delete" -- see the
   // .cpp's comment on why this is one-item-per-call, same as the Delete
   // key's own handling in keyPressEvent, which now just forwards here).
@@ -241,6 +256,15 @@ class GeometryScene : public QGraphicsScene {
   // Emitted when a ZoomWindow drag completes -- MainWindow owns the
   // QGraphicsView and does the actual fitInView().
   void zoomWindowSelected(QRectF sceneRect);
+
+  // Emitted when a SelectCircle drag completes (the actual selection has
+  // already happened by this point, see selectByCircle) -- MainWindow
+  // uses this only to re-check its Select toolbar button, same reason
+  // onZoomWindowSelected does: the one-shot mode reverts the SCENE back
+  // to Select internally, but whichever Draw-toolbar QAction was checked
+  // before arming this tool (if not already Select) has no other way to
+  // find out it should un-check itself.
+  void selectByCircleCompleted();
 
   protected:
   void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
@@ -300,6 +324,9 @@ class GeometryScene : public QGraphicsScene {
 
   QGraphicsRectItem* m_zoomWindowRectItem = nullptr;
   QPointF m_zoomWindowStartPos;
+
+  QGraphicsEllipseItem* m_selectCircleItem = nullptr;
+  QPointF m_selectCircleStartPos;
 
   // See snapshotOnceForDrag()'s own comment -- reset on every mouse
   // release so the NEXT drag gesture gets its own single snapshot.
