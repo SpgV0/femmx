@@ -38,14 +38,6 @@ ArcPropDialog::ArcPropDialog(const QVector<FemmArcSegment*>& arcs, const FemmPro
   m_boundary->setCurrentIndex(sameBoundary ? qBound(0, arcs.first()->boundaryMarker, problem.boundaryProps.size()) : 0);
   form->addRow("Boundary:", m_boundary);
 
-  m_thermalBoundary = new QComboBox(this);
-  m_thermalBoundary->addItem("<None>");
-  for (const FemmThermalBoundaryProp& b : problem.thermalBoundaryProps)
-    m_thermalBoundary->addItem(b.name);
-  bool sameThermalBoundary = allSame(arcs, [](FemmArcSegment* a) { return a->thermalBoundaryMarker; });
-  m_thermalBoundary->setCurrentIndex(sameThermalBoundary ? qBound(0, arcs.first()->thermalBoundaryMarker, problem.thermalBoundaryProps.size()) : 0);
-  form->addRow("Boundary (Heat Flow):", m_thermalBoundary);
-
   // Matches OpArcSegDlg's own rule: always the average of the batch's
   // mesh sizes (not an arbitrary single arc's value), even when they
   // already agree (averaging a uniform set is a no-op).
@@ -79,7 +71,6 @@ void ArcPropDialog::onAccept()
 {
   for (FemmArcSegment* a : m_arcs) {
     a->boundaryMarker = m_boundary->currentIndex();
-    a->thermalBoundaryMarker = m_thermalBoundary->currentIndex();
     a->maxSideLength = m_maxSeg->text().toDouble();
     a->hidden = m_hidden->isChecked();
     a->inGroup = m_inGroup->text().toInt();

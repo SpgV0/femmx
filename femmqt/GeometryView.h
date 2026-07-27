@@ -55,6 +55,12 @@ class GeometryView : public QGraphicsView {
   void zoomBy(double factor);
   void resetZoomTransform();
 
+  signals:
+  // Matches femm/FemmeView.cpp's OnKeyDown: TAB opens "Enter Point" while
+  // the Node or Block tool is active (EditAction 0 or 2) -- see
+  // keyPressEvent's own comment for why this is gated the same way.
+  void enterPointRequested();
+
   protected:
   void wheelEvent(QWheelEvent* event) override;
   // Fusion 360-style multi-select: holding Shift while left-dragging on
@@ -62,6 +68,14 @@ class GeometryView : public QGraphicsView {
   // encloses. Only armed in Select tool mode -- see the .cpp for why.
   void keyPressEvent(QKeyEvent* event) override;
   void keyReleaseEvent(QKeyEvent* event) override;
+  // Tab specifically has to be caught here, not in keyPressEvent() --
+  // QWidget::event()'s default implementation consumes an unmodified Tab
+  // key press for its own focus-navigation (calling focusNextPrevChild())
+  // BEFORE keyPressEvent() ever runs, so a keyPressEvent-only override
+  // never actually sees it (confirmed directly: the enterPointRequested()
+  // signal never fired from keyPressEvent alone). Intercepting in event()
+  // runs ahead of that default handling.
+  bool event(QEvent* event) override;
   // Without this, a freshly-opened window doesn't hand this view Qt
   // keyboard focus until the user clicks inside it once -- StrongFocus
   // alone (set in the constructor) only means this widget CAN take focus,

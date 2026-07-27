@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QWidget>
-#include <QDialog>
+#include <QDockWidget>
 #include <QVector>
 
 class QLabel;
@@ -61,7 +61,18 @@ class LoadMonitorChartWidget : public QWidget {
 // FEMM's fire-and-return interactive path -- this dialog's own QTimer can
 // only actually fire during that pumping, which is why that pumping loop
 // exists at all now (it didn't before this feature).
-class LoadMonitorDialog : public QDialog {
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com: QDockWidget
+// instead of QDialog, per direct user request ("a floating window that
+// can be attached in the main window") -- QMainWindow::addDockWidget
+// (see MainWindow::onLoadMonitorToggled) registers it with the main
+// window's docking system, and setFloating(true) right after gives it
+// the same default appearance as the old always-separate dialog; from
+// there Qt's own dock-widget title bar lets the user drag it into any
+// of the main window's dock areas, or back out again. The class name is
+// kept as-is (not renamed to e.g. LoadMonitorPanel) to avoid an
+// unrelated rename churning MainWindow.h/.cpp/CMakeLists.txt.
+class LoadMonitorDialog : public QDockWidget {
   Q_OBJECT
 
   public:

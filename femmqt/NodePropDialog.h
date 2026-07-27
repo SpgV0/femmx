@@ -32,10 +32,6 @@ class NodePropDialog : public QDialog {
   private:
   QVector<FemmNode*> m_nodes;
   QComboBox* m_pointProp = nullptr;
-  // Heat flow's point-property assignment, independent of m_pointProp
-  // above -- see FemmNode::thermalPointPropIndex's comment on why the
-  // same node can carry both at once.
-  QComboBox* m_thermalPointProp = nullptr;
   QLineEdit* m_inGroup = nullptr;
   // Only populated/shown for a single-node edit -- applying one shared
   // (x, y) to a multi-node selection would collapse them all onto the

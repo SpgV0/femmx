@@ -33,9 +33,6 @@ class ArcPropDialog : public QDialog {
   private:
   QVector<FemmArcSegment*> m_arcs;
   QComboBox* m_boundary = nullptr;
-  // Heat flow's boundary assignment, independent of m_boundary above --
-  // see FemmArcSegment::thermalBoundaryMarker's comment.
-  QComboBox* m_thermalBoundary = nullptr;
   QLineEdit* m_maxSeg = nullptr;
   QCheckBox* m_hidden = nullptr;
   QLineEdit* m_inGroup = nullptr;

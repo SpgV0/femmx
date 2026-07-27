@@ -212,63 +212,6 @@ void FemmProblemEdit::deleteCircuitProp(FemmProblem& p, int index)
   p.circuitProps.remove(index);
 }
 
-int FemmProblemEdit::countThermalPointPropReferences(const FemmProblem& p, int index)
-{
-  int marker = index + 1;
-  int n = 0;
-  for (const FemmNode& node : p.nodes)
-    if (node.thermalPointPropIndex == marker)
-      n++;
-  return n;
-}
-
-void FemmProblemEdit::deleteThermalPointProp(FemmProblem& p, int index)
-{
-  if (index < 0 || index >= p.thermalPointProps.size())
-    return;
-  int marker = index + 1;
-  for (FemmNode& node : p.nodes) {
-    if (node.thermalPointPropIndex == marker)
-      node.thermalPointPropIndex = 0;
-    else if (node.thermalPointPropIndex > marker)
-      node.thermalPointPropIndex--;
-  }
-  p.thermalPointProps.remove(index);
-}
-
-int FemmProblemEdit::countThermalBoundaryPropReferences(const FemmProblem& p, int index)
-{
-  int marker = index + 1;
-  int n = 0;
-  for (const FemmSegment& s : p.segments)
-    if (s.thermalBoundaryMarker == marker)
-      n++;
-  for (const FemmArcSegment& a : p.arcSegments)
-    if (a.thermalBoundaryMarker == marker)
-      n++;
-  return n;
-}
-
-void FemmProblemEdit::deleteThermalBoundaryProp(FemmProblem& p, int index)
-{
-  if (index < 0 || index >= p.thermalBoundaryProps.size())
-    return;
-  int marker = index + 1;
-  for (FemmSegment& s : p.segments) {
-    if (s.thermalBoundaryMarker == marker)
-      s.thermalBoundaryMarker = 0;
-    else if (s.thermalBoundaryMarker > marker)
-      s.thermalBoundaryMarker--;
-  }
-  for (FemmArcSegment& a : p.arcSegments) {
-    if (a.thermalBoundaryMarker == marker)
-      a.thermalBoundaryMarker = 0;
-    else if (a.thermalBoundaryMarker > marker)
-      a.thermalBoundaryMarker--;
-  }
-  p.thermalBoundaryProps.remove(index);
-}
-
 void FemmProblemEdit::moveSelected(FemmProblem& p, double dx, double dy)
 {
   for (FemmNode& n : p.nodes) {
@@ -382,6 +325,108 @@ void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, doubl
   for (FemmBlockLabel& b : p.blockLabels)
     if (b.isSelected)
       reflectPoint(b.x, b.y, x0, y0, ux, uy);
+}
+
+namespace {
+void rotatePoint(double& x, double& y, double aboutX, double aboutY, double cosT, double sinT)
+{
+  double dx = x - aboutX, dy = y - aboutY;
+  x = aboutX + dx * cosT - dy * sinT;
+  y = aboutY + dx * sinT + dy * cosT;
+}
+
+// True if block label `b`'s assigned material is a permanent magnet
+// (Hc != 0) -- matches femm/MOVECOPY.CPP's own blockproplist[j].H_c != 0
+// check, gating whether a rotation also bumps magDir.
+bool isPermanentMagnet(const FemmProblem& p, const FemmBlockLabel& b)
+{
+  return b.blockTypeIndex >= 1 && b.blockTypeIndex <= p.materialProps.size()
+      && p.materialProps[b.blockTypeIndex - 1].Hc != 0;
+}
+}
+
+void FemmProblemEdit::rotateSelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg)
+{
+  double t = angleDeg * M_PI / 180.0;
+  double cosT = std::cos(t), sinT = std::sin(t);
+  for (FemmNode& n : p.nodes)
+    if (n.isSelected)
+      rotatePoint(n.x, n.y, aboutX, aboutY, cosT, sinT);
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (!b.isSelected)
+      continue;
+    rotatePoint(b.x, b.y, aboutX, aboutY, cosT, sinT);
+    if (isPermanentMagnet(p, b))
+      b.magDir += angleDeg;
+  }
+}
+
+void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg, int nCopies)
+{
+  for (int nc = 0; nc < nCopies; nc++) {
+    double t = angleDeg * (nc + 1) * M_PI / 180.0;
+    double cosT = std::cos(t), sinT = std::sin(t);
+
+    // Old node index -> new node index, for remapping copied segments/arcs
+    // -- see copySelected's identical pattern/comment.
+    QHash<int, int> nodeMap;
+    int originalNodeCount = p.nodes.size();
+    for (int i = 0; i < originalNodeCount; i++) {
+      if (!p.nodes[i].isSelected)
+        continue;
+      FemmNode copy = p.nodes[i];
+      rotatePoint(copy.x, copy.y, aboutX, aboutY, cosT, sinT);
+      copy.isSelected = false;
+      nodeMap[i] = p.nodes.size();
+      p.nodes.push_back(copy);
+    }
+
+    int originalSegmentCount = p.segments.size();
+    for (int i = 0; i < originalSegmentCount; i++) {
+      const FemmSegment& s = p.segments[i];
+      if (!s.isSelected || !nodeMap.contains(s.n0) || !nodeMap.contains(s.n1))
+        continue;
+      FemmSegment copy = s;
+      copy.n0 = nodeMap[s.n0];
+      copy.n1 = nodeMap[s.n1];
+      copy.isSelected = false;
+      p.segments.push_back(copy);
+    }
+
+    int originalArcCount = p.arcSegments.size();
+    for (int i = 0; i < originalArcCount; i++) {
+      const FemmArcSegment& a = p.arcSegments[i];
+      if (!a.isSelected || !nodeMap.contains(a.n0) || !nodeMap.contains(a.n1))
+        continue;
+      FemmArcSegment copy = a;
+      copy.n0 = nodeMap[a.n0];
+      copy.n1 = nodeMap[a.n1];
+      copy.isSelected = false;
+      p.arcSegments.push_back(copy);
+    }
+
+    int originalBlockLabelCount = p.blockLabels.size();
+    for (int i = 0; i < originalBlockLabelCount; i++) {
+      if (!p.blockLabels[i].isSelected)
+        continue;
+      FemmBlockLabel copy = p.blockLabels[i];
+      rotatePoint(copy.x, copy.y, aboutX, aboutY, cosT, sinT);
+      if (isPermanentMagnet(p, copy))
+        copy.magDir += angleDeg * (nc + 1);
+      copy.isSelected = false;
+      p.blockLabels.push_back(copy);
+    }
+  }
+}
+
+void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy, int nCopies)
+{
+  // Each call only ever copies the ORIGINAL selection -- copySelected
+  // clears isSelected on every copy it creates, so looping this way
+  // reproduces femm/MOVECOPY.CPP's TranslateCopy exactly (copy i offset by
+  // (dx,dy)*(i+1)) without needing a second, separate implementation.
+  for (int nc = 0; nc < nCopies; nc++)
+    copySelected(p, dx * (nc + 1), dy * (nc + 1));
 }
 
 namespace {

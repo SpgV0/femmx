@@ -70,30 +70,19 @@ int main(int argc, char* argv[])
   // (handed off from the classic GUI's post-processor, CFemmviewView::
   // OnSwitchToQtGui) opens the Solution Viewer, not the geometry editor --
   // otherwise the geometry editor would try to load a possibly-huge
-  // solved mesh as if it were raw, editable geometry. .feh/.anh (Round 6)
-  // mirror .fem/.ans exactly, just routed to openThermalFile/openAnhFile
-  // instead of openFile/openAnsFile.
+  // solved mesh as if it were raw, editable geometry.
   QString suffix = args.size() > 1 ? QFileInfo(args.at(1)).suffix() : QString();
   bool isMagSolutionFile = suffix.compare("ans", Qt::CaseInsensitive) == 0 || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
-  bool isThermalSolutionFile = suffix.compare("anh", Qt::CaseInsensitive) == 0;
-  bool isThermalGeometryFile = suffix.compare("feh", Qt::CaseInsensitive) == 0;
 
-  if (isMagSolutionFile || isThermalSolutionFile) {
+  if (isMagSolutionFile) {
     auto* solutionWindow = new SolutionWindow();
     solutionWindow->show();
-    if (isThermalSolutionFile)
-      solutionWindow->openAnhFile(args.at(1));
-    else
-      solutionWindow->openAnsFile(args.at(1));
+    solutionWindow->openAnsFile(args.at(1));
   } else {
     auto* window = new MainWindow();
     window->show();
-    if (args.size() > 1) {
-      if (isThermalGeometryFile)
-        window->openThermalFile(args.at(1));
-      else
-        window->openFile(args.at(1));
-    }
+    if (args.size() > 1)
+      window->openFile(args.at(1));
   }
 
   return app.exec();

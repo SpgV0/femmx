@@ -46,7 +46,6 @@ MaterialPropDialog::MaterialPropDialog(FemmMaterialProp& prop, QWidget* parent)
   updateBhNote();
 
   m_hc = makeDoubleField(this, form, "Hc (A/m):", prop.Hc);
-  m_hcAngle = makeDoubleField(this, form, "Hc Angle (deg):", prop.HcAngle);
   m_jsrcRe = makeDoubleField(this, form, "J re (MA/m\xC2\xB2):", prop.JsrcRe);
   m_jsrcIm = makeDoubleField(this, form, "J im (MA/m\xC2\xB2):", prop.JsrcIm);
   m_sigma = makeDoubleField(this, form, "Sigma (MS/m):", prop.sigma);
@@ -68,21 +67,6 @@ MaterialPropDialog::MaterialPropDialog(FemmMaterialProp& prop, QWidget* parent)
   form->addRow("Number of Strands:", m_nStrands);
   m_wireD = makeDoubleField(this, form, "Wire Diameter (mm):", prop.wireD);
 
-  // Heat-flow properties -- see FemmMaterialProp's comment (Round 6):
-  // one material carries both sides now, 0 meaning "no thermal data".
-  auto* heatLabel = new QLabel("<b>Heat Flow</b>", this);
-  form->addRow(QString(), heatLabel);
-  m_kx = makeDoubleField(this, form, "Kx (W/(m\xC2\xB7K)):", prop.Kx);
-  m_ky = makeDoubleField(this, form, "Ky (W/(m\xC2\xB7K)):", prop.Ky);
-
-  m_tkNote = new QLabel(this);
-  m_tkNote->setWordWrap(true);
-  form->addRow(QString(), m_tkNote);
-  updateTkNote();
-
-  m_kt = makeDoubleField(this, form, "Kt (MJ/(m\xC2\xB3\xC2\xB7K)):", prop.Kt);
-  m_qv = makeDoubleField(this, form, "qv (W/m\xC2\xB3):", prop.qv);
-
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
   connect(buttons, &QDialogButtonBox::accepted, this, &MaterialPropDialog::onAccept);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -102,7 +86,8 @@ void MaterialPropDialog::onAccept()
   m_prop.muX = m_muX->text().toDouble();
   m_prop.muY = m_muY->text().toDouble();
   m_prop.Hc = m_hc->text().toDouble();
-  m_prop.HcAngle = m_hcAngle->text().toDouble();
+  // HcAngle is intentionally left untouched -- see this dialog's header
+  // comment; classic's own CMatDlg never edits it either.
   m_prop.JsrcRe = m_jsrcRe->text().toDouble();
   m_prop.JsrcIm = m_jsrcIm->text().toDouble();
   m_prop.sigma = m_sigma->text().toDouble();
@@ -114,10 +99,6 @@ void MaterialPropDialog::onAccept()
   m_prop.lamFill = m_lamFill->text().toDouble();
   m_prop.nStrands = m_nStrands->text().toInt();
   m_prop.wireD = m_wireD->text().toDouble();
-  m_prop.Kx = m_kx->text().toDouble();
-  m_prop.Ky = m_ky->text().toDouble();
-  m_prop.Kt = m_kt->text().toDouble();
-  m_prop.qv = m_qv->text().toDouble();
   accept();
 }
 
@@ -135,13 +116,4 @@ void MaterialPropDialog::updateBhNote()
           : QString("This material has a %1-point BH curve, which takes precedence over "
                      "Mu x/y above during solving.")
                 .arg(m_prop.bhData.size()));
-}
-
-void MaterialPropDialog::updateTkNote()
-{
-  m_tkNote->setText(m_prop.tkData.isEmpty()
-          ? "No nonlinear k(T) curve defined -- Kx/Ky above are used directly (linear material)."
-          : QString("This material has a %1-point nonlinear conductivity curve (from the source "
-                     "file), which takes precedence over Kx/Ky above during solving. Not editable here yet.")
-                .arg(m_prop.tkData.size()));
 }

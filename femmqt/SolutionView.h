@@ -2,8 +2,10 @@
 
 #include <QElapsedTimer>
 #include <QGraphicsItem>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QMainWindow>
+#include <QPainterPath>
 #include <QPair>
 #include <QVector>
 
@@ -12,11 +14,11 @@
 
 #include <complex>
 
-class QGraphicsScene;
 class QAction;
 class QDockWidget;
 class QToolBar;
 class QPlainTextEdit;
+class QKeyEvent;
 
 // Paints the whole solved mesh (potentially millions of triangles) in a
 // handful of QPainter calls -- one filled QPainterPath per color band,
@@ -35,23 +37,14 @@ class MeshSolutionItem : public QGraphicsItem {
   // Density (colored |B| bands, the default) or Contour (evenly-spaced
   // equipotential/A-contour lines) -- mirrors femm.rc's View > Density/
   // Contour Plot, though this is a first pass at each rather than the
-  // classic dialogs' full configurability (band count, etc.). Field
-  // direction is shown via Contour's own optional arrows (setShowField
-  // Arrows) rather than a separate Vector Plot mode -- removed per
-  // direct user request ("I do not want the vector plot at all, remove
-  // it") after the arrows-on-field-lines option above covered the same
-  // need more simply.
+  // classic dialogs' full configurability (band count, etc.). No
+  // separate Vector Plot mode -- removed per direct user request ("I do
+  // not want the vector plot at all, remove it").
   enum class PlotMode { Density, Contour };
   void setPlotMode(PlotMode mode);
   void setSmoothing(bool smooth);
   void setShowMesh(bool show);
   void setShowPoints(bool show);
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
-  // user request -- small direction arrows along Contour Plot's field
-  // lines (see paintContour's own comment for why the local element's B
-  // direction is exactly the right thing to draw), off by default and
-  // toggled via View > Show Field Arrows.
-  void setShowFieldArrows(bool show);
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
   // user report ("the edges and nodes of the geometry do not show up") --
   // the classic GUI's post-processor (femm/FemmviewView.cpp) always draws
@@ -65,23 +58,9 @@ class MeshSolutionItem : public QGraphicsItem {
   // segments/arcs; nullptr (the default, e.g. before a file is loaded)
   // just means nothing to draw yet.
   void setProblemGeometry(const FemmProblem* problem);
-
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
-  // direct user request to view thermal (heat-flow) results too (Round
-  // 6) -- rather than a parallel thermal rendering pipeline, this reuses
-  // the existing one: AnhFileIO::readAnh repurposes MeshSolutionNode::Are
-  // to hold nodal temperature and MeshSolutionElement::B1re/B2re to hold
-  // heat flux Gx/Gy (see that file's header comment), so Contour Plot
-  // already draws correct isotherms and Density Plot's BMag/BReMag/
-  // LogBMag already draw correct |heat flux| with NO code change here.
-  // The one quantity that WOULD silently show a plausible-but-physically-
-  // meaningless number is HMag (divides by muX*mu0, and muX is itself
-  // repurposed to hold thermal conductivity) -- this flag makes
-  // elementQuantity() fall back to flux magnitude for that case instead,
-  // and legendTitle()/hover-and-Point-tool text (SolutionWindow) show
-  // Temperature/Heat Flux labels instead of A/B/H/J ones.
-  void setThermalMode(bool thermal);
-  bool thermalMode() const { return m_thermalMode; }
+  // Matches femm.rc's IDR_FEMMVIEWTYPE View > Show Block Names -- off by
+  // default, same as GeometryScene::m_showBlockNames.
+  void setShowBlockNames(bool show);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // per user request for "all the different heatmap possibilities" the
@@ -150,8 +129,35 @@ class MeshSolutionItem : public QGraphicsItem {
   // MeshSolutionItem* (m_item) and calls through it instead.
   QColor legendBandColor(int band) const;
   void legendRange(double& lo, double& hi) const;
-  QString legendTitle() const;
+  QString legendTitle() const { return legendTitle(m_densityQuantity); }
+  // Overload taking an explicit quantity -- lets DensityPlotOptionsDialog
+  // ask what label a quantity OTHER than the currently-active one would
+  // get (e.g. while the user is still picking one in its combo box,
+  // before OK commits the change) without duplicating this method's
+  // switch statement.
+  QString legendTitle(DensityQuantity q) const;
   PlotMode plotMode() const { return m_mode; }
+
+  // Matches femm/FemmviewView.cpp's OnCplot/IDD_CPLOTDLG(2) -- Number of
+  // Contours (default 20, previously hardcoded as paintContour's own
+  // kNumLevels constant) and an opt-in custom Lower/Upper Bound override
+  // (same "auto range unless overridden" pattern as the Density Plot's
+  // per-quantity custom range above; "Restore Default Range" reverts to
+  // the whole mesh's Are extremes, i.e. m_aMin/m_aMax).
+  void setNumContours(int n);
+  int numContours() const { return m_numContours; }
+  bool hasCustomContourRange() const { return m_useCustomContourRange; }
+  void contourRange(double& lo, double& hi) const;
+  void setContourRange(double lo, double hi);
+  void clearContourRange();
+  void contourAutoRange(double& lo, double& hi) const { lo = m_aMin; hi = m_aMax; }
+  // AC solutions only (see ContourPlotOptionsDialog, gated the same way
+  // classic gates IDD_CPLOTDLG's "Imaginary component of A" checkbox vs
+  // IDD_CPLOTDLG2 not having one at all) -- draws a second set of contour
+  // lines for Im(A), in a distinct color, alongside the always-drawn
+  // Re(A) lines.
+  void setShowImagContour(bool show);
+  bool showImagContour() const { return m_showImagContour; }
 
   private:
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -185,6 +191,10 @@ class MeshSolutionItem : public QGraphicsItem {
   // total mesh size" the moment you zoom in, which is exactly backwards.
   void paintDensity(QPainter* painter, const QRectF& exposedRect);
   void paintContour(QPainter* painter, const QRectF& exposedRect);
+  // Builds one component's (Re or Im) marching-triangle contour path --
+  // factored out of paintContour so it can be called twice (once per
+  // component) without duplicating the per-element/per-level loop.
+  QPainterPath contourPath(const QRectF& exposedRect, double aMin, double span, int numLevels, bool useImag) const;
   void paintMeshOverlay(QPainter* painter, const QRectF& exposedRect);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -229,10 +239,14 @@ class MeshSolutionItem : public QGraphicsItem {
   double m_customHi[6] = { 0, 0, 0, 0, 0, 0 };
   bool m_showMesh = false;
   bool m_showPoints = false;
-  bool m_showFieldArrows = false;
+  bool m_showBlockNames = false;
+  // See setNumContours/setContourRange/setShowImagContour's declarations.
+  int m_numContours = 20;
+  bool m_useCustomContourRange = false;
+  double m_customContourLo = 0, m_customContourHi = 0;
+  bool m_showImagContour = false;
   const FemmProblem* m_problemGeometry = nullptr;
   void paintProblemGeometry(QPainter* painter, const QRectF& exposedRect);
-  bool m_thermalMode = false;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // was a single m_nodeBMagAvg (|B| only) -- generalized to one
@@ -275,6 +289,41 @@ class MeshSolutionItem : public QGraphicsItem {
   // like Density's -- see that method for why) instead of rescanning
   // every node on every paint call.
   double m_aMin = 0, m_aMax = 0;
+};
+
+// Matches femm.rc's IDR_FEMMVIEWTYPE View > Show Grid/Snap Grid/Set Grid
+// -- a plain QGraphicsScene subclass just for the grid-dot overlay,
+// mirroring GeometryScene::drawBackground's own dot-grid pattern exactly
+// (same AppTheme::gridLine() color, same fixed-screen-pixel-radius
+// drawEllipse() approach -- see that method's comment for why a plain
+// QPen-drawn point doesn't render reliably on this app's QOpenGLWidget
+// viewports). Snap-to-grid has no effect on anything the Solution Viewer
+// lets you place (Point/Contour/Area clicks land on the nearest MESH
+// ELEMENT, not a new point) -- matches classic's own CFemmviewView::
+// OnSnapGrid, which likewise just flips SnapFlag with no snapping logic
+// anywhere in the post-processor's own click handlers; kept as a toggle
+// here purely for menu/toolbar-state parity with classic, not because it
+// changes any click behavior.
+class SolutionGraphicsScene : public QGraphicsScene {
+  Q_OBJECT
+
+  public:
+  using QGraphicsScene::QGraphicsScene;
+
+  void setShowGrid(bool show);
+  bool showGrid() const { return m_showGrid; }
+  void setSnapToGrid(bool snap) { m_snapToGrid = snap; }
+  bool snapToGrid() const { return m_snapToGrid; }
+  void setGridSize(double size);
+  double gridSize() const { return m_gridSize; }
+
+  protected:
+  void drawBackground(QPainter* painter, const QRectF& rect) override;
+
+  private:
+  bool m_showGrid = true; // matches femm.rc's IDR_FEMMVIEWTYPE Show Grid, CHECKED by default
+  bool m_snapToGrid = false;
+  double m_gridSize = 1.0;
 };
 
 // Routes plain left-clicks (used by the Point/Contour/Area analysis
@@ -327,17 +376,29 @@ class SolutionGraphicsView : public QGraphicsView {
   // tooltip's own position tracking below, which isn't.
   void setTooltipText(const QString& text);
 
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
-  // color-band legend overlay, matching femm/FemmviewView.cpp's own
-  // Density Plot legend ("add a colourmap bar on the side, similar to
-  // old gui"). setLegendItem is called once (SolutionWindow::openAnsFile,
-  // right after constructing m_item); refreshLegend() re-evaluates
-  // visibility/content and must be called after anything that could
-  // change what it shows -- plot mode, density quantity, or the
-  // Show Legend toggle itself.
+  // Color-band legend overlay, matching femm/FemmviewView.cpp's own
+  // Density Plot legend and cv_DPlotDlg2's "Show Legend" checkbox
+  // (IDC_CV_SHOW_LEG2) -- see DensityPlotOptionsDialog, which owns that
+  // checkbox now rather than this window having its own top-level View >
+  // Show Legend toggle. setLegendItem is called once (SolutionWindow::
+  // openAnsFile, right after constructing m_item); refreshLegend()
+  // re-evaluates visibility/content and must be called after anything
+  // that could change what it shows -- plot mode, density quantity, or
+  // the legend-visible flag itself.
   void setLegendItem(MeshSolutionItem* item);
   void setLegendVisible(bool visible);
+  bool legendVisible() const { return m_legendEnabled; }
   void refreshLegend();
+
+  // Matches femm.rc's IDR_FEMMVIEWTYPE Zoom > Window -- one-shot rubber-
+  // band drag (via QRubberBand, screen-space, not a scene item) that
+  // fits the view to whatever rectangle was dragged and then reverts to
+  // normal click handling. Orthogonal to SolutionToolMode (Point/Contour/
+  // Area) rather than folded into it, same as GeometryScene's own
+  // ZoomWindow tool mode is deliberately excluded from its exclusive
+  // toolGroup -- so starting a Zoom Window drag doesn't disturb whatever
+  // Operation-menu tool was active before or after it.
+  void startZoomWindow();
 
   signals:
   void clickedAt(QPointF scenePos);
@@ -346,12 +407,25 @@ class SolutionGraphicsView : public QGraphicsView {
   // clickedAt, this isn't gated on the current tool mode; SolutionWindow
   // decides whether/how to use it.
   void hoveredAt(QPointF scenePos);
+  // Emitted once a startZoomWindow() drag completes -- see that method's
+  // comment.
+  void zoomWindowSelected(QRectF sceneRect);
+  // femm/FemmeView.cpp's OnKeyDown: Delete removes the last-placed contour
+  // point, Escape clears the whole contour. Emitted unconditionally on
+  // every Delete/Escape press regardless of tool mode (this view doesn't
+  // track SolutionToolMode) -- SolutionWindow's connected slots check
+  // m_toolMode == Contour before acting, same division of responsibility
+  // as clickedAt/hoveredAt above.
+  void removeLastContourPointRequested();
+  void clearContourRequested();
 
   protected:
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
   void leaveEvent(QEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
+  void keyPressEvent(QKeyEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20: the
   // legend's numbers now track the CURRENTLY VISIBLE elements' range (see
@@ -369,6 +443,9 @@ class SolutionGraphicsView : public QGraphicsView {
   class SolutionLegendWidget* m_legend = nullptr;
   MeshSolutionItem* m_legendItem = nullptr;
   bool m_legendEnabled = true;
+  class QRubberBand* m_rubberBand = nullptr;
+  bool m_zoomWindowActive = false;
+  QPoint m_rubberBandOrigin;
 };
 
 enum class SolutionToolMode {
@@ -385,15 +462,9 @@ class SolutionWindow : public QMainWindow {
   explicit SolutionWindow(QWidget* parent = nullptr);
 
   void openAnsFile(const QString& path);
-  // Heat-flow counterpart -- see MeshSolutionItem::setThermalMode's
-  // comment for the shared-rendering-pipeline reasoning (Round 6). No
-  // .anhx-equivalent fast-cache this round (see AnhFileIO.h) -- always
-  // reads the .anh directly.
-  void openAnhFile(const QString& path);
 
   private slots:
   void onOpenTriggered();
-  void onOpenThermalTriggered();
   void onReloadTriggered();
   void onCanvasClicked(QPointF scenePos);
   void onCanvasHovered(QPointF scenePos);
@@ -402,20 +473,27 @@ class SolutionWindow : public QMainWindow {
   void onAreaToolTriggered();
   void onFinishContourTriggered();
   void onClearContourTriggered();
+  void onRemoveLastContourPointTriggered();
   void onPlotXYTriggered();
   void onIntegrateTriggered();
   void onProblemInfoTriggered();
   void onCircuitPropsTriggered();
   void onBhCurvesTriggered();
   void onDensityOptionsTriggered();
+  void onContourOptionsTriggered();
   void onZoomIn();
   void onZoomOut();
   void onZoomNatural();
+  void onZoomWindowTriggered();
+  void onZoomWindowSelected(QRectF sceneRect);
+  void onKbdZoomTriggered();
+  void onSetGridTriggered();
   void onPanLeft();
   void onPanRight();
   void onPanUp();
   void onPanDown();
   void onCopyBitmapTriggered();
+  void onPreferencesTriggered();
   void onPrintTriggered();
   void onPrintPreviewTriggered();
   void onPrintSetupTriggered();
@@ -465,7 +543,7 @@ class SolutionWindow : public QMainWindow {
   // is strictly more useful and no harder to implement.
   void appendOutput(const QString& text);
 
-  QGraphicsScene* m_scene = nullptr;
+  SolutionGraphicsScene* m_scene = nullptr;
   SolutionGraphicsView* m_view = nullptr;
   MeshSolution m_solution;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
@@ -494,16 +572,22 @@ class SolutionWindow : public QMainWindow {
   // out-param) rather than re-reading the source file's header on every
   // hover.
   bool m_axisymmetric = false;
-  // Set by openAnhFile(), cleared by openAnsFile() -- gates the hover/
-  // Point-tool text (onCanvasHovered/onCanvasClicked) between the
-  // magnetics A/B/H/J block and a simpler Temperature/Heat-Flux one. See
-  // MeshSolutionItem::setThermalMode's comment for the rendering side.
-  bool m_thermalMode = false;
+  // Set the same way/place as m_axisymmetric above -- lets
+  // onContourOptionsTriggered gate Real/Imaginary component toggles
+  // (AC-only, matching femm/FemmviewView.cpp's OnCplot IDD_CPLOTDLG vs
+  // IDD_CPLOTDLG2 split on pDoc->Frequency) without a second file read.
+  double m_frequency = 0;
 
   SolutionToolMode m_toolMode = SolutionToolMode::None;
   QAction* m_pointToolAction = nullptr;
   QAction* m_contourToolAction = nullptr;
   QAction* m_areaToolAction = nullptr;
+  // Needed by onDensityOptionsTriggered (not just the constructor's own
+  // lambdas) to restore the exclusive plot-mode radio-checkmark
+  // correctly if the user cancels that dialog after Qt's QActionGroup
+  // has already auto-checked densityAction from the click itself.
+  QAction* m_densityAction = nullptr;
+  QAction* m_contourAction = nullptr;
 
   QVector<QPointF> m_contourPoints;
   QGraphicsItem* m_contourVisual = nullptr;

@@ -58,9 +58,8 @@ bool arcCircle(double x0, double y0, double x1, double y1, double arcLengthDeg,
 
 } // namespace
 
-bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath, QString& errorMessage, FemmPhysicsType physicsType)
+bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath, QString& errorMessage)
 {
-  const bool thermal = (physicsType == FemmPhysicsType::HeatFlow);
   QVector<WorkNode> nodes;
   QVector<WorkSegment> segments;
 
@@ -85,8 +84,7 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
     WorkNode wn;
     wn.x = n.x;
     wn.y = n.y;
-    int pointPropIndex = thermal ? n.thermalPointPropIndex : n.pointPropIndex;
-    wn.marker = (pointPropIndex == 0) ? 0 : (pointPropIndex + 1);
+    wn.marker = (n.pointPropIndex == 0) ? 0 : (n.pointPropIndex + 1);
     nodes.push_back(wn);
   }
 
@@ -98,8 +96,7 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
     double x1 = p.nodes[s.n1].x, y1 = p.nodes[s.n1].y;
     double dx = x1 - x0, dy = y1 - y0;
     double lineLen = std::hypot(dx, dy);
-    int boundaryMarker = thermal ? s.thermalBoundaryMarker : s.boundaryMarker;
-    int segMarker = (boundaryMarker == 0) ? 0 : -(boundaryMarker + 1);
+    int segMarker = (s.boundaryMarker == 0) ? 0 : -(s.boundaryMarker + 1);
 
     int k;
     if (s.maxSideLength < 0)
@@ -148,8 +145,7 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
       continue;
     double x0 = p.nodes[arc.n0].x, y0 = p.nodes[arc.n0].y;
     double x1 = p.nodes[arc.n1].x, y1 = p.nodes[arc.n1].y;
-    int arcBoundaryMarker = thermal ? arc.thermalBoundaryMarker : arc.boundaryMarker;
-    int segMarker = (arcBoundaryMarker == 0) ? 0 : -(arcBoundaryMarker + 1);
+    int segMarker = (arc.boundaryMarker == 0) ? 0 : -(arc.boundaryMarker + 1);
 
     double cx, cy, R;
     if (!arcCircle(x0, y0, x1, y1, arc.arcLength, cx, cy, R)) {
@@ -200,10 +196,7 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
   for (int i = 0; i < segments.size(); i++)
     out << i << "\t" << segments[i].n0 << "\t" << segments[i].n1 << "\t" << segments[i].marker << "\n";
 
-  // holes (femm/writepoly.cpp:274-283) -- blockTypeIndex is shared between
-  // physics types now (see FemmMaterialProp's comment), so hole/region
-  // detection doesn't need the `thermal` branch the point/boundary
-  // markers above do.
+  // holes (femm/writepoly.cpp:274-283)
   QVector<int> holeIndices;
   for (int i = 0; i < p.blockLabels.size(); i++)
     if (p.blockLabels[i].blockTypeIndex < 0)

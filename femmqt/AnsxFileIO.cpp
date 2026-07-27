@@ -22,6 +22,7 @@ namespace {
 // fallback then regenerates it from the source .ans, exactly like any
 // other stale-cache case. Fine for a pure performance cache with no
 // independent data of its own to lose.
+//
 constexpr uint32_t kAnsxVersion = 3;
 
 #pragma pack(push, 1)
@@ -191,7 +192,7 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
   return true;
 }
 
-bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QString& errorMessage, int* coordSystemOut)
+bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QString& errorMessage, int* coordSystemOut, double* frequencyOut)
 {
   QFile file(ansxPath);
   if (!file.open(QIODevice::ReadOnly)) {
@@ -206,6 +207,8 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
   }
   if (coordSystemOut)
     *coordSystemOut = (int)header.coordSystem;
+  if (frequencyOut)
+    *frequencyOut = header.frequency;
 
   solution = MeshSolution();
   solution.bMagMin = header.bMagMin;

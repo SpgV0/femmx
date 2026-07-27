@@ -1,5 +1,8 @@
+#define _USE_MATH_DEFINES
+
 #include "MainWindow.h"
 
+#include "AnsFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
 #include "ArcPropDialog.h"
@@ -12,13 +15,13 @@
 #include "FemmProblemEdit.h"
 #include "FemxFileIO.h"
 #include "GuiSwitch.h"
-#include "HeatFileIO.h"
 #include "HoverTooltip.h"
 #include "IconTheme.h"
 #include "LoadMonitorDialog.h"
 #include "MaterialLibraryDialog.h"
 #include "MaterialPropDialog.h"
 #include "MeshOverlay.h"
+#include "MoveCopyDialog.h"
 #include "NodePropDialog.h"
 #include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
@@ -28,22 +31,24 @@
 #include "SegmentPropDialog.h"
 #include "SolutionView.h"
 #include "SolveRunner.h"
-#include "ThermalBoundaryPropDialog.h"
-#include "ThermalPointPropDialog.h"
 
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleValidator>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFormLayout>
 #include <QGraphicsView>
 #include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPageSetupDialog>
@@ -60,6 +65,8 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <cmath>
 
 namespace {
 // Generates "New <Base>"/"<Base> Copy", disambiguated with a trailing
@@ -107,22 +114,13 @@ MainWindow::MainWindow(QWidget* parent)
   // in the .fem file with no transform bookkeeping of its own.
   m_view->scale(1, -1);
   setCentralWidget(m_view);
+  connect(m_view, &GeometryView::enterPointRequested, this, &MainWindow::onEnterPointTriggered);
 
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&New", this, &MainWindow::onNewTriggered, QKeySequence::New);
   fileMenu->addAction("&Open...", this, &MainWindow::onOpenTriggered, QKeySequence::Open);
   fileMenu->addAction("&Save", this, &MainWindow::onSaveTriggered, QKeySequence::Save);
   fileMenu->addAction("Save &As...", this, &MainWindow::onSaveAsTriggered, QKeySequence::SaveAs);
-  fileMenu->addSeparator();
-  // Heat flow's file operations, parallel to the magnetics ones above --
-  // see MainWindow.h's m_currentThermalPath comment (Round 6). Opening a
-  // .feh replaces the whole in-memory problem (its own geometry + thermal
-  // fields) same as Open does for a .fem; the two Save Heat Flow actions
-  // write m_currentThermalPath and, once BOTH paths are established,
-  // opportunistically resave the magnetics side too (see saveThermalAs).
-  fileMenu->addAction("Open &Heat Flow...", this, &MainWindow::onOpenThermalTriggered);
-  fileMenu->addAction("Save H&eat Flow", this, &MainWindow::onSaveThermalTriggered);
-  fileMenu->addAction("Save Heat Flow A&s...", this, &MainWindow::onSaveThermalAsTriggered);
   fileMenu->addSeparator();
   fileMenu->addAction("&Import DXF...", this, &MainWindow::onImportDxfTriggered);
   fileMenu->addAction("&Export DXF...", this, &MainWindow::onExportDxfTriggered);
@@ -175,9 +173,6 @@ MainWindow::MainWindow(QWidget* parent)
   meshMenu->addSeparator();
   meshMenu->addAction("&Solve", this, &MainWindow::onSolveTriggered, QKeySequence("Ctrl+L"));
   meshMenu->addAction("&View Results...", this, &MainWindow::onViewResultsTriggered);
-  meshMenu->addSeparator();
-  meshMenu->addAction("Solve (&Heat Flow)", this, &MainWindow::onSolveThermalTriggered);
-  meshMenu->addAction("View Results (H&eat Flow)...", this, &MainWindow::onViewThermalResultsTriggered);
 
   QMenu* problemMenu = menuBar()->addMenu("&Problem");
   problemMenu->addAction("&Problem Properties...", this, &MainWindow::onProblemPropertiesTriggered);
@@ -188,20 +183,6 @@ MainWindow::MainWindow(QWidget* parent)
   problemMenu->addAction("&Boundary Properties...", this, &MainWindow::onBoundaryPropsTriggered);
   problemMenu->addAction("&Circuits...", this, &MainWindow::onCircuitsTriggered);
   problemMenu->addAction("Poi&nt Properties...", this, &MainWindow::onPointPropsTriggered);
-  problemMenu->addSeparator();
-  // Heat flow's boundary/point property lists, parallel to the magnetics
-  // ones above -- per direct user request to solve both magnetics and
-  // thermal problems sharing the same geometry (Round 6). No separate
-  // "Physics Mode" toggle: each entity's property dialog (see
-  // openEntityProperties) already shows both a magnetics AND a heat-flow
-  // assignment field side by side, so these menu commands just need their
-  // own explicit labels rather than an ambiguous shared "Boundary
-  // Properties..." meaning different things depending on some global
-  // mode. No Heat Flow Materials/Materials Library entry -- materials
-  // are unified (see FemmMaterialProp's comment), so "Materials..."/
-  // "Materials Library..." above already cover both physics types.
-  problemMenu->addAction("Heat Flow B&oundary Properties...", this, &MainWindow::onThermalBoundaryPropsTriggered);
-  problemMenu->addAction("Heat Flow Point P&roperties...", this, &MainWindow::onThermalPointPropsTriggered);
 
   // Matches femm.rc's IDR_FEMMETYPE View menu (Zoom/Pan/Show Block Names
   // subset), plus Dark Theme and the Load Monitor -- Lua Console is a
@@ -211,6 +192,7 @@ MainWindow::MainWindow(QWidget* parent)
   viewMenu->addAction("Zoom &Out", this, &MainWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
   viewMenu->addAction("&Natural", this, &MainWindow::onZoomNatural, QKeySequence(Qt::Key_Home));
   viewMenu->addAction("&Window", this, &MainWindow::onZoomWindowTriggered);
+  viewMenu->addAction("&Keyboard", this, &MainWindow::onKbdZoomTriggered);
   viewMenu->addSeparator();
   viewMenu->addAction("Scroll &Left", this, &MainWindow::onPanLeft, QKeySequence(Qt::Key_Left));
   viewMenu->addAction("Scroll &Right", this, &MainWindow::onPanRight, QKeySequence(Qt::Key_Right));
@@ -384,7 +366,88 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::onMousePositionChanged(QPointF scenePos)
 {
-  m_positionLabel->setText(QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
+  m_lastMousePos = scenePos;
+  // Matches femm/FemmeView.cpp's OnMouseMove status-text format exactly:
+  // (x,y) for planar Cartesian, (r,z) for axisymmetric Cartesian, or
+  // (magnitude at angle) whenever Coords/coordsPolar is polar, regardless
+  // of problem type.
+  double x = scenePos.x(), y = scenePos.y();
+  if (!m_problem.coordsPolar) {
+    const char* label1 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "r" : "x";
+    const char* label2 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "z" : "y";
+    m_positionLabel->setText(QString("%1 = %2, %3 = %4").arg(label1).arg(x, 0, 'g', 6).arg(label2).arg(y, 0, 'g', 6));
+  } else {
+    double r = std::hypot(x, y);
+    double deg = std::atan2(y, x) * 180.0 / M_PI;
+    m_positionLabel->setText(QString("%1 at %2 deg").arg(r, 0, 'g', 6).arg(deg, 0, 'g', 6));
+  }
+}
+
+void MainWindow::onEnterPointTriggered()
+{
+  // Matches femm/FemmeView.cpp's EnterPoint()/IDD_ENTERPT exactly: two
+  // labeled fields whose meaning depends on coordsPolar (radius/degrees)
+  // or else problemType (x/y planar, r/z axisymmetric), defaulting to the
+  // cursor's last known position (converted to polar first if that's the
+  // active mode) the same way classic seeds m_coord1/m_coord2 from mx/my.
+  GeometryToolMode mode = m_scene->toolMode();
+  if (mode != GeometryToolMode::AddNode && mode != GeometryToolMode::AddBlockLabel)
+    return;
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Enter Point");
+  auto* form = new QFormLayout;
+
+  QString label1, label2;
+  double coord1, coord2;
+  if (!m_problem.coordsPolar) {
+    label1 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "r-coord" : "x-coord";
+    label2 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "z-coord" : "y-coord";
+    coord1 = m_lastMousePos.x();
+    coord2 = m_lastMousePos.y();
+  } else {
+    label1 = "radius";
+    label2 = "degrees";
+    coord1 = std::hypot(m_lastMousePos.x(), m_lastMousePos.y());
+    coord2 = std::atan2(m_lastMousePos.y(), m_lastMousePos.x()) * 180.0 / M_PI;
+  }
+
+  auto* coord1Edit = new QLineEdit(QString::number(coord1, 'g', 12), &dlg);
+  coord1Edit->setValidator(new QDoubleValidator(coord1Edit));
+  form->addRow(label1 + ":", coord1Edit);
+  auto* coord2Edit = new QLineEdit(QString::number(coord2, 'g', 12), &dlg);
+  coord2Edit->setValidator(new QDoubleValidator(coord2Edit));
+  form->addRow(label2 + ":", coord2Edit);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  double x, y;
+  if (!m_problem.coordsPolar) {
+    x = coord1Edit->text().toDouble();
+    y = coord2Edit->text().toDouble();
+  } else {
+    double r = coord1Edit->text().toDouble();
+    double deg = coord2Edit->text().toDouble();
+    x = r * std::cos(deg * M_PI / 180.0);
+    y = r * std::sin(deg * M_PI / 180.0);
+  }
+
+  snapshotForUndo();
+  if (mode == GeometryToolMode::AddNode)
+    FemmProblemEdit::addNode(m_problem, x, y);
+  else
+    FemmProblemEdit::addBlockLabel(m_problem, x, y);
+  m_scene->rebuild();
+  markEdited();
 }
 
 void MainWindow::onNewTriggered()
@@ -393,7 +456,6 @@ void MainWindow::onNewTriggered()
     return;
   m_problem = FemmProblem();
   m_currentPath.clear();
-  m_currentThermalPath.clear();
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
   m_view->resetZoomTransform();
@@ -470,46 +532,6 @@ void MainWindow::openFile(const QString& path)
   addToRecentFiles(femPath);
 }
 
-void MainWindow::onOpenThermalTriggered()
-{
-  if (!confirmDiscardUnsavedChanges())
-    return;
-  QString path = QFileDialog::getOpenFileName(this, "Open Heat Flow Problem", QString(), "FEMM Heat Flow Files (*.feh)");
-  if (path.isEmpty())
-    return;
-  openThermalFile(path);
-}
-
-void MainWindow::openThermalFile(const QString& path)
-{
-  QString error;
-  FemmProblem problem;
-  if (!HeatFileIO::readFeh(path, problem, error)) {
-    QMessageBox::warning(this, "Open Failed", error);
-    return;
-  }
-
-  // Replaces the whole in-memory problem (geometry + thermal fields),
-  // same as openFile() does for a .fem -- opening a standalone .feh has
-  // no magnetics data to preserve, matching openFile()'s own "fresh
-  // FemmProblem" behavior.
-  m_problem = problem;
-  m_currentPath.clear();
-  m_currentThermalPath = path;
-  m_scene->setProblem(&m_problem);
-  m_view->fitInViewSafe(m_scene->computeProblemBounds());
-  m_dirty = false; // see openFile()'s matching comment on ordering
-
-  statusBar()->showMessage(QString("%1 -- %2 nodes, %3 segments, %4 arcs, %5 block labels")
-                                .arg(path)
-                                .arg(m_problem.nodes.size())
-                                .arg(m_problem.segments.size())
-                                .arg(m_problem.arcSegments.size())
-                                .arg(m_problem.blockLabels.size()));
-  updateTitle();
-  addToRecentFiles(path);
-}
-
 void MainWindow::onSaveTriggered()
 {
   if (m_currentPath.isEmpty()) {
@@ -521,16 +543,7 @@ void MainWindow::onSaveTriggered()
 
 void MainWindow::onSaveAsTriggered()
 {
-  // Defaults the suggested filename to the already-established heat-flow
-  // path's own base name when there's no magnetics path yet -- the
-  // "finish thermal, now also do magnetics on the same geometry" mirror
-  // image of saveThermalAs()'s own default-borrowing.
-  QString suggested = m_currentPath;
-  if (suggested.isEmpty() && !m_currentThermalPath.isEmpty()) {
-    QFileInfo thermalInfo(m_currentThermalPath);
-    suggested = thermalInfo.absolutePath() + "/" + thermalInfo.completeBaseName() + ".fem";
-  }
-  QString path = QFileDialog::getSaveFileName(this, "Save Magnetics Problem", suggested, "FEMM Magnetics Files (*.fem)");
+  QString path = QFileDialog::getSaveFileName(this, "Save Magnetics Problem", m_currentPath, "FEMM Magnetics Files (*.fem)");
   if (path.isEmpty())
     return;
   saveAs(path);
@@ -553,73 +566,6 @@ bool MainWindow::saveAs(const QString& path)
   FemxFileIO::writeFemx(femxPath, path, m_problem, femxError);
 
   m_currentPath = path;
-  // Once a heat-flow path is ALSO established, keep it in sync
-  // automatically -- the shared geometry (and any thermal property edits
-  // made since) is the same in-memory FemmProblem either way, so a plain
-  // "Save" should mean "save everything this session already knows how
-  // to save," not just whichever side happened to trigger it. Plain
-  // writeFeh() here (not saveThermalAs(), which would recurse back into
-  // this same sync step and, on error, overwrite m_dirty/the title after
-  // this function already has) -- errors are surfaced but don't block
-  // the magnetics save that already succeeded.
-  if (!m_currentThermalPath.isEmpty()) {
-    QString thermalError;
-    if (!HeatFileIO::writeFeh(m_currentThermalPath, m_problem, thermalError))
-      QMessageBox::warning(this, "Save Failed", QStringLiteral("Magnetics saved, but heat-flow save failed: %1").arg(thermalError));
-  }
-  m_dirty = false;
-  updateTitle();
-  statusBar()->showMessage(QString("Saved %1").arg(path));
-  addToRecentFiles(path);
-  return true;
-}
-
-void MainWindow::onSaveThermalTriggered()
-{
-  if (m_currentThermalPath.isEmpty()) {
-    onSaveThermalAsTriggered();
-    return;
-  }
-  saveThermalAs(m_currentThermalPath);
-}
-
-void MainWindow::onSaveThermalAsTriggered()
-{
-  // Mirrors onSaveAsTriggered()'s own default-borrowing, the other
-  // direction: "finished magnetics, now make it easy to also do the
-  // thermal analysis" -- the concrete realization of that request.
-  QString suggested = m_currentThermalPath;
-  if (suggested.isEmpty() && !m_currentPath.isEmpty()) {
-    QFileInfo femInfo(m_currentPath);
-    suggested = femInfo.absolutePath() + "/" + femInfo.completeBaseName() + ".feh";
-  }
-  QString path = QFileDialog::getSaveFileName(this, "Save Heat Flow Problem", suggested, "FEMM Heat Flow Files (*.feh)");
-  if (path.isEmpty())
-    return;
-  saveThermalAs(path);
-}
-
-bool MainWindow::saveThermalAs(const QString& path)
-{
-  QString error;
-  if (!HeatFileIO::writeFeh(path, m_problem, error)) {
-    QMessageBox::warning(this, "Save Failed", error);
-    return false;
-  }
-  m_currentThermalPath = path;
-  // See saveAs()'s matching comment -- keep the magnetics side in sync
-  // too, once both paths are established.
-  if (!m_currentPath.isEmpty()) {
-    QString femError;
-    if (!FemmFileIO::writeFem(m_currentPath, m_problem, femError)) {
-      QMessageBox::warning(this, "Save Failed", QStringLiteral("Heat flow saved, but magnetics save failed: %1").arg(femError));
-    } else {
-      QFileInfo pathInfo(m_currentPath);
-      QString femxPath = pathInfo.absolutePath() + "/" + pathInfo.completeBaseName() + ".femx";
-      QString femxError;
-      FemxFileIO::writeFemx(femxPath, m_currentPath, m_problem, femxError);
-    }
-  }
   m_dirty = false;
   updateTitle();
   statusBar()->showMessage(QString("Saved %1").arg(path));
@@ -703,64 +649,6 @@ void MainWindow::onViewResultsTriggered()
   m_solutionWindow->activateWindow();
 }
 
-void MainWindow::onSolveThermalTriggered()
-{
-  // See onSolveTriggered's identical reasoning -- a file must exist on
-  // disk (here, .feh) either way, so this always saves first.
-  if (m_currentThermalPath.isEmpty()) {
-    onSaveThermalAsTriggered();
-    if (m_currentThermalPath.isEmpty())
-      return; // user cancelled the save dialog
-  } else if (!saveThermalAs(m_currentThermalPath)) {
-    return;
-  }
-
-  if (hasAppliedThermalPeriodicBoundary()) {
-    QMessageBox::warning(this, "Cannot Solve",
-        "This problem uses a periodic or antiperiodic heat-flow boundary condition, "
-        "which this Qt GUI doesn't support meshing for yet. Open it in the "
-        "classic FEMMX GUI to solve it.");
-    return;
-  }
-
-  statusBar()->showMessage("Meshing and solving (heat flow)...");
-  QApplication::setOverrideCursor(Qt::WaitCursor);
-  if (m_loadMonitor)
-    m_loadMonitor->markSolveStart(QStringLiteral("heat flow: %1").arg(QFileInfo(m_currentThermalPath).fileName()));
-  menuBar()->setEnabled(false);
-  QString error;
-  bool ok = SolveRunner::solve(m_problem, m_currentThermalPath, error, FemmPhysicsType::HeatFlow);
-  menuBar()->setEnabled(true);
-  if (m_loadMonitor)
-    m_loadMonitor->markSolveEnd();
-  QApplication::restoreOverrideCursor();
-
-  if (!ok) {
-    statusBar()->showMessage("Solve failed");
-    QMessageBox::warning(this, "Solve Failed", error);
-    return;
-  }
-
-  QString anhPath = QFileInfo(m_currentThermalPath).absolutePath() + "/" + QFileInfo(m_currentThermalPath).completeBaseName() + ".anh";
-  statusBar()->showMessage(QString("Solved -- see %1").arg(anhPath));
-
-  if (!m_solutionWindow)
-    m_solutionWindow = new SolutionWindow();
-  m_solutionWindow->show();
-  m_solutionWindow->raise();
-  m_solutionWindow->activateWindow();
-  m_solutionWindow->openAnhFile(anhPath);
-}
-
-void MainWindow::onViewThermalResultsTriggered()
-{
-  if (!m_solutionWindow)
-    m_solutionWindow = new SolutionWindow();
-  m_solutionWindow->show();
-  m_solutionWindow->raise();
-  m_solutionWindow->activateWindow();
-}
-
 void MainWindow::onSwitchToClassicTriggered()
 {
   // The other GUI needs a file on disk to open (there's no in-memory
@@ -815,28 +703,6 @@ bool MainWindow::hasAppliedPeriodicBoundary() const
     if (a.boundaryMarker <= 0 || a.boundaryMarker > m_problem.boundaryProps.size())
       continue;
     if (isPeriodicFormat(m_problem.boundaryProps[a.boundaryMarker - 1].bdryFormat, true))
-      return true;
-  }
-  return false;
-}
-
-bool MainWindow::hasAppliedThermalPeriodicBoundary() const
-{
-  // Mirrors hasAppliedPeriodicBoundary() above, for thermalBoundaryProps/
-  // thermalBoundaryMarker instead -- ThermalBoundaryPropDialog only ever
-  // offers formats 0-3 (see its header comment), so 4/5 are only
-  // reachable via a classic-GUI-authored .feh opened into femmqt.
-  auto isPeriodicFormat = [](int fmt) { return fmt == 4 || fmt == 5; };
-  for (const FemmSegment& s : m_problem.segments) {
-    if (s.thermalBoundaryMarker <= 0 || s.thermalBoundaryMarker > m_problem.thermalBoundaryProps.size())
-      continue;
-    if (isPeriodicFormat(m_problem.thermalBoundaryProps[s.thermalBoundaryMarker - 1].bdryFormat))
-      return true;
-  }
-  for (const FemmArcSegment& a : m_problem.arcSegments) {
-    if (a.thermalBoundaryMarker <= 0 || a.thermalBoundaryMarker > m_problem.thermalBoundaryProps.size())
-      continue;
-    if (isPeriodicFormat(m_problem.thermalBoundaryProps[a.thermalBoundaryMarker - 1].bdryFormat))
       return true;
   }
   return false;
@@ -902,8 +768,17 @@ void MainWindow::onDarkThemeToggled(bool dark)
 
 void MainWindow::onLoadMonitorToggled(bool show)
 {
-  if (!m_loadMonitor)
+  if (!m_loadMonitor) {
     m_loadMonitor = new LoadMonitorDialog(this);
+    // Registers it with this window's docking system (per direct user
+    // request: "a floating window that can be attached in the main
+    // window") -- floating right away gives it the same default
+    // appearance the old always-separate dialog had; from there, Qt's
+    // own dock-widget title bar lets the user drag it into any of this
+    // window's dock areas, or back out again.
+    addDockWidget(Qt::RightDockWidgetArea, m_loadMonitor);
+    m_loadMonitor->setFloating(true);
+  }
   m_loadMonitor->setMonitoring(show);
 }
 
@@ -1090,12 +965,6 @@ void MainWindow::onMaterialsTriggered()
     m_problem.materialProps.push_back(m);
     markEdited();
   };
-  cb.duplicate = [this](int i) {
-    FemmMaterialProp m = m_problem.materialProps[i];
-    m.name = uniqueName(m_problem.materialProps, m.name);
-    m_problem.materialProps.push_back(m);
-    markEdited();
-  };
   cb.referenceCount = [this](int i) { return FemmProblemEdit::countMaterialPropReferences(m_problem, i); };
   cb.remove = [this](int i) {
     FemmProblemEdit::deleteMaterialProp(m_problem, i);
@@ -1119,12 +988,6 @@ void MainWindow::onBoundaryPropsTriggered()
   cb.addNew = [this]() {
     FemmBoundaryProp b;
     b.name = uniqueName(m_problem.boundaryProps, "New Boundary");
-    m_problem.boundaryProps.push_back(b);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmBoundaryProp b = m_problem.boundaryProps[i];
-    b.name = uniqueName(m_problem.boundaryProps, b.name);
     m_problem.boundaryProps.push_back(b);
     markEdited();
   };
@@ -1154,12 +1017,6 @@ void MainWindow::onCircuitsTriggered()
     m_problem.circuitProps.push_back(c);
     markEdited();
   };
-  cb.duplicate = [this](int i) {
-    FemmCircuitProp c = m_problem.circuitProps[i];
-    c.name = uniqueName(m_problem.circuitProps, c.name);
-    m_problem.circuitProps.push_back(c);
-    markEdited();
-  };
   cb.referenceCount = [this](int i) { return FemmProblemEdit::countCircuitPropReferences(m_problem, i); };
   cb.remove = [this](int i) {
     FemmProblemEdit::deleteCircuitProp(m_problem, i);
@@ -1186,12 +1043,6 @@ void MainWindow::onPointPropsTriggered()
     m_problem.pointProps.push_back(p);
     markEdited();
   };
-  cb.duplicate = [this](int i) {
-    FemmPointProp p = m_problem.pointProps[i];
-    p.name = uniqueName(m_problem.pointProps, p.name);
-    m_problem.pointProps.push_back(p);
-    markEdited();
-  };
   cb.referenceCount = [this](int i) { return FemmProblemEdit::countPointPropReferences(m_problem, i); };
   cb.remove = [this](int i) {
     FemmProblemEdit::deletePointProp(m_problem, i);
@@ -1199,70 +1050,6 @@ void MainWindow::onPointPropsTriggered()
     markEdited();
   };
   PropertyListDialog dlg("Point Properties", "point property", cb, this);
-  dlg.exec();
-}
-
-void MainWindow::onThermalBoundaryPropsTriggered()
-{
-  PropertyListDialog::Callbacks cb;
-  cb.count = [this]() { return m_problem.thermalBoundaryProps.size(); };
-  cb.nameAt = [this](int i) { return m_problem.thermalBoundaryProps[i].name; };
-  cb.editAt = [this](int i) {
-    ThermalBoundaryPropDialog dlg(m_problem.thermalBoundaryProps[i], this);
-    if (dlg.exec() == QDialog::Accepted)
-      markEdited();
-  };
-  cb.addNew = [this]() {
-    FemmThermalBoundaryProp b;
-    b.name = uniqueName(m_problem.thermalBoundaryProps, "New Boundary");
-    m_problem.thermalBoundaryProps.push_back(b);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmThermalBoundaryProp b = m_problem.thermalBoundaryProps[i];
-    b.name = uniqueName(m_problem.thermalBoundaryProps, b.name);
-    m_problem.thermalBoundaryProps.push_back(b);
-    markEdited();
-  };
-  cb.referenceCount = [this](int i) { return FemmProblemEdit::countThermalBoundaryPropReferences(m_problem, i); };
-  cb.remove = [this](int i) {
-    FemmProblemEdit::deleteThermalBoundaryProp(m_problem, i);
-    m_scene->rebuild();
-    markEdited();
-  };
-  PropertyListDialog dlg("Heat Flow Boundary Properties", "boundary", cb, this);
-  dlg.exec();
-}
-
-void MainWindow::onThermalPointPropsTriggered()
-{
-  PropertyListDialog::Callbacks cb;
-  cb.count = [this]() { return m_problem.thermalPointProps.size(); };
-  cb.nameAt = [this](int i) { return m_problem.thermalPointProps[i].name; };
-  cb.editAt = [this](int i) {
-    ThermalPointPropDialog dlg(m_problem.thermalPointProps[i], this);
-    if (dlg.exec() == QDialog::Accepted)
-      markEdited();
-  };
-  cb.addNew = [this]() {
-    FemmThermalPointProp p;
-    p.name = uniqueName(m_problem.thermalPointProps, "New Point Property");
-    m_problem.thermalPointProps.push_back(p);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmThermalPointProp p = m_problem.thermalPointProps[i];
-    p.name = uniqueName(m_problem.thermalPointProps, p.name);
-    m_problem.thermalPointProps.push_back(p);
-    markEdited();
-  };
-  cb.referenceCount = [this](int i) { return FemmProblemEdit::countThermalPointPropReferences(m_problem, i); };
-  cb.remove = [this](int i) {
-    FemmProblemEdit::deleteThermalPointProp(m_problem, i);
-    m_scene->rebuild();
-    markEdited();
-  };
-  PropertyListDialog dlg("Heat Flow Point Properties", "point property", cb, this);
   dlg.exec();
 }
 
@@ -1367,6 +1154,42 @@ void MainWindow::onZoomWindowSelected(QRectF sceneRect)
   m_selectToolAction->setChecked(true);
 }
 
+void MainWindow::onKbdZoomTriggered()
+{
+  // Matches femm/FemmeView.cpp's OnKbdZoom (IDD_KBDZOOM): a numeric-entry
+  // alternative to Zoom > Window's mouse drag, prefilled with the current
+  // view bounds. Ends by reusing the exact same fitInViewSafe path Zoom
+  // Window uses -- only how the target rect is obtained differs.
+  QRectF visible = m_view->mapToScene(m_view->viewport()->rect()).boundingRect();
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Set View Bounds");
+  auto* form = new QFormLayout(&dlg);
+  auto* leftEdit = new QLineEdit(QString::number(visible.left(), 'g', 6));
+  auto* rightEdit = new QLineEdit(QString::number(visible.right(), 'g', 6));
+  auto* topEdit = new QLineEdit(QString::number(visible.bottom(), 'g', 6)); // scene is y-up (GeometryView::fitInViewSafe applies scale(1,-1)) -- bottom() is numerically the larger y, i.e. "Top" in problem space
+  auto* bottomEdit = new QLineEdit(QString::number(visible.top(), 'g', 6));
+  for (auto* e : {leftEdit, rightEdit, topEdit, bottomEdit})
+    e->setValidator(new QDoubleValidator(e));
+  form->addRow("Left:", leftEdit);
+  form->addRow("Right:", rightEdit);
+  form->addRow("Top:", topEdit);
+  form->addRow("Bottom:", bottomEdit);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  form->addRow(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  double x0 = leftEdit->text().toDouble();
+  double x1 = rightEdit->text().toDouble();
+  double y0 = topEdit->text().toDouble();
+  double y1 = bottomEdit->text().toDouble();
+  QRectF rect(qMin(x0, x1), qMin(y0, y1), qAbs(x1 - x0), qAbs(y1 - y0));
+  m_view->fitInViewSafe(rect);
+}
+
 void MainWindow::onPanLeft()
 {
   auto* bar = m_view->horizontalScrollBar();
@@ -1393,10 +1216,37 @@ void MainWindow::onPanDown()
 
 void MainWindow::onSetGridTriggered()
 {
-  bool ok = false;
-  double size = QInputDialog::getDouble(this, "Set Grid", "Grid Spacing:", m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
-  if (ok)
-    m_scene->setGridSize(size);
+  // Matches femm/GRIDDLG.h's GRIDDLG exactly (CAPTION "Grid Properties"):
+  // Grid Size plus a Coordinates combo (Cartesian/Polar) -- the same
+  // coordsPolar flag EnterPoint() (onEnterPointTriggered) and the status
+  // bar's mouse-position readout (onMousePositionChanged) both read.
+  QDialog dlg(this);
+  dlg.setWindowTitle("Set Grid");
+  auto* form = new QFormLayout;
+
+  auto* sizeEdit = new QLineEdit(QString::number(m_scene->gridSize(), 'g', 12), &dlg);
+  sizeEdit->setValidator(new QDoubleValidator(1e-9, 1e9, 12, sizeEdit));
+  form->addRow("Grid Size:", sizeEdit);
+
+  auto* coordsCombo = new QComboBox(&dlg);
+  coordsCombo->addItems({ "Cartesian", "Polar" });
+  coordsCombo->setCurrentIndex(m_problem.coordsPolar ? 1 : 0);
+  form->addRow("Coordinates:", coordsCombo);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  m_scene->setGridSize(sizeEdit->text().toDouble());
+  m_problem.coordsPolar = coordsCombo->currentIndex() == 1;
+  markEdited();
 }
 
 void MainWindow::snapshotForUndo()
@@ -1424,17 +1274,16 @@ void MainWindow::onMoveSelectedTriggered()
     QMessageBox::information(this, "Move", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double dx = QInputDialog::getDouble(this, "Move", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double dy = QInputDialog::getDouble(this, "Move", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  MoveCopyDialog dlg(/*isMove=*/true, this);
+  if (dlg.exec() != QDialog::Accepted)
     return;
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::moveSelected(m_problem, dx, dy);
+  if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
+    FemmProblemEdit::rotateSelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg());
+  else
+    FemmProblemEdit::moveSelected(m_problem, dlg.deltaX(), dlg.deltaY());
   m_scene->rebuild();
   markEdited();
 }
@@ -1445,17 +1294,16 @@ void MainWindow::onCopySelectedTriggered()
     QMessageBox::information(this, "Copy", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double dx = QInputDialog::getDouble(this, "Copy", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double dy = QInputDialog::getDouble(this, "Copy", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  MoveCopyDialog dlg(/*isMove=*/false, this);
+  if (dlg.exec() != QDialog::Accepted)
     return;
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::copySelected(m_problem, dx, dy);
+  if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
+    FemmProblemEdit::rotateCopySelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg(), dlg.numCopies());
+  else
+    FemmProblemEdit::translateCopySelected(m_problem, dlg.deltaX(), dlg.deltaY(), dlg.numCopies());
   m_scene->rebuild();
   markEdited();
 }
@@ -1661,14 +1509,7 @@ void MainWindow::onOpenRecentFile()
   }
   if (!confirmDiscardUnsavedChanges())
     return;
-  // Recent Files is one shared list holding both .fem and .feh paths (see
-  // addToRecentFiles' call sites) -- route by extension rather than always
-  // calling openFile(), which would silently misparse a .feh (see
-  // openThermalFile's header comment).
-  if (QFileInfo(path).suffix().compare("feh", Qt::CaseInsensitive) == 0)
-    openThermalFile(path);
-  else
-    openFile(path);
+  openFile(path);
 }
 
 void MainWindow::onHelpTopicsTriggered()
@@ -1730,13 +1571,8 @@ void MainWindow::onAboutTriggered()
 
 void MainWindow::updateTitle()
 {
-  // Shows both established paths once there are two -- a plain "Save"/
-  // "Save Heat Flow" keeps them both in sync (see saveAs()'s comment), so
-  // there's no single "current physics" to prefer showing over the other.
   QString name = m_currentPath.isEmpty() ? QStringLiteral("Untitled") : m_currentPath;
   QString title = QString("FEMMX (Qt) - %1%2").arg(name, m_dirty ? "*" : "");
-  if (!m_currentThermalPath.isEmpty())
-    title += QString(" + %1 (Heat Flow)").arg(m_currentThermalPath);
   setWindowTitle(title);
 }
 

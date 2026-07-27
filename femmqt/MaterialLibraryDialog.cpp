@@ -39,8 +39,7 @@ MaterialLibraryDialog::MaterialLibraryDialog(FemmProblem& problem, QWidget* pare
 
   QString error;
   QString matPath = QCoreApplication::applicationDirPath() + "/matlib.dat";
-  QString heatPath = QCoreApplication::applicationDirPath() + "/heatlib.dat";
-  MaterialLibraryIO::load(matPath, heatPath, m_root, error);
+  MaterialLibraryIO::load(matPath, m_root, error);
 
   auto* layout = new QVBoxLayout(this);
 

@@ -46,14 +46,6 @@ NodePropDialog::NodePropDialog(const QVector<FemmNode*>& nodes, const FemmProble
   m_pointProp->setCurrentIndex(samePointProp ? qBound(0, nodes.first()->pointPropIndex, problem.pointProps.size()) : 0);
   form->addRow("Point Property:", m_pointProp);
 
-  m_thermalPointProp = new QComboBox(this);
-  m_thermalPointProp->addItem("<None>");
-  for (const FemmThermalPointProp& pp : problem.thermalPointProps)
-    m_thermalPointProp->addItem(pp.name);
-  bool sameThermalPointProp = allSame(nodes, [](FemmNode* n) { return n->thermalPointPropIndex; });
-  m_thermalPointProp->setCurrentIndex(sameThermalPointProp ? qBound(0, nodes.first()->thermalPointPropIndex, problem.thermalPointProps.size()) : 0);
-  form->addRow("Point Property (Heat Flow):", m_thermalPointProp);
-
   bool sameGroup = allSame(nodes, [](FemmNode* n) { return n->inGroup; });
   m_inGroup = new QLineEdit(QString::number(sameGroup ? nodes.first()->inGroup : 0), this);
   m_inGroup->setValidator(new QIntValidator(0, 1000000, m_inGroup));
@@ -76,7 +68,6 @@ void NodePropDialog::onAccept()
   }
   for (FemmNode* n : m_nodes) {
     n->pointPropIndex = m_pointProp->currentIndex(); // 0 = <None>, else 1-based
-    n->thermalPointPropIndex = m_thermalPointProp->currentIndex();
     n->inGroup = m_inGroup->text().toInt();
   }
   accept();

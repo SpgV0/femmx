@@ -153,35 +153,35 @@ void LoadMonitorChartWidget::paintEvent(QPaintEvent*)
 }
 
 LoadMonitorDialog::LoadMonitorDialog(QWidget* parent)
-    : QDialog(parent)
+    : QDockWidget(QStringLiteral("CPU / GPU / RAM Load"), parent)
 {
-  setWindowTitle("CPU / GPU / RAM Load");
   resize(520, 360);
   // Non-modal, stays around across multiple solves -- closing it (the [X]
   // button, routed through closeEvent below) just disables monitoring,
   // matching femm/LoadMonitorDlg.cpp's OnCancel.
-  setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
   initGpuSampling();
 
-  auto* layout = new QVBoxLayout(this);
-  m_legend = new QLabel(this);
+  auto* content = new QWidget(this);
+  auto* layout = new QVBoxLayout(content);
+  m_legend = new QLabel(content);
   m_legend->setText(QString("CPU (blue)   RAM (purple)%1   |   green/red markers: solve start/end")
                          .arg(m_gpuAvailable ? "   GPU (orange)" : "   GPU: not available"));
   layout->addWidget(m_legend);
 
-  m_chart = new LoadMonitorChartWidget(this);
+  m_chart = new LoadMonitorChartWidget(content);
   layout->addWidget(m_chart, 1);
 
-  m_log = new QPlainTextEdit(this);
+  m_log = new QPlainTextEdit(content);
   m_log->setReadOnly(true);
   m_log->setMaximumBlockCount(1200); // ~200 solves worth of 6-line groups, matches femm/LoadMonitorDlg.h's kMaxLogLines intent
   m_log->setFixedHeight(120);
   layout->addWidget(m_log);
 
-  auto* saveButton = new QPushButton("Save Chart as PNG...", this);
+  auto* saveButton = new QPushButton("Save Chart as PNG...", content);
   connect(saveButton, &QPushButton::clicked, this, &LoadMonitorDialog::onSavePng);
   layout->addWidget(saveButton);
+  setWidget(content);
 
   m_timer = new QTimer(this);
   connect(m_timer, &QTimer::timeout, this, &LoadMonitorDialog::onTick);
@@ -190,7 +190,7 @@ LoadMonitorDialog::LoadMonitorDialog(QWidget* parent)
 void LoadMonitorDialog::closeEvent(QCloseEvent* event)
 {
   setMonitoring(false);
-  QDialog::closeEvent(event);
+  QDockWidget::closeEvent(event);
 }
 
 void LoadMonitorDialog::setMonitoring(bool enable)

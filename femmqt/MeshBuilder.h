@@ -1,7 +1,5 @@
 #pragma once
 
-#include "FemmProblem.h"
-
 #include <QString>
 
 struct FemmProblem;
@@ -17,16 +15,8 @@ struct FemmProblem;
 // FunnyOnWritePoly path) are out of scope for this phase -- callers should
 // check FemmProblem for periodic BdryFormat values (4-7) themselves and
 // decline to solve rather than call this.
-//
-// `physicsType` (Round 6) selects which of the two parallel per-entity
-// index sets (FemmNode::pointPropIndex vs thermalPointPropIndex, etc. --
-// see FemmProblem.h's Round 6 comment) gets encoded into the PSLG's point/
-// segment markers and region list. Geometry discretization itself (how
-// segments/arcs get subdivided) is identical either way -- only which
-// markers get written differs, since the mesh is shared between whichever
-// physics ends up solving on it.
 namespace MeshBuilder {
 
-bool writePolyAndPbc(const FemmProblem& problem, const QString& rootPath, QString& errorMessage, FemmPhysicsType physicsType = FemmPhysicsType::Magnetics);
+bool writePolyAndPbc(const FemmProblem& problem, const QString& rootPath, QString& errorMessage);
 
 }

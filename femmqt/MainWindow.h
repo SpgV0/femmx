@@ -23,17 +23,6 @@ class MainWindow : public QMainWindow {
   // the femm.cfg-driven GUI switch (step 7) and for command-line-argument
   // opens, so both paths share one code path.
   void openFile(const QString& path);
-  // Heat-flow counterpart, opening a .feh -- used by onOpenThermalTriggered
-  // and onOpenRecentFile. Kept as a distinct method (not folded into
-  // openFile with a type switch) because Recent Files is a single shared
-  // list holding both .fem and .feh paths (see onOpenRecentFile) -- many
-  // top-level tag names are byte-identical between the two formats (see
-  // HeatFileIO.h's header comment), so silently routing a .feh through
-  // openFile()'s FemmFileIO::readFem would "succeed" while quietly
-  // misparsing thermal-specific sections into the wrong (magnetics)
-  // property lists instead of erroring -- confirmed by tracing
-  // FemmFileIO::readFem's tag set against HeatFileIO's while building this.
-  void openThermalFile(const QString& path);
 
   protected:
   void closeEvent(QCloseEvent* event) override;
@@ -43,19 +32,8 @@ class MainWindow : public QMainWindow {
   void onOpenTriggered();
   void onSaveTriggered();
   void onSaveAsTriggered();
-  // Heat-flow counterparts, operating on m_currentThermalPath (.feh)
-  // instead of m_currentPath (.fem) -- see saveAs()/saveThermalAs()'s
-  // comments for how the two stay in sync once both are established.
-  void onOpenThermalTriggered();
-  void onSaveThermalTriggered();
-  void onSaveThermalAsTriggered();
   void onSolveTriggered();
   void onViewResultsTriggered();
-  // Heat-flow counterparts, driving hsolv.exe against m_currentThermalPath
-  // instead of fkn.exe against m_currentPath -- see SolveRunner's
-  // FemmPhysicsType parameter (Round 6).
-  void onSolveThermalTriggered();
-  void onViewThermalResultsTriggered();
   void onSwitchToClassicTriggered();
   void onProblemEdited();
   void onProblemPropertiesTriggered();
@@ -63,15 +41,6 @@ class MainWindow : public QMainWindow {
   void onBoundaryPropsTriggered();
   void onCircuitsTriggered();
   void onPointPropsTriggered();
-  // Heat-flow counterparts of onBoundaryPropsTriggered/onPointPropsTriggered
-  // above, editing thermalBoundaryProps/thermalPointProps instead -- no
-  // thermal Circuits equivalent yet (see FemmThermalConductorProp's
-  // comment, Round 6), and no thermal Materials equivalent at all:
-  // materials are unified (see FemmMaterialProp's comment), so
-  // onMaterialsTriggered/onMaterialsLibraryTriggered above already cover
-  // both physics types.
-  void onThermalBoundaryPropsTriggered();
-  void onThermalPointPropsTriggered();
   void onExteriorRegionTriggered();
   void onMaterialsLibraryTriggered();
   void onPreferencesTriggered();
@@ -93,6 +62,7 @@ class MainWindow : public QMainWindow {
   void onZoomNatural();
   void onZoomWindowTriggered();
   void onZoomWindowSelected(QRectF sceneRect);
+  void onKbdZoomTriggered();
   void onPanLeft();
   void onPanRight();
   void onPanUp();
@@ -113,14 +83,16 @@ class MainWindow : public QMainWindow {
   void onAboutTriggered();
   void onOpenRecentFile();
   void onMousePositionChanged(QPointF scenePos);
+  // Matches femm/FemmeView.cpp's EnterPoint() -- TAB while Add Node/Add
+  // Block Label is active (see GeometryView::enterPointRequested), types
+  // an exact coordinate instead of clicking one on the canvas.
+  void onEnterPointTriggered();
 
   private:
   bool saveAs(const QString& path);
-  bool saveThermalAs(const QString& path);
   bool confirmDiscardUnsavedChanges();
   void updateTitle();
   bool hasAppliedPeriodicBoundary() const;
-  bool hasAppliedThermalPeriodicBoundary() const;
   void markEdited();
   void snapshotForUndo();
   // Shared by onEntityDoubleClicked (a single-item selection) and
@@ -143,13 +115,11 @@ class MainWindow : public QMainWindow {
   GeometryView* m_view = nullptr;
   FemmProblem m_problem;
   QString m_currentPath;
-  // Set once the problem has been saved as (or opened from) a .feh --
-  // empty means "no heat-flow file established yet for this problem."
-  // Independent of m_currentPath: the two name sibling files describing
-  // the SAME shared geometry (see FemmProblem.h's Round 6 comment), not
-  // alternate paths for one file.
-  QString m_currentThermalPath;
   bool m_dirty = false;
+  // Updated by onMousePositionChanged; used as onEnterPointTriggered's
+  // starting point, matching femm/FemmeView.cpp's EnterPoint() defaulting
+  // to the cursor's current (mx, my).
+  QPointF m_lastMousePos;
 
   // A bounded undo stack (up to kMaxUndoSteps snapshots), unlike classic
   // FEMM's own CFemmeDoc::UpdateUndo/Undo (a single overwritten snapshot)
