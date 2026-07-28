@@ -86,6 +86,14 @@ class LoadMonitorDialog : public QDockWidget {
   void markSolveStart(const QString& label);
   void markSolveEnd();
 
+  // The chart paints its background from AppTheme::background() directly
+  // (not the app palette QApplication::setPalette() already repaints
+  // everything else with), so it otherwise wouldn't pick up a live Dark
+  // Theme toggle until its next monitoring-driven update() -- called from
+  // MainWindow::onDarkThemeToggled so it repaints immediately like every
+  // other themed view does.
+  void refreshTheme();
+
   protected:
   void closeEvent(QCloseEvent* event) override;
 

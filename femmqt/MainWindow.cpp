@@ -820,6 +820,8 @@ void MainWindow::onDarkThemeToggled(bool dark)
   prefs.save();
   m_scene->refreshTheme();
   refreshToolbarIcons();
+  if (m_loadMonitor)
+    m_loadMonitor->refreshTheme();
 }
 
 void MainWindow::onLoadMonitorToggled(bool show)
@@ -1310,6 +1312,10 @@ void MainWindow::onSetGridTriggered()
   if (dlg.exec() != QDialog::Accepted)
     return;
 
+  // setGridSize() unconditionally busts GeometryView's background cache
+  // (see GeometryScene::resetViewBackgroundCache()) -- relied on here to
+  // also repaint the Cartesian/Polar switch below, since that alone
+  // doesn't go through setShowGrid/setGridSize.
   m_scene->setGridSize(sizeEdit->text().toDouble());
   m_problem.coordsPolar = coordsCombo->currentIndex() == 1;
   markEdited();

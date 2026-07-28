@@ -1249,14 +1249,26 @@ class SolutionLegendWidget : public QWidget {
 void SolutionGraphicsScene::setShowGrid(bool show)
 {
   m_showGrid = show;
-  update();
+  resetViewBackgroundCache();
 }
 
 void SolutionGraphicsScene::setGridSize(double size)
 {
   m_gridSize = size;
   if (m_showGrid)
-    update();
+    resetViewBackgroundCache();
+}
+
+void SolutionGraphicsScene::resetViewBackgroundCache()
+{
+  // See GeometryScene::resetViewBackgroundCache()'s comment -- this view
+  // now uses QGraphicsView::CacheBackground too (see SolutionGraphicsView's
+  // constructor), for the same reason: a plain update()/invalidate() call
+  // doesn't regenerate that cache, only a view transform/resize or this.
+  for (QGraphicsView* view : views()) {
+    view->resetCachedContent();
+    view->viewport()->update();
+  }
 }
 
 void SolutionGraphicsScene::drawBackground(QPainter* painter, const QRectF& rect)
@@ -1264,6 +1276,34 @@ void SolutionGraphicsScene::drawBackground(QPainter* painter, const QRectF& rect
   QGraphicsScene::drawBackground(painter, rect);
   if (!m_showGrid || m_gridSize <= 0)
     return;
+
+  // See GeometryScene::drawBackground's identical addition/comment -- a
+  // new, deliberate feature (classic FEMM has no visual polar grid at
+  // all), shown here when the opened file's own Coordinates tag was
+  // polar (this window has no Cartesian/Polar UI of its own to change it,
+  // just displays whatever the file was saved with).
+  if (m_problemGeometry && m_problemGeometry->coordsPolar) {
+    double maxR = std::hypot(std::max(std::abs(rect.left()), std::abs(rect.right())),
+        std::max(std::abs(rect.top()), std::abs(rect.bottom())));
+    int nRings = static_cast<int>(std::ceil(maxR / m_gridSize));
+    if (nRings > 2000)
+      return;
+    QPen gridPen(AppTheme::gridLine());
+    gridPen.setCosmetic(true);
+    gridPen.setWidthF(1.0);
+    painter->setPen(gridPen);
+    painter->setBrush(Qt::NoBrush);
+    for (int i = 1; i <= nRings; i++) {
+      double r = i * m_gridSize;
+      painter->drawEllipse(QPointF(0, 0), r, r);
+    }
+    constexpr int kNumSpokes = 24; // every 15 degrees
+    for (int i = 0; i < kNumSpokes; i++) {
+      double theta = i * 2.0 * M_PI / kNumSpokes;
+      painter->drawLine(QPointF(0, 0), QPointF(maxR * std::cos(theta), maxR * std::sin(theta)));
+    }
+    return;
+  }
 
   // See this class's header comment -- ported directly from
   // GeometryScene::drawBackground.
@@ -1292,6 +1332,18 @@ SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* paren
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
   setMouseTracking(true); // needed for hoveredAt() to fire without a button held
   setFocusPolicy(Qt::StrongFocus); // needed for keyPressEvent (Delete/Escape) to ever fire
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report of dark-theme artifacts trailing the cursor tooltip as it moves
+  // -- root cause matches GeometryView's own prior drag-trail bug (see its
+  // constructor's comment) exactly: drawBackground's antialiased grid dots
+  // (only visible with Show Grid on) get repeatedly recomposited instead of
+  // cleanly erased-then-redrawn whenever mouseMoveEvent below calls
+  // scene()->invalidate() on the tooltip's vacated rect, which happens on
+  // every single mouse move. CacheBackground fixes it the same way it did
+  // there: the background is rendered into an offscreen pixmap once and
+  // blitted (not recomposited) for subsequent partial repaints.
+  setCacheMode(QGraphicsView::CacheBackground);
 
 #ifdef FEMMQT_HAVE_OPENGL
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -1879,6 +1931,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_contourPoints.clear();
   m_item = new MeshSolutionItem(&m_solution);
   m_item->setProblemGeometry(&m_problemGeometry);
+  m_scene->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
   QRectF itemBounds = m_item->boundingRect();
   m_view->fitInViewSafe(itemBounds);

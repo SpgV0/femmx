@@ -1073,14 +1073,32 @@ bool GeometryScene::selectedEntities(FemmItemKind& kind, QVector<int>& indices) 
 void GeometryScene::setShowGrid(bool show)
 {
   m_showGrid = show;
-  update();
+  resetViewBackgroundCache();
 }
 
 void GeometryScene::setGridSize(double size)
 {
   if (size > 0)
     m_gridSize = size;
-  update();
+  resetViewBackgroundCache();
+}
+
+void GeometryScene::resetViewBackgroundCache()
+{
+  // GeometryView uses QGraphicsView::CacheBackground (see its constructor's
+  // comment) -- that cache only regenerates on a view transform/resize, not
+  // on a plain update() or even invalidate(QRectF(), BackgroundLayer)
+  // (confirmed live: a null/default QRectF did NOT expand to "whole scene"
+  // here the way QGraphicsScene::update()'s docs describe -- drawBackground
+  // was re-entered but with a near-zero-area rect, so the cached pixmap's
+  // stale "no grid" content was left untouched outside that sliver).
+  // QGraphicsView::resetCachedContent() is the API actually documented for
+  // this exact case ("content changes but items don't") and reliably forces
+  // a full redraw on the next paint.
+  for (QGraphicsView* view : views()) {
+    view->resetCachedContent();
+    view->viewport()->update();
+  }
 }
 
 QPointF GeometryScene::snapPoint(QPointF p) const
@@ -1263,6 +1281,39 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
   QGraphicsScene::drawBackground(painter, rect);
   if (!m_showGrid || m_gridSize <= 0)
     return;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // request, following up on Set Grid's Cartesian/Polar combo (see
+  // MainWindow::onSetGridTriggered) actually changing what the grid looks
+  // like when Polar is selected, not just Enter Point's field labels and
+  // the status bar readout. Confirmed directly against femm/FemmeView.cpp
+  // (OnDraw's grid-drawing block, and the plain x/y snap in OnLButtonUp)
+  // that classic FEMM has no visual polar grid at all -- Coords/polar
+  // there never affects rendering or snapping, only those two read-outs
+  // -- so this is a new, deliberate addition (concentric rings spaced by
+  // the same Grid Size, spokes every 15 degrees), not a classic port.
+  if (m_problem && m_problem->coordsPolar) {
+    double maxR = std::hypot(std::max(std::abs(rect.left()), std::abs(rect.right())),
+        std::max(std::abs(rect.top()), std::abs(rect.bottom())));
+    int nRings = static_cast<int>(std::ceil(maxR / m_gridSize));
+    if (nRings > 2000) // matches the cartesian grid's own too-dense-to-draw bailout
+      return;
+    QPen gridPen(AppTheme::gridLine());
+    gridPen.setCosmetic(true);
+    gridPen.setWidthF(1.0);
+    painter->setPen(gridPen);
+    painter->setBrush(Qt::NoBrush);
+    for (int i = 1; i <= nRings; i++) {
+      double r = i * m_gridSize;
+      painter->drawEllipse(QPointF(0, 0), r, r);
+    }
+    constexpr int kNumSpokes = 24; // every 15 degrees
+    for (int i = 0; i < kNumSpokes; i++) {
+      double theta = i * 2.0 * M_PI / kNumSpokes;
+      painter->drawLine(QPointF(0, 0), QPointF(maxR * std::cos(theta), maxR * std::sin(theta)));
+    }
+    return;
+  }
 
   double x0 = std::floor(rect.left() / m_gridSize) * m_gridSize;
   double y0 = std::floor(rect.top() / m_gridSize) * m_gridSize;

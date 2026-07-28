@@ -1,5 +1,7 @@
 #include "LoadMonitorDialog.h"
 
+#include "AppTheme.h"
+
 #include <QApplication>
 #include <QClipboard>
 #include <QDateTime>
@@ -92,7 +94,15 @@ void LoadMonitorChartWidget::addMarker(bool start)
 void LoadMonitorChartWidget::paintEvent(QPaintEvent*)
 {
   QPainter painter(this);
-  painter.fillRect(rect(), Qt::white);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was a hardcoded
+  // Qt::white -- per direct user report, this widget stayed white even
+  // with Dark Theme on, standing out against the rest of the (by-then
+  // dark) app. AppTheme::background() matches whatever the app's canvas
+  // background actually is (still Qt::white in light mode, so no visual
+  // change there); the gridline/text/border colors below were already a
+  // mid gray that reads fine against either background, so they're
+  // unchanged.
+  painter.fillRect(rect(), AppTheme::background());
 
   const int xAxisHeight = 14;
   QRect plotRect(0, 0, width(), height() - xAxisHeight);
@@ -185,6 +195,11 @@ LoadMonitorDialog::LoadMonitorDialog(QWidget* parent)
 
   m_timer = new QTimer(this);
   connect(m_timer, &QTimer::timeout, this, &LoadMonitorDialog::onTick);
+}
+
+void LoadMonitorDialog::refreshTheme()
+{
+  m_chart->update();
 }
 
 void LoadMonitorDialog::closeEvent(QCloseEvent* event)

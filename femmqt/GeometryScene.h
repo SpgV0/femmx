@@ -290,6 +290,7 @@ class GeometryScene : public QGraphicsScene {
   void addBlockLabelItem(int index);
   void updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex);
   void updateArcItemGeometry(QGraphicsItem* item, int arcIndex);
+  void resetViewBackgroundCache();
 
   FemmProblem* m_problem = nullptr;
   GeometryToolMode m_toolMode = GeometryToolMode::Select;

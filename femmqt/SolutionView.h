@@ -346,11 +346,22 @@ class SolutionGraphicsScene : public QGraphicsScene {
   bool snapToGrid() const { return m_snapToGrid; }
   void setGridSize(double size);
   double gridSize() const { return m_gridSize; }
+  // Read-only: only used so drawBackground can tell whether the opened
+  // file's own Coordinates tag was polar, to draw the matching grid style
+  // -- see GeometryScene::drawBackground's identical addition/comment.
+  // Not a pointer into anything this scene owns or edits (SolutionWindow
+  // owns m_problemGeometry's storage); just kept alive by the caller for
+  // this scene's lifetime, same convention as MeshSolutionItem's own
+  // identically-named pointer.
+  void setProblemGeometry(const FemmProblem* problem) { m_problemGeometry = problem; }
 
   protected:
   void drawBackground(QPainter* painter, const QRectF& rect) override;
 
   private:
+  void resetViewBackgroundCache();
+
+  const FemmProblem* m_problemGeometry = nullptr;
   // Modified by Claude (Anthropic), noreply@anthropic.com: was `true`
   // (matching femm.rc's IDR_FEMMVIEWTYPE Show Grid, checked by default) --
   // see GeometryScene::m_showGrid's identical change for the direct user
