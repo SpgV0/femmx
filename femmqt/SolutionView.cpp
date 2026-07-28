@@ -987,8 +987,22 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
       continue;
     const FemmNode& n0 = problem.nodes[seg.n0];
     const FemmNode& n1 = problem.nodes[seg.n1];
-    if (!exposedRect.intersects(QRectF(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y)).normalized()))
-      continue;
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was an
+    // exposedRect.intersects() viewport-culling check here, same idea as
+    // the mesh-element culling elsewhere in this file -- but a perfectly
+    // horizontal or vertical segment (extremely common: any axis-aligned
+    // rectangle boundary) has a bounding QRectF with zero width or zero
+    // height, which QRectF::intersects() treats as empty and never
+    // intersecting anything, even when the segment plainly crosses the
+    // visible area. That silently culled every axis-aligned segment,
+    // confirmed directly against a real .ans (4/4 segments, all axis-
+    // aligned, none rendered) -- per user report ("the edges-lines of the
+    // geometry are not shown... you will only see nodes with no lines").
+    // Segments/arcs are always a small fraction of a solved mesh's
+    // element count (they're the PRE-mesh geometry), so this culling was
+    // never load-bearing for performance the way the mesh-element culling
+    // is -- just drop it rather than chase a correct-but-fiddly
+    // epsilon-padded rect test.
     segPath.moveTo(n0.x, n0.y);
     segPath.lineTo(n1.x, n1.y);
   }
@@ -1009,8 +1023,12 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
     double cx, cy, R, startAngleDeg;
     if (!arcGeometry(n0.x, n0.y, n1.x, n1.y, arc.arcLength, cx, cy, R, startAngleDeg))
       continue;
-    if (!exposedRect.intersects(QRectF(QPointF(cx - R, cy - R), QSizeF(2 * R, 2 * R))))
-      continue;
+    // No exposedRect culling here -- see the identical removal (and its
+    // comment) on the segment loop above. This bounding box (2R x 2R) was
+    // never actually degenerate the way a segment's could be, but dropped
+    // for the same reasoning (segments/arcs are always few relative to a
+    // solved mesh's element count) rather than leave an inconsistent,
+    // asymmetric special case between the two loops.
     arcPath.moveTo(n0.x, n0.y);
     arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
   }
