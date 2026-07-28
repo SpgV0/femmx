@@ -528,8 +528,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (segIdx.size() == 2) {
     // Two lines (femm/FemmeDoc.cpp's CreateRadius, "case 2").
-    const FemmSegment* seg0 = &p.segments[segIdx[0]];
-    const FemmSegment* seg1 = &p.segments[segIdx[1]];
+    FemmSegment* seg0 = &p.segments[segIdx[0]];
+    FemmSegment* seg1 = &p.segments[segIdx[1]];
     Complex p1 = (seg0->n0 == n) ? Complex(p.nodes[seg0->n1].x, p.nodes[seg0->n1].y) : Complex(p.nodes[seg0->n0].x, p.nodes[seg0->n0].y);
     Complex p2 = (seg1->n0 == n) ? Complex(p.nodes[seg1->n1].x, p.nodes[seg1->n1].y) : Complex(p.nodes[seg1->n0].x, p.nodes[seg1->n0].y);
 
@@ -555,6 +555,28 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, t1.real(), t1.imag());
     int n2idx = addNode(p, t2.real(), t2.imag());
+
+    // Modified by Claude (Anthropic), noreply@anthropic.com: deleteNode()
+    // below cascades and REMOVES any segment still referencing the
+    // deleted corner node `n` (see its own comment) -- seg0/seg1 must be
+    // rewired to terminate at the new trim points t1/t2 BEFORE that call,
+    // or both original edges vanish along with the corner instead of
+    // being trimmed. Confirmed live: without this, filleting a triangle
+    // corner deleted both adjoining edges, leaving only the new arc and
+    // an orphaned node. seg0/seg1 are raw pointers into p.segments, so
+    // mutating through them here is safe -- addNode() above may have
+    // reallocated the QVector, but segments and nodes are separate
+    // arrays, and neither addNode nor anything since has touched
+    // p.segments.
+    if (seg0->n0 == n)
+      seg0->n0 = n1idx;
+    else
+      seg0->n1 = n1idx;
+    if (seg1->n0 == n)
+      seg1->n0 = n2idx;
+    else
+      seg1->n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;
@@ -573,8 +595,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (segIdx.size() == 1 && arcIdx.size() == 1) {
     // One line, one arc (femm/FemmeDoc.cpp's CreateRadius, "case 0").
-    const FemmArcSegment& arc = p.arcSegments[arcIdx[0]];
-    const FemmSegment& seg = p.segments[segIdx[0]];
+    FemmArcSegment& arc = p.arcSegments[arcIdx[0]];
+    FemmSegment& seg = p.segments[segIdx[0]];
 
     Complex c;
     double rc;
@@ -634,6 +656,20 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, i1.real(), i1.imag());
     int n2idx = addNode(p, i2.real(), i2.imag());
+
+    // See the segIdx.size()==2 case above's comment -- deleteNode() below
+    // cascades and removes any segment/arc still referencing the deleted
+    // corner node, so seg and arc must be rewired to the new trim points
+    // (i1 on the line, i2 on the arc) first.
+    if (seg.n0 == n)
+      seg.n0 = n1idx;
+    else
+      seg.n1 = n1idx;
+    if (arc.n0 == n)
+      arc.n0 = n2idx;
+    else
+      arc.n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;
@@ -658,8 +694,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (arcIdx.size() == 2) {
     // Two arcs (femm/FemmeDoc.cpp's CreateRadius, "case -2").
-    const FemmArcSegment& arc0 = p.arcSegments[arcIdx[0]];
-    const FemmArcSegment& arc1 = p.arcSegments[arcIdx[1]];
+    FemmArcSegment& arc0 = p.arcSegments[arcIdx[0]];
+    FemmArcSegment& arc1 = p.arcSegments[arcIdx[1]];
     Complex c1, c2;
     double r1, r2;
     if (!circleFromArc(p, arc0, c1, r1) || !circleFromArc(p, arc1, c2, r2))
@@ -716,6 +752,19 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, i1.real(), i1.imag());
     int n2idx = addNode(p, i2.real(), i2.imag());
+
+    // See the segIdx.size()==2 case above's comment -- rewire arc0/arc1
+    // (i1 on arc0, i2 on arc1) to the new trim points before deleteNode()
+    // cascades and removes them.
+    if (arc0.n0 == n)
+      arc0.n0 = n1idx;
+    else
+      arc0.n1 = n1idx;
+    if (arc1.n0 == n)
+      arc1.n0 = n2idx;
+    else
+      arc1.n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;

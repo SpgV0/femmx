@@ -682,7 +682,27 @@ void GeometryScene::updateArcItemGeometry(QGraphicsItem* item, int arcIndex)
   QPainterPath path;
   if (arcGeometry(a.x, a.y, b.x, b.y, arc.arcLength, cx, cy, R, startAngleDeg)) {
     path.moveTo(a.x, a.y);
-    path.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was
+    // `arc.arcLength` (unnegated) -- confirmed live, with a debug print of
+    // QPainterPath::currentPosition() after arcTo(), that the path did NOT
+    // end at n1: a real 90-degree arc from a straight_wire_field.fem test
+    // file (n0=(20,0), n1=(0,20)) rendered ending at (0,-20) instead.
+    // startAngleDeg's own negation (see arcGeometry's comment) correctly
+    // compensates the STARTING point for this view's scale(1,-1) y-flip
+    // (GeometryView::GeometryView), but a plain-math-CCW sweep computed
+    // from y-up node coordinates becomes visually CW once that same flip
+    // is applied to the whole path -- so the sweep needs the identical
+    // compensation the start angle already gets. This went unnoticed all
+    // session because every arc actually exercised happened to be
+    // direction-insensitive: exactly 180 degrees (immune, since +180 and
+    // -180 land on the same point), or part of a heavily-overlapping,
+    // rotationally-symmetric multi-arc assembly (this same wire file's
+    // full circle) where one arc silently ending at the wrong point left
+    // no visible gap because another arc's stroke already covered that
+    // same screen position. Create Radius's fillet arc (a single,
+    // asymmetric, non-multiple-of-180 arc with nothing else nearby to
+    // mask it) is what actually exposed this.
+    path.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, -arc.arcLength);
   }
   static_cast<QGraphicsPathItem*>(item)->setPath(path);
 }

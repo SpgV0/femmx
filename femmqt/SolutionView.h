@@ -7,6 +7,7 @@
 #include <QMainWindow>
 #include <QPainterPath>
 #include <QPair>
+#include <QSet>
 #include <QVector>
 
 #include "FemmProblem.h"
@@ -61,6 +62,22 @@ class MeshSolutionItem : public QGraphicsItem {
   // Matches femm.rc's IDR_FEMMVIEWTYPE View > Show Block Names -- off by
   // default, same as GeometryScene::m_showBlockNames.
   void setShowBlockNames(bool show);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per user report
+  // ("when an area is selected it does not show up in the screen") --
+  // matches femm/FemmviewView.cpp's Area tool exactly: clicking inside a
+  // block-label's region TOGGLES its selection (femm's CBlockLabel::
+  // ToggleSelect) rather than instantly popping up a result, selections
+  // persist and accumulate across multiple clicks/regions, and every
+  // selected region is highlighted on screen (femm's PlotSelectedElm/
+  // RegionColor) until cleared or toggled off again. SolutionWindow reads
+  // the accumulated set when the user asks for a result (Integrate),
+  // rather than this class computing anything itself -- same split of
+  // responsibility as the Contour tool's m_contourPoints/showContourIntegral.
+  void toggleBlockLabelSelected(int lbl);
+  void clearBlockLabelSelection();
+  bool hasBlockLabelSelection() const { return !m_selectedBlockLabels.isEmpty(); }
+  const QSet<int>& selectedBlockLabels() const { return m_selectedBlockLabels; }
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // per user request for "all the different heatmap possibilities" the
@@ -199,6 +216,10 @@ class MeshSolutionItem : public QGraphicsItem {
   // total mesh size" the moment you zoom in, which is exactly backwards.
   void paintDensity(QPainter* painter, const QRectF& exposedRect);
   void paintContour(QPainter* painter, const QRectF& exposedRect);
+  // Matches femm/FemmviewView.cpp's PlotSelectedElm -- drawn unconditionally
+  // (like paintProblemGeometry below), regardless of plot mode, so a
+  // selected area's highlight is never hidden by whatever fill is active.
+  void paintSelectedBlocks(QPainter* painter, const QRectF& exposedRect);
   // Builds one component's (Re or Im) marching-triangle contour path --
   // factored out of paintContour so it can be called twice (once per
   // component) without duplicating the per-element/per-level loop.
@@ -248,6 +269,7 @@ class MeshSolutionItem : public QGraphicsItem {
   bool m_showMesh = false;
   bool m_showPoints = false;
   bool m_showBlockNames = false;
+  QSet<int> m_selectedBlockLabels;
   // See setNumContours/setContourRange/setShowImagContour's declarations.
   int m_numContours = 20;
   bool m_useCustomContourRange = false;
@@ -329,7 +351,11 @@ class SolutionGraphicsScene : public QGraphicsScene {
   void drawBackground(QPainter* painter, const QRectF& rect) override;
 
   private:
-  bool m_showGrid = true; // matches femm.rc's IDR_FEMMVIEWTYPE Show Grid, CHECKED by default
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was `true`
+  // (matching femm.rc's IDR_FEMMVIEWTYPE Show Grid, checked by default) --
+  // see GeometryScene::m_showGrid's identical change for the direct user
+  // request behind this.
+  bool m_showGrid = false;
   bool m_snapToGrid = false;
   double m_gridSize = 1.0;
 };
@@ -482,6 +508,7 @@ class SolutionWindow : public QMainWindow {
   void onFinishContourTriggered();
   void onClearContourTriggered();
   void onRemoveLastContourPointTriggered();
+  void onClearAreaSelectionTriggered();
   void onPlotXYTriggered();
   void onIntegrateTriggered();
   void onProblemInfoTriggered();
@@ -544,6 +571,7 @@ class SolutionWindow : public QMainWindow {
   QAction* addThemedAction(class QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (SolutionWindow::*slot)());
   void refreshToolbarIcons();
   void showContourIntegral();
+  void showAreaIntegral();
   // Echoes a Point/Contour/Area result into the persistent Output Window
   // dock, mirroring femm/FemmviewView.cpp's OutputWindowText/IDC_OUTBOX --
   // classic FEMM keeps the *last* result visible in a docked bar instead

@@ -236,3 +236,8 @@ QColor AppTheme::densityOverlayColor()
   // dark theme isn't really the relevant axis here.
   return QColor(0xE0, 0x5A, 0xC0);
 }
+
+QColor AppTheme::regionSelectionColor()
+{
+  return QColor(120, 220, 120);
+}

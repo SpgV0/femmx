@@ -250,6 +250,34 @@ double triangleArea(QPointF a, QPointF b, QPointF c)
   return 0.5 * std::abs((b.x() - a.x()) * (c.y() - a.y()) - (c.x() - a.x()) * (b.y() - a.y()));
 }
 
+// Own copy of MainWindow.cpp's identically-named/implemented helper (needs
+// to live up here, ahead of openAnsFile below, rather than alongside this
+// file's other small file-local helpers further down) -- see that
+// function's comment for the reasoning: per direct user request, ~20 grid
+// squares across the model's larger dimension after the initial fit-to-
+// view, snapped to a whole-number 1/2/5-times-a-power-of-ten step.
+double niceIntegerGridSize(const QRectF& bounds)
+{
+  double extent = std::max(bounds.width(), bounds.height());
+  if (extent <= 0)
+    return 1.0;
+  double target = extent / 20.0;
+  if (target < 1.0)
+    return 1.0;
+  double magnitude = std::pow(10.0, std::floor(std::log10(target)));
+  double normalized = target / magnitude;
+  double nice;
+  if (normalized < 1.5)
+    nice = 1;
+  else if (normalized < 3.5)
+    nice = 2;
+  else if (normalized < 7.5)
+    nice = 5;
+  else
+    nice = 10;
+  return nice * magnitude;
+}
+
 // Matches femm/CircDlg.cpp's CComplex::ToStringAlt display convention
 // closely enough for this dialog's purposes: a bare number for a
 // (numerically) real value, "re + jim" otherwise.
@@ -611,6 +639,23 @@ void MeshSolutionItem::setShowBlockNames(bool show)
   update();
 }
 
+void MeshSolutionItem::toggleBlockLabelSelected(int lbl)
+{
+  if (m_selectedBlockLabels.contains(lbl))
+    m_selectedBlockLabels.remove(lbl);
+  else
+    m_selectedBlockLabels.insert(lbl);
+  update();
+}
+
+void MeshSolutionItem::clearBlockLabelSelection()
+{
+  if (m_selectedBlockLabels.isEmpty())
+    return;
+  m_selectedBlockLabels.clear();
+  update();
+}
+
 void MeshSolutionItem::setProblemGeometry(const FemmProblem* problem)
 {
   m_problemGeometry = problem;
@@ -646,6 +691,8 @@ void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
   case PlotMode::Density: paintDensity(painter, exposedRect); break;
   case PlotMode::Contour: paintContour(painter, exposedRect); break;
   }
+  if (!m_selectedBlockLabels.isEmpty())
+    paintSelectedBlocks(painter, exposedRect);
   if (m_showMesh || m_showPoints)
     paintMeshOverlay(painter, exposedRect);
   if (m_problemGeometry)
@@ -787,6 +834,34 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
     painter->setBrush(bandColor(b, m_grayscale));
     painter->drawPath(bandPaths[b]);
   }
+}
+
+void MeshSolutionItem::paintSelectedBlocks(QPainter* painter, const QRectF& exposedRect)
+{
+  // Matches femm/FemmviewView.cpp's PlotSelectedElm: a solid, opaque fill
+  // (not a translucent overlay) over every element whose block label is
+  // currently selected, completely replacing whatever Density/Contour
+  // color was there -- same visual effect as classic's own solid
+  // RegionColor brush.
+  QPainterPath selPath;
+  for (int ei : elementsOverlapping(exposedRect)) {
+    const MeshSolutionElement& e = m_solution->elements[ei];
+    if (!m_selectedBlockLabels.contains(e.lbl))
+      continue;
+    if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+    QPolygonF tri;
+    tri << QPointF(n0.x, n0.y) << QPointF(n1.x, n1.y) << QPointF(n2.x, n2.y);
+    selPath.addPolygon(tri);
+  }
+  if (selPath.isEmpty())
+    return;
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(AppTheme::regionSelectionColor());
+  painter->drawPath(selPath);
 }
 
 void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect)
@@ -1030,7 +1105,13 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
     // solved mesh's element count) rather than leave an inconsistent,
     // asymmetric special case between the two loops.
     arcPath.moveTo(n0.x, n0.y);
-    arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
+    // Sweep negated -- see GeometryScene.cpp's updateArcItemGeometry for
+    // the full writeup (a real, general bug confirmed live with a debug
+    // print, not specific to this file): this view also applies a
+    // scale(1,-1) y-flip (SolutionWindow's constructor), which the
+    // unnegated sweep didn't compensate for, same as the editor's copy of
+    // this exact code didn't.
+    arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, -arc.arcLength);
   }
   painter->drawPath(arcPath);
 
@@ -1616,6 +1697,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   opMenu->addSeparator();
   opMenu->addAction("&Finish Contour", this, &SolutionWindow::onFinishContourTriggered);
   opMenu->addAction("&Clear Contour", this, &SolutionWindow::onClearContourTriggered);
+  opMenu->addAction("Clear &Area Selection", this, &SolutionWindow::onClearAreaSelectionTriggered);
   menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
   menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
 
@@ -1798,7 +1880,9 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_item = new MeshSolutionItem(&m_solution);
   m_item->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
-  m_view->fitInViewSafe(m_item->boundingRect());
+  QRectF itemBounds = m_item->boundingRect();
+  m_view->fitInViewSafe(itemBounds);
+  m_scene->setGridSize(niceIntegerGridSize(itemBounds));
   m_view->updateAntialiasingForScale();
   m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
@@ -1996,12 +2080,19 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
 
 void SolutionWindow::onPointToolTriggered()
 {
+  // Matches femm/FemmviewView.cpp's OnMenuContour/OnMenuPoint: leaving
+  // Area mode (EditAction==2) clears any block-label selection rather
+  // than leaving a stale highlight from a tool that's no longer active.
+  if (m_toolMode == SolutionToolMode::Area && m_item)
+    m_item->clearBlockLabelSelection();
   m_toolMode = SolutionToolMode::Point;
   statusBar()->showMessage("Point Properties: click a point on the mesh.");
 }
 
 void SolutionWindow::onContourToolTriggered()
 {
+  if (m_toolMode == SolutionToolMode::Area && m_item)
+    m_item->clearBlockLabelSelection();
   m_toolMode = SolutionToolMode::Contour;
   statusBar()->showMessage("Contours: click points to build a contour, then Operation > Finish Contour.");
 }
@@ -2132,51 +2223,24 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     statusBar()->showMessage(QString("Contour: %1 point(s). Operation > Finish Contour when done.").arg(m_contourPoints.size()));
     break;
   case SolutionToolMode::Area: {
+    // Matches femm/FemmviewView.cpp's OnLButtonUp (EditAction==2): a click
+    // TOGGLES the clicked block label's selection (highlighted on screen
+    // via paintSelectedBlocks -- see MeshSolutionItem::
+    // toggleBlockLabelSelected's comment) rather than instantly computing
+    // and popping up a result. Multiple regions can be selected at once;
+    // Integrate reports the sum over the whole current selection, same
+    // split as classic's own select-then-Integrate flow.
     int elem = findContainingElement(scenePos);
     if (elem < 0) {
       statusBar()->showMessage("No mesh element at that point.");
       return;
     }
     int lbl = m_solution.elements[elem].lbl;
-    double totalArea = 0;
-    double bSum = 0;
-    int count = 0;
-    for (const MeshSolutionElement& e : m_solution.elements) {
-      if (e.lbl != lbl)
-        continue;
-      if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
-        continue;
-      const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
-      const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
-      const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
-      double area = triangleArea(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y));
-      totalArea += area;
-      bSum += area * std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-      count++;
-    }
-    double avgB = totalArea > 0 ? bSum / totalArea : 0;
-
-    QString avgLabel = "Area-weighted avg |B|:";
-    QString avgUnit = "T";
-
-    QDialog dlg(this);
-    dlg.setWindowTitle("Area Properties");
-    auto* form = new QFormLayout(&dlg);
-    form->addRow("Block label index:", new QLabel(QString::number(lbl)));
-    form->addRow("Elements:", new QLabel(QString::number(count)));
-    form->addRow("Area:", new QLabel(QString("%1").arg(totalArea, 0, 'g', 6)));
-    form->addRow(avgLabel, new QLabel(QString("%1 %2").arg(avgB, 0, 'g', 6).arg(avgUnit)));
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
-    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    form->addRow(buttons);
-    appendOutput(QString("Area: block label %1  elements=%2  area=%3  avg%4=%5 %6")
-                      .arg(lbl)
-                      .arg(count)
-                      .arg(totalArea, 0, 'g', 6)
-                      .arg("|B|")
-                      .arg(avgB, 0, 'g', 6)
-                      .arg(avgUnit));
-    dlg.exec();
+    m_item->toggleBlockLabelSelected(lbl);
+    int n = m_item->selectedBlockLabels().size();
+    statusBar()->showMessage(n > 0
+            ? QString("Areas: %1 block(s) selected. Integrate to compute, or Operation > Clear Area Selection.").arg(n)
+            : "Areas: selection cleared.");
     break;
   }
   }
@@ -2224,6 +2288,22 @@ double lengthConvToMeters(FemmLengthUnits u)
   case FemmLengthUnits::Microns: return 0.000001;
   }
   return 1.0;
+}
+
+// Matches ProblemPropertiesDialog.cpp's m_lengthUnits combo text (same
+// enum order) -- own small copy of MainWindow.cpp's identically-named
+// helper, consistent with this file's lengthConvToMeters above.
+QString lengthUnitsName(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return "Inches";
+  case FemmLengthUnits::Millimeters: return "Millimeters";
+  case FemmLengthUnits::Centimeters: return "Centimeters";
+  case FemmLengthUnits::Meters: return "Meters";
+  case FemmLengthUnits::Mils: return "Mils";
+  case FemmLengthUnits::Microns: return "Microns";
+  }
+  return QString();
 }
 }
 
@@ -2331,6 +2411,150 @@ void SolutionWindow::showContourIntegral()
   layout->addWidget(buttons);
   appendOutput(QString("Contour: points=%1  length=%2  %3").arg(m_contourPoints.size()).arg(length, 0, 'g', 6).arg(updateResult(typeCombo->currentIndex())));
   dlg.exec();
+}
+
+void SolutionWindow::showAreaIntegral()
+{
+  // Matches femm/BlockInt.cpp's IDD_BLOCKINT combo exactly (item text and
+  // order decoded from femm.rc's DLGINIT), reached via Integrate the same
+  // way classic's own OnMenuIntegrate does when EditAction==2 with a
+  // nonempty block selection. Per direct user request ("add a drop down
+  // list for the calculated quantity same as in classical gui").
+  //
+  // Only 4 of the 17 are actually computed -- Block cross-section area,
+  // Block volume, Total current, and Integral of B over block -- because
+  // those are the ones femm/FemmviewDoc.cpp's BlockIntegral() computes as
+  // a plain per-element sum of data this app already has (area, depth/
+  // Pappus-theorem revolution volume, jRe/jIm, B1/B2). Verified against
+  // BlockIntegral()'s own source, case by case, rather than guessed:
+  // case 5 (area) is `a`; case 10 (volume) is `a*Depth` or `a*2*pi*R`;
+  // case 7 (total current) is `a*J`; cases 8/9 (integral of B) are
+  // `a*Depth*B1`/`a*Depth*B2` (or the axisymmetric Pappus equivalent) --
+  // none of the four have an extra AC/DC scaling factor the way e.g. case
+  // 4 (Resistive losses) does. The other 13 (A.J, A, energy/coenergy,
+  // hysteresis/eddy/resistive/total losses, Lorentz force/torque, Weighted
+  // Stress Tensor force/torque, R^2) need either a proper per-node
+  // polynomial integral (BlockIntegral's PlnInt/AxiInt, not just area
+  // times an element average -- exact for a single linear field like A
+  // alone, but NOT for a product of two, like A.J), conductivity/
+  // nonlinear-BH-curve/permanent-magnet data, or the Weighted Stress
+  // Tensor mask -- same documented gap as Circuit Props, BH Curves, and
+  // the Line Integral's H.t/Force/Torque types. Rather than risk a
+  // plausible-looking but subtly wrong number, those show a plain
+  // "not available" message instead.
+  if (!m_item || !m_item->hasBlockLabelSelection()) {
+    QMessageBox::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
+    return;
+  }
+  const QSet<int>& labels = m_item->selectedBlockLabels();
+  double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
+  double depthM = m_problemGeometry.depth * lc;
+
+  double totalAreaM2 = 0;
+  double volumeM3 = 0;
+  int count = 0;
+  std::complex<double> totalCurrent(0, 0);
+  std::complex<double> intB1(0, 0), intB2(0, 0); // Tesla*meter^3, x/y or r/z component
+
+  for (const MeshSolutionElement& e : m_solution.elements) {
+    if (!labels.contains(e.lbl))
+      continue;
+    if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
+    double areaM2 = triangleArea(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y)) * lc * lc;
+    totalAreaM2 += areaM2;
+    count++;
+
+    totalCurrent += areaM2 * std::complex<double>(e.jRe, e.jIm);
+
+    double weight = depthM;
+    if (m_axisymmetric) {
+      double rCtrM = (n0.x + n1.x + n2.x) / 3.0 * lc;
+      weight = 2.0 * M_PI * rCtrM;
+    }
+    intB1 += (areaM2 * weight) * std::complex<double>(e.B1re, e.B1im);
+    intB2 += (areaM2 * weight) * std::complex<double>(e.B2re, e.B2im);
+    volumeM3 += areaM2 * weight;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Area Properties");
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* form = new QFormLayout;
+  QStringList labelList;
+  for (int lbl : labels)
+    labelList << QString::number(lbl);
+  form->addRow("Block labels selected:", new QLabel(QString("%1 (%2)").arg(labels.size()).arg(labelList.join(", "))));
+  form->addRow("Elements:", new QLabel(QString::number(count)));
+
+  const QStringList kQuantities = {
+    "A . J", "A", "Magnetic field energy",
+    "Hysteresis, Laminated eddy, or Proximity effect", "Resistive losses",
+    "Block cross-section area", "Total losses", "Total current",
+    "Integral of B over block", "Block volume", "Lorentz force (J x B)",
+    "Lorentz torque (r x J x B)", "Magnetic field coenergy",
+    "Force via Weighted Stress Tensor", "Torque via Weighted Stress Tensor",
+    "R^2 (i.e. Moment of Inertia / Density)", "Total Loss Density",
+  };
+  auto* typeCombo = new QComboBox(&dlg);
+  typeCombo->addItems(kQuantities);
+  typeCombo->setCurrentIndex(5); // Block cross-section area -- matches the old default (this was the only quantity before)
+  form->addRow("Integral:", typeCombo);
+
+  auto* resultLabel = new QLabel(&dlg);
+  resultLabel->setWordWrap(true);
+  resultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  form->addRow(resultLabel);
+  layout->addLayout(form);
+
+  QString axis1 = m_axisymmetric ? "r" : "x";
+  QString axis2 = m_axisymmetric ? "z" : "y";
+  bool isAc = m_frequency != 0;
+  auto updateResult = [this, totalAreaM2, volumeM3, totalCurrent, intB1, intB2, axis1, axis2, isAc](int index) -> QString {
+    switch (index) {
+    case 5: // Block cross-section area
+      return QString("%1 meter^2").arg(totalAreaM2, 0, 'g', 6);
+    case 7: // Total current
+      return isAc ? QString("%1 Amps").arg(complexToString(totalCurrent))
+                  : QString("%1 Amps").arg(totalCurrent.real(), 0, 'g', 6);
+    case 8: // Integral of B over block
+      if (isAc)
+        return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
+            .arg(axis1, complexToString(intB1), axis2, complexToString(intB2));
+      return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
+          .arg(axis1).arg(intB1.real(), 0, 'g', 6).arg(axis2).arg(intB2.real(), 0, 'g', 6);
+    case 9: // Block volume
+      return QString("%1 meter^3").arg(volumeM3, 0, 'g', 6);
+    default:
+      return "Not available in this version -- needs per-node potential/current data for a "
+             "proper polynomial integral, material conductivity/nonlinear-BH-curve/permanent-"
+             "magnet data, or the Weighted Stress Tensor mask, none of which this app currently "
+             "extracts from .ans.";
+    }
+  };
+  connect(typeCombo, &QComboBox::currentIndexChanged, &dlg, [resultLabel, updateResult](int index) { resultLabel->setText(updateResult(index)); });
+  resultLabel->setText(updateResult(typeCombo->currentIndex()));
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  appendOutput(QString("Area: %1 block(s) [%2]  elements=%3  %4: %5")
+                    .arg(labels.size())
+                    .arg(labelList.join(", "))
+                    .arg(count)
+                    .arg(kQuantities[typeCombo->currentIndex()])
+                    .arg(updateResult(typeCombo->currentIndex())));
+  dlg.exec();
+}
+
+void SolutionWindow::onClearAreaSelectionTriggered()
+{
+  if (m_item)
+    m_item->clearBlockLabelSelection();
+  statusBar()->showMessage("Area selection cleared.");
 }
 
 void SolutionWindow::appendOutput(const QString& text)
@@ -2501,14 +2725,16 @@ void SolutionWindow::onIntegrateTriggered()
 {
   // femm.rc's "Integrate" is a standalone command distinct from "Finish
   // Contour" (which also shows the same result) -- kept as a thin alias
-  // onto the same contour-integral logic rather than a second
-  // implementation, since both operate on "the contour currently drawn."
-  // The classic GUI's own Integrate additionally supports integrating
-  // over an Area selection (energy, force, etc.) -- not implemented here
-  // yet, since that needs per-element J/sigma data this app doesn't
-  // currently extract from .ans (see the Areas tool's own simpler
-  // area+avg-|B| scope).
-  showContourIntegral();
+  // onto the same contour-integral logic when a contour is what's active,
+  // since both operate on "the contour currently drawn." Matches classic's
+  // own OnMenuIntegrate branching (EditAction==2 && bBlocksAreSelected)
+  // when the Areas tool has an active multi-block selection instead --
+  // see showAreaIntegral's comment for what's ported vs still deferred
+  // from classic's full 17-quantity Block Integral combo (IDD_BLOCKINT).
+  if (m_toolMode == SolutionToolMode::Area && m_item && m_item->hasBlockLabelSelection())
+    showAreaIntegral();
+  else
+    showContourIntegral();
 }
 
 // Known, documented gap found during the femm.rc dialog sweep: femm/
@@ -2852,8 +3078,11 @@ void SolutionWindow::onKbdZoomTriggered()
 
 void SolutionWindow::onSetGridTriggered()
 {
+  // Per direct user request -- classic's own Grid Properties dialog shows
+  // a bare number with no unit indication at all.
+  QString label = QString("Grid Spacing (%1):").arg(lengthUnitsName(m_problemGeometry.lengthUnits));
   bool ok = false;
-  double size = QInputDialog::getDouble(this, "Set Grid", "Grid Spacing:", m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
+  double size = QInputDialog::getDouble(this, "Set Grid", label, m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
   if (ok)
     m_scene->setGridSize(size);
 }

@@ -89,6 +89,53 @@ QString uniqueName(const QVector<T>& list, const QString& base)
       return candidate;
   }
 }
+
+// Matches ProblemPropertiesDialog.cpp's m_lengthUnits combo text exactly
+// (same enum order), reused here so the Set Grid dialog's units label
+// reads the same word the user already picked in Problem Properties.
+QString lengthUnitsName(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return "Inches";
+  case FemmLengthUnits::Millimeters: return "Millimeters";
+  case FemmLengthUnits::Centimeters: return "Centimeters";
+  case FemmLengthUnits::Meters: return "Meters";
+  case FemmLengthUnits::Mils: return "Mils";
+  case FemmLengthUnits::Microns: return "Microns";
+  }
+  return QString();
+}
+
+// Per direct user request: right after a freshly-opened file's initial
+// Natural/fit-to-view zoom, pick a grid spacing so roughly 20 squares
+// span the model's larger dimension, snapped to a "nice" whole-number
+// step (1/2/5 x a power of ten -- the same progression axis tick marks
+// conventionally use) rather than an arbitrary fraction. Bottoms out at
+// 1 (a true integer, per the request) for any model whose full extent is
+// itself under ~20 units -- a sub-1 step would technically hit the
+// "~20 squares" target more precisely there, but wouldn't be a whole
+// number anymore.
+double niceIntegerGridSize(const QRectF& bounds)
+{
+  double extent = std::max(bounds.width(), bounds.height());
+  if (extent <= 0)
+    return 1.0;
+  double target = extent / 20.0;
+  if (target < 1.0)
+    return 1.0;
+  double magnitude = std::pow(10.0, std::floor(std::log10(target)));
+  double normalized = target / magnitude;
+  double nice;
+  if (normalized < 1.5)
+    nice = 1;
+  else if (normalized < 3.5)
+    nice = 2;
+  else if (normalized < 7.5)
+    nice = 5;
+  else
+    nice = 10;
+  return nice * magnitude;
+}
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -518,7 +565,9 @@ void MainWindow::openFile(const QString& path)
   m_problem = problem;
   m_currentPath = femPath;
   m_scene->setProblem(&m_problem);
-  m_view->fitInViewSafe(m_scene->computeProblemBounds());
+  QRectF problemBounds = m_scene->computeProblemBounds();
+  m_view->fitInViewSafe(problemBounds);
+  m_scene->setGridSize(niceIntegerGridSize(problemBounds));
   // After, not before, setProblem(): populating the scene calls setPos()
   // on every new NodeItem, which -- same as a real user drag -- fires
   // ItemPositionHasChanged -> onNodeMoved() -> problemEdited(), so a
@@ -1241,7 +1290,9 @@ void MainWindow::onSetGridTriggered()
 
   auto* sizeEdit = new QLineEdit(QString::number(m_scene->gridSize(), 'g', 12), &dlg);
   sizeEdit->setValidator(new QDoubleValidator(1e-9, 1e9, 12, sizeEdit));
-  form->addRow("Grid Size:", sizeEdit);
+  // Per direct user request -- classic's own Grid Properties dialog shows
+  // a bare number with no unit indication at all.
+  form->addRow(QString("Grid Size (%1):").arg(lengthUnitsName(m_problem.lengthUnits)), sizeEdit);
 
   auto* coordsCombo = new QComboBox(&dlg);
   coordsCombo->addItems({ "Cartesian", "Polar" });

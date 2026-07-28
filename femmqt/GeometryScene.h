@@ -315,7 +315,13 @@ class GeometryScene : public QGraphicsScene {
   double m_lastArcAngleDeg = 90.0;
   double m_lastArcMaxSegDeg = 1.0;
 
-  bool m_showGrid = true; // matches femm.rc's IDR_FEMMETYPE Show Grid, CHECKED by default
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was `true`
+  // (matching femm.rc's IDR_FEMMETYPE Show Grid, checked by default) --
+  // per direct user request, femmqt now defaults Show Grid to OFF. Menu/
+  // toolbar checked-state is seeded from this same member (MainWindow's
+  // View > Grid > Show Grid and the Navigate toolbar button), so this one
+  // change covers both.
+  bool m_showGrid = false;
   bool m_snapToGrid = false;
   double m_gridSize = 1.0;
 
