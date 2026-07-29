@@ -134,6 +134,8 @@ class MainWindow : public QMainWindow {
   QAction* m_addSegmentToolAction = nullptr;
   QAction* m_addArcToolAction = nullptr;
   QAction* m_addBlockLabelToolAction = nullptr;
+  QAction* m_addRectangleToolAction = nullptr;
+  QAction* m_addCircleToolAction = nullptr;
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;

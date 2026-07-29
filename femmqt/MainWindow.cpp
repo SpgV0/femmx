@@ -334,6 +334,22 @@ MainWindow::MainWindow(QWidget* parent)
   m_addBlockLabelToolAction->setCheckable(true);
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
+
+  // Per direct user request -- no classic FEMM precedent (see the enum's
+  // own comment), a new CAD-style convenience: drag out a rectangle/circle
+  // in one gesture instead of placing each node and connecting segment/
+  // arc by hand.
+  m_addRectangleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"), "Draw Rectangle");
+  m_addRectangleToolAction->setToolTip("Draw Rectangle -- drag between two diagonal corners");
+  m_addRectangleToolAction->setCheckable(true);
+  toolGroup->addAction(m_addRectangleToolAction);
+  connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
+
+  m_addCircleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_circle.svg"), "Draw Circle");
+  m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
+  m_addCircleToolAction->setCheckable(true);
+  toolGroup->addAction(m_addCircleToolAction);
+  connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
   HoverTooltip::installOn(toolBar);
 
   // Matches femm.rc's IDR_FEMMETYPE toolbar's edit/mesh/analyze section --
@@ -1668,6 +1684,8 @@ void MainWindow::refreshToolbarIcons()
   m_addSegmentToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_segment.svg"));
   m_addArcToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_arc.svg"));
   m_addBlockLabelToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_block_label.svg"));
+  m_addRectangleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"));
+  m_addCircleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_circle.svg"));
   for (const auto& entry : m_themedActions)
     entry.first->setIcon(IconTheme::themedToolIcon(entry.second));
 }

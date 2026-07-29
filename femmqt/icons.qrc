@@ -5,6 +5,8 @@
     <file alias="add_segment.svg">toolbar_icons/add_segment.svg</file>
     <file alias="add_arc.svg">toolbar_icons/add_arc.svg</file>
     <file alias="add_block_label.svg">toolbar_icons/add_block_label.svg</file>
+    <file alias="add_rectangle.svg">toolbar_icons/add_rectangle.svg</file>
+    <file alias="add_circle.svg">toolbar_icons/add_circle.svg</file>
     <file alias="group.svg">toolbar_icons/group.svg</file>
     <file alias="open_selected.svg">toolbar_icons/open_selected.svg</file>
     <file alias="mesh.svg">toolbar_icons/mesh.svg</file>

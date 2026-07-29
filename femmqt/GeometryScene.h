@@ -22,6 +22,23 @@ enum class GeometryToolMode {
   AddSegment,
   AddArc,
   AddBlockLabel,
+  // Persistent (like the 4 Add* tools above, not one-shot) -- drag between
+  // two diagonal corners to place an axis-aligned rectangle: 4 new nodes
+  // plus 4 new segments forming a closed loop. No classic FEMM precedent
+  // (its own editor only ever builds a rectangle out of manually-placed
+  // nodes/segments); a new, deliberate CAD-style convenience per direct
+  // user request.
+  DrawRectangle,
+  // Persistent -- drag from a center point out to the perimeter to place
+  // a circle: 2 new nodes (diametrically opposite, on the horizontal axis
+  // through the center) plus 2 new 180-degree arc segments connecting
+  // them, matching this codebase's own existing convention for a "full
+  // circle" (see e.g. test/results/straight_wire_field/
+  // straight_wire_field.fem's concentric circles, each built the same
+  // way) -- also the direction-insensitive angle (GeometryScene::
+  // drawBackground's arc-sweep-sign history), so which way the two nodes
+  // end up doesn't matter for correct rendering.
+  DrawCircle,
   // One-shot: next click-drag defines a rectangle to zoom into, then
   // reverts to Select -- mirrors FemmeView.cpp's OnZoomWnd/ZoomWndFlag.
   ZoomWindow,
@@ -334,6 +351,16 @@ class GeometryScene : public QGraphicsScene {
 
   QGraphicsEllipseItem* m_selectCircleItem = nullptr;
   QPointF m_selectCircleStartPos;
+
+  // Rubber-band previews for DrawRectangle/DrawCircle -- same dashed-
+  // preview-item pattern as m_zoomWindowRectItem/m_selectCircleItem above,
+  // just committing real geometry into m_problem on release instead of
+  // zooming/selecting.
+  QGraphicsRectItem* m_drawRectItem = nullptr;
+  QPointF m_drawRectStartPos;
+
+  QGraphicsEllipseItem* m_drawCircleItem = nullptr;
+  QPointF m_drawCircleStartPos;
 
   // See snapshotOnceForDrag()'s own comment -- reset on every mouse
   // release so the NEXT drag gesture gets its own single snapshot.

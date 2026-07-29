@@ -770,6 +770,36 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     event->accept();
     return;
   }
+  if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawRectangle) {
+    m_drawRectStartPos = snapPoint(event->scenePos());
+    if (!m_drawRectItem) {
+      m_drawRectItem = new QGraphicsRectItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_drawRectItem->setPen(pen);
+      m_drawRectItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_drawRectItem);
+    }
+    m_drawRectItem->setRect(QRectF(m_drawRectStartPos, QSizeF(0, 0)));
+    m_drawRectItem->setVisible(true);
+    event->accept();
+    return;
+  }
+  if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawCircle) {
+    m_drawCircleStartPos = snapPoint(event->scenePos());
+    if (!m_drawCircleItem) {
+      m_drawCircleItem = new QGraphicsEllipseItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_drawCircleItem->setPen(pen);
+      m_drawCircleItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_drawCircleItem);
+    }
+    m_drawCircleItem->setRect(QRectF(m_drawCircleStartPos, QSizeF(0, 0)));
+    m_drawCircleItem->setVisible(true);
+    event->accept();
+    return;
+  }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     QGraphicsScene::mousePressEvent(event);
     return;
@@ -789,6 +819,17 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
   if (m_toolMode == GeometryToolMode::SelectCircle && m_selectCircleItem && m_selectCircleItem->isVisible()) {
     double r = QLineF(m_selectCircleStartPos, event->scenePos()).length();
     m_selectCircleItem->setRect(QRectF(m_selectCircleStartPos.x() - r, m_selectCircleStartPos.y() - r, 2 * r, 2 * r));
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawRectangle && m_drawRectItem && m_drawRectItem->isVisible()) {
+    m_drawRectItem->setRect(QRectF(m_drawRectStartPos, snapPoint(event->scenePos())).normalized());
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawCircle && m_drawCircleItem && m_drawCircleItem->isVisible()) {
+    double r = QLineF(m_drawCircleStartPos, snapPoint(event->scenePos())).length();
+    m_drawCircleItem->setRect(QRectF(m_drawCircleStartPos.x() - r, m_drawCircleStartPos.y() - r, 2 * r, 2 * r));
     event->accept();
     return;
   }
@@ -817,6 +858,52 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
       selectByCircle(m_selectCircleStartPos, r);
     setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's SelectCircFlag reset
     emit selectByCircleCompleted();
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawRectangle && m_drawRectItem && m_drawRectItem->isVisible()) {
+    QRectF r = QRectF(m_drawRectStartPos, snapPoint(event->scenePos())).normalized();
+    m_drawRectItem->setVisible(false);
+    if (r.width() > 1e-9 && r.height() > 1e-9) {
+      // Persistent tool (see the enum's own comment) -- stays active for
+      // the next rectangle, unlike ZoomWindow/SelectCircle above.
+      emit aboutToEdit();
+      int n0 = FemmProblemEdit::addNode(*m_problem, r.left(), r.top());
+      int n1 = FemmProblemEdit::addNode(*m_problem, r.right(), r.top());
+      int n2 = FemmProblemEdit::addNode(*m_problem, r.right(), r.bottom());
+      int n3 = FemmProblemEdit::addNode(*m_problem, r.left(), r.bottom());
+      addNodeItem(n0);
+      addNodeItem(n1);
+      addNodeItem(n2);
+      addNodeItem(n3);
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n0, n1));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n1, n2));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n2, n3));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n3, n0));
+      emit problemEdited();
+    }
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawCircle && m_drawCircleItem && m_drawCircleItem->isVisible()) {
+    QPointF center = m_drawCircleStartPos;
+    double r = QLineF(center, snapPoint(event->scenePos())).length();
+    m_drawCircleItem->setVisible(false);
+    if (r > 1e-9) {
+      // Persistent tool, same as DrawRectangle above.
+      emit aboutToEdit();
+      int n0 = FemmProblemEdit::addNode(*m_problem, center.x() + r, center.y());
+      int n1 = FemmProblemEdit::addNode(*m_problem, center.x() - r, center.y());
+      addNodeItem(n0);
+      addNodeItem(n1);
+      // Two 180-degree arcs, reusing whatever mesh density Add Arc last
+      // used (or its own default) -- see the enum's own comment for why
+      // this exact node/arc layout matches the codebase's established
+      // "full circle" convention.
+      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n0, n1, 180.0, m_lastArcMaxSegDeg));
+      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n1, n0, 180.0, m_lastArcMaxSegDeg));
+      emit problemEdited();
+    }
     event->accept();
     return;
   }
