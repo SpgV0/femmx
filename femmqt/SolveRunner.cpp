@@ -73,31 +73,31 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
   return true;
 }
 
-bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QString& errorMessage)
+bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QString& errorMessage)
 {
-  QFileInfo fi(femPath);
+  QFileInfo fi(filePath);
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
   QString workingDir = fi.absolutePath();
 
-  if (!mesh(problem, femPath, errorMessage))
+  if (!mesh(problem, filePath, errorMessage))
     return false;
 
-  QProcess fkn;
-  fkn.setWorkingDirectory(workingDir);
-  fkn.start(solverDir() + "/fkn.exe", QStringList{ rootPath });
-  if (!fkn.waitForStarted(10000)) {
+  QProcess solver;
+  solver.setWorkingDirectory(workingDir);
+  solver.start(solverDir() + "/fkn.exe", QStringList{ rootPath });
+  if (!solver.waitForStarted(10000)) {
     errorMessage = "Problem executing the solver.";
     return false;
   }
-  waitPumpingEvents(fkn);
+  waitPumpingEvents(solver);
 
-  if (fkn.exitStatus() != QProcess::NormalExit) {
+  if (solver.exitStatus() != QProcess::NormalExit) {
     errorMessage = "fkn.exe terminated abnormally.";
     return false;
   }
 
   // Exit code mapping mirrors femm/FemmeView.cpp:2804-2817 exactly.
-  switch (fkn.exitCode()) {
+  switch (solver.exitCode()) {
   case 0: return true;
   case 1: errorMessage = "Material properties have not been defined for all regions"; return false;
   case 2: errorMessage = "problem loading mesh"; return false;
@@ -106,6 +106,6 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& femPath, QStr
   case 5: errorMessage = "Couldn't solve the problem"; return false;
   case 6: errorMessage = "couldn't write results to disk"; return false;
   case 7: errorMessage = "problem loading input file"; return false;
-  default: errorMessage = QStringLiteral("fkn.exe exited with unrecognized code %1").arg(fkn.exitCode()); return false;
+  default: errorMessage = QStringLiteral("fkn.exe exited with unrecognized code %1").arg(solver.exitCode()); return false;
   }
 }

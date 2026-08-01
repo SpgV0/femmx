@@ -68,6 +68,25 @@ void copySelected(FemmProblem& p, double dx, double dy);
 void scaleSelected(FemmProblem& p, double baseX, double baseY, double factor);
 // Reflects across the line through (x0,y0)-(x1,y1).
 void mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1);
+// Rotates the current selection by angleDeg (counterclockwise) about
+// (aboutX, aboutY) -- direct port of femm/MOVECOPY.CPP's RotateMove
+// (its EditAction==4/"everything selected" case specifically, since that's
+// the one that -- like this app's own selection model -- isn't restricted
+// to a single entity type at a time). A selected block label whose
+// material is a permanent magnet (materialProps[...].Hc != 0) also has its
+// magDir bumped by angleDeg, matching classic's own behavior exactly: the
+// magnetization direction rotates along with the block.
+void rotateSelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg);
+// Stamps out nCopies new copies of the current selection, each rotated by
+// angleDeg*(i+1) about (aboutX, aboutY) for copy i (0-based) -- port of
+// femm/MOVECOPY.CPP's RotateCopy. Same node-remapping/both-endpoints-
+// selected rules as copySelected().
+void rotateCopySelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg, int nCopies);
+// Stamps out nCopies new copies of the current selection, each offset by
+// (dx, dy)*(i+1) for copy i (0-based) -- port of femm/MOVECOPY.CPP's
+// TranslateCopy. copySelected() itself only ever makes exactly one copy;
+// this is the "Number of Copies" case of the same underlying operation.
+void translateCopySelected(FemmProblem& p, double dx, double dy, int nCopies);
 
 // True if node `n` is a valid corner to fillet -- exactly one of: two
 // segments, two arcs, or one segment and one arc, sharing that node as a

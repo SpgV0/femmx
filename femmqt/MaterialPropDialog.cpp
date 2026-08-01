@@ -46,7 +46,6 @@ MaterialPropDialog::MaterialPropDialog(FemmMaterialProp& prop, QWidget* parent)
   updateBhNote();
 
   m_hc = makeDoubleField(this, form, "Hc (A/m):", prop.Hc);
-  m_hcAngle = makeDoubleField(this, form, "Hc Angle (deg):", prop.HcAngle);
   m_jsrcRe = makeDoubleField(this, form, "J re (MA/m\xC2\xB2):", prop.JsrcRe);
   m_jsrcIm = makeDoubleField(this, form, "J im (MA/m\xC2\xB2):", prop.JsrcIm);
   m_sigma = makeDoubleField(this, form, "Sigma (MS/m):", prop.sigma);
@@ -87,7 +86,8 @@ void MaterialPropDialog::onAccept()
   m_prop.muX = m_muX->text().toDouble();
   m_prop.muY = m_muY->text().toDouble();
   m_prop.Hc = m_hc->text().toDouble();
-  m_prop.HcAngle = m_hcAngle->text().toDouble();
+  // HcAngle is intentionally left untouched -- see this dialog's header
+  // comment; classic's own CMatDlg never edits it either.
   m_prop.JsrcRe = m_jsrcRe->text().toDouble();
   m_prop.JsrcIm = m_jsrcIm->text().toDouble();
   m_prop.sigma = m_sigma->text().toDouble();

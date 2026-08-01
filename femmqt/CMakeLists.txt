@@ -86,6 +86,8 @@ qt_add_executable(femmqt WIN32
   CircuitPropDialog.cpp
   MaterialPropDialog.h
   MaterialPropDialog.cpp
+  MoveCopyDialog.h
+  MoveCopyDialog.cpp
   NodePropDialog.h
   NodePropDialog.cpp
   SegmentPropDialog.h
@@ -128,6 +130,8 @@ qt_add_executable(femmqt WIN32
   HoverTooltip.cpp
   DensityPlotOptionsDialog.h
   DensityPlotOptionsDialog.cpp
+  ContourPlotOptionsDialog.h
+  ContourPlotOptionsDialog.cpp
   PlotXYChartWidget.h
   PlotXYChartWidget.cpp
   icons.qrc

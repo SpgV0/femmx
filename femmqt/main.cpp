@@ -71,13 +71,10 @@ int main(int argc, char* argv[])
   // OnSwitchToQtGui) opens the Solution Viewer, not the geometry editor --
   // otherwise the geometry editor would try to load a possibly-huge
   // solved mesh as if it were raw, editable geometry.
-  bool isSolutionFile = false;
-  if (args.size() > 1) {
-    QString suffix = QFileInfo(args.at(1)).suffix();
-    isSolutionFile = suffix.compare("ans", Qt::CaseInsensitive) == 0 || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
-  }
+  QString suffix = args.size() > 1 ? QFileInfo(args.at(1)).suffix() : QString();
+  bool isMagSolutionFile = suffix.compare("ans", Qt::CaseInsensitive) == 0 || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
 
-  if (isSolutionFile) {
+  if (isMagSolutionFile) {
     auto* solutionWindow = new SolutionWindow();
     solutionWindow->show();
     solutionWindow->openAnsFile(args.at(1));

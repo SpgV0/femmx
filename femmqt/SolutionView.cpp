@@ -6,6 +6,7 @@
 #include "AppTheme.h"
 #include "BHCurveDialog.h"
 #include "CircuitAnalysis.h"
+#include "ContourPlotOptionsDialog.h"
 #include "DensityPlotOptionsDialog.h"
 #include "AnsxFileIO.h"
 #include "FemmFileIO.h"
@@ -15,6 +16,7 @@
 #include "IconTheme.h"
 #include "MainWindow.h"
 #include "PlotXYChartWidget.h"
+#include "PreferencesDialog.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -33,7 +35,10 @@
 #include <QFormLayout>
 #include <QGraphicsScene>
 #include <QInputDialog>
+#include <QDoubleValidator>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -50,6 +55,7 @@
 #include <QPrinter>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QRubberBand>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -244,6 +250,34 @@ double triangleArea(QPointF a, QPointF b, QPointF c)
   return 0.5 * std::abs((b.x() - a.x()) * (c.y() - a.y()) - (c.x() - a.x()) * (b.y() - a.y()));
 }
 
+// Own copy of MainWindow.cpp's identically-named/implemented helper (needs
+// to live up here, ahead of openAnsFile below, rather than alongside this
+// file's other small file-local helpers further down) -- see that
+// function's comment for the reasoning: per direct user request, ~20 grid
+// squares across the model's larger dimension after the initial fit-to-
+// view, snapped to a whole-number 1/2/5-times-a-power-of-ten step.
+double niceIntegerGridSize(const QRectF& bounds)
+{
+  double extent = std::max(bounds.width(), bounds.height());
+  if (extent <= 0)
+    return 1.0;
+  double target = extent / 20.0;
+  if (target < 1.0)
+    return 1.0;
+  double magnitude = std::pow(10.0, std::floor(std::log10(target)));
+  double normalized = target / magnitude;
+  double nice;
+  if (normalized < 1.5)
+    nice = 1;
+  else if (normalized < 3.5)
+    nice = 2;
+  else if (normalized < 7.5)
+    nice = 5;
+  else
+    nice = 10;
+  return nice * magnitude;
+}
+
 // Matches femm/CircDlg.cpp's CComplex::ToStringAlt display convention
 // closely enough for this dialog's purposes: a bare number for a
 // (numerically) real value, "re + jim" otherwise.
@@ -282,6 +316,21 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     }
   }
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com: matches femm/
+  // FemmviewDoc.cpp's own "catch the special case where _every_ element
+  // seems to be in an external region" fallback -- if excluding
+  // MeshSolutionElement::isExternal elements from the range below would
+  // leave nothing to search (a model that's somehow all ABC shell/
+  // Exterior Region, or just none of either), don't exclude anything
+  // rather than left qd.vMin/vMax at their default-constructed 0/0.
+  bool anyNonExternal = false;
+  for (const MeshSolutionElement& e : solution->elements) {
+    if (!e.isExternal) {
+      anyNonExternal = true;
+      break;
+    }
+  }
+
   // Precompute each node's average value (across every element touching
   // it -- see QuantityData's header comment for why) plus the min/max
   // range, for every DensityQuantity at once. Done once here rather than
@@ -294,14 +343,52 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     qd.nodeAvg.fill(0.0, solution->nodes.size());
     QVector<int> touchCount(solution->nodes.size(), 0);
     bool first = true;
+    // Size-weighted candidate score for vMax -- see MeshSolutionElement::
+    // rsqr's comment. -1 so even a genuine 0-valued mesh still picks a
+    // candidate on the first eligible element (weight is always >= 0).
+    double bestWeight = -1.0;
     for (const MeshSolutionElement& e : solution->elements) {
       double v = elementQuantity(e, q);
-      if (first) {
-        qd.vMin = qd.vMax = v;
-        first = false;
-      } else {
-        qd.vMin = std::min(qd.vMin, v);
-        qd.vMax = std::max(qd.vMax, v);
+      // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+      // user report ("compare the flux density in the old and new gui
+      // from .ansx they do not look similar") -- root-caused to exactly
+      // matching femm/FemmviewDoc.cpp's own isExt[] exclusion (see
+      // MeshSolutionElement::isExternal's comment): elements inside
+      // mi_makeABC's Kelvin-transform shells can compute a legitimately
+      // huge B (confirmed matching classic's own GetElementB/mo_getb
+      // exactly at the same point -- not a wrong-formula bug), which
+      // isn't a real physical flux density and shouldn't stretch the
+      // whole density plot's color range the way it was. Still
+      // contributes to nodeAvg below (still drawn, just not searched for
+      // the range), matching PlotFluxDensity's own behavior.
+      if (!(anyNonExternal && e.isExternal)) {
+        if (first) {
+          qd.vMin = v;
+          first = false;
+        } else {
+          qd.vMin = std::min(qd.vMin, v);
+        }
+        // Modified by Claude (Anthropic), noreply@anthropic.com: per the
+        // same user report -- excluding isExternal alone wasn't enough. A
+        // handful of small, awkwardly-shaped (but perfectly legitimate,
+        // non-external) elements right at this app's own geometry
+        // corners -- e.g. where a Draw Rectangle/Circle wedge's straight
+        // edge meets its arc -- computed a real-per-formula but locally
+        // spurious high B that a plain max() let dominate vMax, badly
+        // skewing the whole plot's color range toward one or two pixels'
+        // worth of area (confirmed live: elementCount for the top band
+        // was ~4x its neighbors', all clustered at a handful of tiny
+        // rects). femm/FemmviewDoc.cpp's own B_High search has exactly
+        // this same protection built in (a1 = sqrt(rsqr)*b*b candidate
+        // weighting, "discounts really small elements with really high
+        // flux density, which sometimes happens in corners") -- adapted
+        // here to femmqt's one-value-per-element model (classic's version
+        // uses nodal, not per-element, B).
+        double weight = std::sqrt(e.rsqr) * v * v;
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          qd.vMax = v;
+        }
       }
       for (int p : { e.p0, e.p1, e.p2 }) {
         if (p >= 0 && p < qd.nodeAvg.size()) {
@@ -406,16 +493,27 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   // last bit or two). Exact for linear materials only -- see this
   // method's declaration in SolutionView.h for the nonlinear/laminated/
   // incremental-permeability cases not covered.
-  case DensityQuantity::HMag: {
+  case DensityQuantity::HMag:
+  case DensityQuantity::HReMag:
+  case DensityQuantity::HImMag: {
     constexpr double kMuo = 1.2566370614359173e-6;
     double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
     double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    if (q == DensityQuantity::HReMag)
+      return std::hypot(h1re, h2re);
+    if (q == DensityQuantity::HImMag)
+      return std::hypot(h1im, h2im);
     return std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
   }
   // jRe/jIm are precomputed once (AnsFileIO::readAns) -- see
   // MeshSolutionElement's comment for why (needs nodal A, not available
-  // from a single element at paint time).
+  // from a single element at paint time). Re(J)/Im(J) match femm/
+  // FemmviewView.cpp's PlotFluxDensity cases 8/9 exactly (fabs of each
+  // component alone, not a magnitude of a 2-vector like B/H -- J is a
+  // single complex scalar for a 2-D problem, not a planar vector).
   case DensityQuantity::JMag: return std::hypot(e.jRe, e.jIm);
+  case DensityQuantity::JReMag: return std::fabs(e.jRe);
+  case DensityQuantity::JImMag: return std::fabs(e.jIm);
   }
   return 0;
 }
@@ -516,15 +614,19 @@ void MeshSolutionItem::legendRange(double& lo, double& hi) const
   hi = m_lastDensityHi;
 }
 
-QString MeshSolutionItem::legendTitle() const
+QString MeshSolutionItem::legendTitle(DensityQuantity q) const
 {
-  switch (m_densityQuantity) {
+  switch (q) {
   case DensityQuantity::BMag: return "|B|, Tesla";
   case DensityQuantity::BReMag: return "|B_re|, Tesla";
   case DensityQuantity::BImMag: return "|B_im|, Tesla";
-  case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
   case DensityQuantity::HMag: return "|H|, Amp/m";
+  case DensityQuantity::HReMag: return "|H_re|, Amp/m";
+  case DensityQuantity::HImMag: return "|H_im|, Amp/m";
   case DensityQuantity::JMag: return "|Js+Je|, MA/m^2";
+  case DensityQuantity::JReMag: return "|Js+Je|_re, MA/m^2";
+  case DensityQuantity::JImMag: return "|Js+Je|_im, MA/m^2";
+  case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
   }
   return QString();
 }
@@ -532,6 +634,43 @@ QString MeshSolutionItem::legendTitle() const
 void MeshSolutionItem::setSmoothing(bool smooth)
 {
   m_smooth = smooth;
+  update();
+}
+
+void MeshSolutionItem::setNumContours(int n)
+{
+  m_numContours = n;
+  update();
+}
+
+void MeshSolutionItem::contourRange(double& lo, double& hi) const
+{
+  if (m_useCustomContourRange) {
+    lo = m_customContourLo;
+    hi = m_customContourHi;
+  } else {
+    lo = m_aMin;
+    hi = m_aMax;
+  }
+}
+
+void MeshSolutionItem::setContourRange(double lo, double hi)
+{
+  m_useCustomContourRange = true;
+  m_customContourLo = lo;
+  m_customContourHi = hi;
+  update();
+}
+
+void MeshSolutionItem::clearContourRange()
+{
+  m_useCustomContourRange = false;
+  update();
+}
+
+void MeshSolutionItem::setShowImagContour(bool show)
+{
+  m_showImagContour = show;
   update();
 }
 
@@ -547,9 +686,26 @@ void MeshSolutionItem::setShowPoints(bool show)
   update();
 }
 
-void MeshSolutionItem::setShowFieldArrows(bool show)
+void MeshSolutionItem::setShowBlockNames(bool show)
 {
-  m_showFieldArrows = show;
+  m_showBlockNames = show;
+  update();
+}
+
+void MeshSolutionItem::toggleBlockLabelSelected(int lbl)
+{
+  if (m_selectedBlockLabels.contains(lbl))
+    m_selectedBlockLabels.remove(lbl);
+  else
+    m_selectedBlockLabels.insert(lbl);
+  update();
+}
+
+void MeshSolutionItem::clearBlockLabelSelection()
+{
+  if (m_selectedBlockLabels.isEmpty())
+    return;
+  m_selectedBlockLabels.clear();
   update();
 }
 
@@ -588,6 +744,8 @@ void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
   case PlotMode::Density: paintDensity(painter, exposedRect); break;
   case PlotMode::Contour: paintContour(painter, exposedRect); break;
   }
+  if (!m_selectedBlockLabels.isEmpty())
+    paintSelectedBlocks(painter, exposedRect);
   if (m_showMesh || m_showPoints)
     paintMeshOverlay(painter, exposedRect);
   if (m_problemGeometry)
@@ -639,7 +797,21 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
     lo = m_customLo[qIdx];
     hi = m_customHi[qIdx];
   } else {
+    // Modified by Claude (Anthropic), noreply@anthropic.com: see the
+    // constructor's identical isExternal exclusion for why -- mirrored
+    // here for this same range calculation's zoom-adaptive (visible-
+    // elements-only) variant. loIncl/hiIncl (every visible element,
+    // regardless of isExternal) is the fallback for the degenerate case
+    // where every currently-visible element happens to be external (e.g.
+    // zoomed into just the ABC shell region) -- matches the constructor's
+    // own "don't exclude anything if that would exclude everything".
     bool first = true;
+    bool firstIncl = true;
+    double loIncl = 0, hiIncl = 0;
+    // Size-weighted vMax candidates -- see the constructor's identical
+    // heuristic (MeshSolutionElement::rsqr's comment) for why hi/hiIncl
+    // aren't just plain max()s here either.
+    double bestWeight = -1.0, bestWeightIncl = -1.0;
     for (int ei : visible) {
       const MeshSolutionElement& e = m_solution->elements[ei];
       if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
@@ -656,15 +828,35 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       double v = m_smooth
           ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
           : elementQuantity(e, m_densityQuantity);
-      if (first) {
-        lo = hi = v;
-        first = false;
+      double weight = std::sqrt(e.rsqr) * v * v;
+      if (firstIncl) {
+        loIncl = v;
+        firstIncl = false;
       } else {
-        lo = std::min(lo, v);
-        hi = std::max(hi, v);
+        loIncl = std::min(loIncl, v);
+      }
+      if (weight > bestWeightIncl) {
+        bestWeightIncl = weight;
+        hiIncl = v;
+      }
+      if (!e.isExternal) {
+        if (first) {
+          lo = v;
+          first = false;
+        } else {
+          lo = std::min(lo, v);
+        }
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          hi = v;
+        }
       }
     }
-    if (first || hi <= lo) {
+    if (first) {
+      lo = loIncl;
+      hi = hiIncl;
+    }
+    if (firstIncl || hi <= lo) {
       lo = qd.vMin;
       hi = qd.vMax;
     }
@@ -731,6 +923,34 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
   }
 }
 
+void MeshSolutionItem::paintSelectedBlocks(QPainter* painter, const QRectF& exposedRect)
+{
+  // Matches femm/FemmviewView.cpp's PlotSelectedElm: a solid, opaque fill
+  // (not a translucent overlay) over every element whose block label is
+  // currently selected, completely replacing whatever Density/Contour
+  // color was there -- same visual effect as classic's own solid
+  // RegionColor brush.
+  QPainterPath selPath;
+  for (int ei : elementsOverlapping(exposedRect)) {
+    const MeshSolutionElement& e = m_solution->elements[ei];
+    if (!m_selectedBlockLabels.contains(e.lbl))
+      continue;
+    if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = m_solution->nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution->nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution->nodes[e.p2];
+    QPolygonF tri;
+    tri << QPointF(n0.x, n0.y) << QPointF(n1.x, n1.y) << QPointF(n2.x, n2.y);
+    selPath.addPolygon(tri);
+  }
+  if (selPath.isEmpty())
+    return;
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(AppTheme::regionSelectionColor());
+  painter->drawPath(selPath);
+}
+
 void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect)
 {
   // Equipotential lines of Re(A) (the DC/instantaneous-snapshot potential
@@ -742,47 +962,54 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
   // but the same visual result for a piecewise-linear field.
   if (m_solution->nodes.isEmpty())
     return;
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
-  // Are's global min/max never changes once a solution is loaded (unlike
-  // paintDensity's local range, contour LEVELS are deliberately fixed to
-  // the whole mesh's range regardless of zoom, so lines mean the same
-  // potential wherever you scroll to) -- precomputed once in the
-  // constructor instead of rescanning every node on every single
-  // paintContour() call (every frame Contour mode is active and the view
-  // pans/zooms).
-  double aMin = m_aMin, aMax = m_aMax;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: Number of
+  // Contours and the Lower/Upper Bound range are now user-configurable
+  // (ContourPlotOptionsDialog), matching femm/FemmviewView.cpp's OnCplot/
+  // IDD_CPLOTDLG(2) -- was a hardcoded kNumLevels=20 always spanning the
+  // whole mesh's Are extremes. "Restore Default Range" in that dialog
+  // reverts to exactly that whole-mesh range (m_aMin/m_aMax), matching
+  // classic's own Reset behavior.
+  double aMin, aMax;
+  if (m_useCustomContourRange) {
+    aMin = m_customContourLo;
+    aMax = m_customContourHi;
+  } else {
+    aMin = m_aMin;
+    aMax = m_aMax;
+  }
   double span = aMax - aMin;
-  if (span <= 0)
+  if (span <= 0 || m_numContours <= 0)
     return;
 
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
-  // user request ("can you add the arrows in the field lines?", then "I
-  // only want the arrows to show in the field lines as an option", then
-  // "I do not want the vector plot at all, remove it" -- a separate
-  // Vector Plot mode existed briefly this same round before being
-  // removed in favor of this simpler option) -- small direction markers
-  // along the contour lines, gated behind m_showFieldArrows (off by
-  // default, toggled via View > Show Field Arrows), one per grid cell so
-  // a fine mesh doesn't produce one arrow per tiny triangle-level
-  // segment. The direction to draw comes "for free": in 2D
-  // magnetostatics the field lines (equipotential contours of A) ARE the
-  // B field lines, i.e. B = curl(A ẑ) is everywhere tangent to a contour
-  // of A -- so a crossing segment's own containing element's B direction
-  // (e.B1re/e.B2re, the same data a per-element vector plot would use)
-  // is exactly the correct flow direction to draw at that point, with no
-  // need to stitch the scattered per-triangle segments into connected
-  // polylines first.
-  constexpr int kNumLevels = 20;
-  constexpr int kArrowGridDim = 40;
-  double cellW = exposedRect.width() / kArrowGridDim;
-  double cellH = exposedRect.height() / kArrowGridDim;
-  bool canPlaceArrows = m_showFieldArrows && cellW > 0 && cellH > 0;
-  QVector<bool> arrowCellUsed(canPlaceArrows ? kArrowGridDim * kArrowGridDim : 0, false);
-  struct ArrowMark {
-    QPointF pos, dir;
-  };
-  QVector<ArrowMark> arrows;
+  QPen pen(AppTheme::meshPointColor());
+  pen.setCosmetic(true);
+  // Width 0, not the QPen(color) ctor's default of 1 -- see
+  // GeometryScene.cpp's addNodeItem for the full explanation. This is the
+  // pen behind the reported "field lines are magnified" bug on a real,
+  // detailed model: a cosmetic pen with a nonzero logical width goes
+  // through general stroke tessellation (computing an offset via the
+  // transform's inverse scale), which loses precision at the extreme
+  // accumulated zoom fine wire-level detail can require; width exactly 0
+  // uses Qt's simpler, more robust hairline path instead.
+  pen.setWidth(0);
 
+  QPainterPath rePath = contourPath(exposedRect, aMin, span, m_numContours, /*useImag=*/false);
+  painter->setPen(pen);
+  painter->drawPath(rePath);
+
+  // AC solutions only -- see setShowImagContour's declaration.
+  if (m_showImagContour) {
+    QPainterPath imPath = contourPath(exposedRect, aMin, span, m_numContours, /*useImag=*/true);
+    QPen imagPen(AppTheme::boundaryEdgeColor());
+    imagPen.setCosmetic(true);
+    imagPen.setWidth(0);
+    painter->setPen(imagPen);
+    painter->drawPath(imPath);
+  }
+}
+
+QPainterPath MeshSolutionItem::contourPath(const QRectF& exposedRect, double aMin, double span, int numLevels, bool useImag) const
+{
   QPainterPath path;
   for (int ei : elementsOverlapping(exposedRect)) {
     const MeshSolutionElement& e = m_solution->elements[ei];
@@ -800,11 +1027,11 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
     if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
       continue;
 
-    double va[3] = { n0.Are, n1.Are, n2.Are };
+    double va[3] = { useImag ? n0.Aim : n0.Are, useImag ? n1.Aim : n1.Are, useImag ? n2.Aim : n2.Are };
     QPointF pa[3] = { QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y) };
 
-    for (int lvl = 1; lvl < kNumLevels; lvl++) {
-      double level = aMin + span * lvl / kNumLevels;
+    for (int lvl = 1; lvl < numLevels; lvl++) {
+      double level = aMin + span * lvl / numLevels;
       QPointF crossings[2];
       int found = 0;
       for (int edge = 0; edge < 3 && found < 2; edge++) {
@@ -818,66 +1045,10 @@ void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect
       if (found == 2) {
         path.moveTo(crossings[0]);
         path.lineTo(crossings[1]);
-
-        if (canPlaceArrows) {
-          QPointF mid = (crossings[0] + crossings[1]) * 0.5;
-          int cx = std::clamp((int)((mid.x() - exposedRect.left()) / cellW), 0, kArrowGridDim - 1);
-          int cy = std::clamp((int)((mid.y() - exposedRect.top()) / cellH), 0, kArrowGridDim - 1);
-          int cellIdx = cy * kArrowGridDim + cx;
-          if (!arrowCellUsed[cellIdx]) {
-            arrowCellUsed[cellIdx] = true;
-            double bx = e.B1re, by = e.B2re;
-            double bmag = std::hypot(bx, by);
-            if (bmag > 0)
-              arrows.push_back({ mid, QPointF(bx / bmag, by / bmag) });
-          }
-        }
       }
     }
   }
-
-  QPen pen(AppTheme::meshPointColor());
-  pen.setCosmetic(true);
-  // Width 0, not the QPen(color) ctor's default of 1 -- see
-  // GeometryScene.cpp's addNodeItem for the full explanation. This is the
-  // pen behind the reported "field lines are magnified" bug on a real,
-  // detailed model: a cosmetic pen with a nonzero logical width goes
-  // through general stroke tessellation (computing an offset via the
-  // transform's inverse scale), which loses precision at the extreme
-  // accumulated zoom fine wire-level detail can require; width exactly 0
-  // uses Qt's simpler, more robust hairline path instead.
-  pen.setWidth(0);
-  painter->setPen(pen);
-  painter->drawPath(path);
-
-  if (canPlaceArrows && !arrows.isEmpty()) {
-    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22:
-    // per user report ("the arrows should be more visible") -- these were
-    // drawn with the SAME pen still set from the field-line path just
-    // above (AppTheme::meshPointColor(), i.e. plain white in dark theme),
-    // so an arrow sitting right on top of a white line was barely
-    // distinguishable from the line itself. Switched to
-    // AppTheme::boundaryEdgeColor() (the app's bright-orange accent,
-    // already used elsewhere for open-boundary edges) for real contrast
-    // against both the line color and the background, and enlarged
-    // (0.4 -> 0.7 of the grid cell, thicker head spread) since a bigger
-    // orange mark reads far more clearly than a same-color one ever
-    // could regardless of size.
-    QPen arrowPen(AppTheme::boundaryEdgeColor());
-    arrowPen.setCosmetic(true);
-    arrowPen.setWidth(0); // see this function's own pen comment above for why 0, not a nonzero width
-    painter->setPen(arrowPen);
-    double arrowLen = std::min(cellW, cellH) * 0.7;
-    for (const ArrowMark& a : arrows) {
-      QPointF tip = a.pos + a.dir * (arrowLen * 0.5);
-      QPointF tail = a.pos - a.dir * (arrowLen * 0.5);
-      QPointF perp(-a.dir.y(), a.dir.x());
-      QPointF back = tip - a.dir * (arrowLen * 0.35);
-      painter->drawLine(tail, tip);
-      painter->drawLine(tip, back + perp * (arrowLen * 0.22));
-      painter->drawLine(tip, back - perp * (arrowLen * 0.22));
-    }
-  }
+  return path;
 }
 
 void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposedRect)
@@ -966,6 +1137,18 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
   // own comment for why a single magenta/pink -- for BOTH segments and
   // arcs, not kept separately distinct -- is the fix rather than picking
   // yet another "safer" blue/teal shade.
+  // Modified by Claude (Anthropic), noreply@anthropic.com: segPath/arcPath
+  // below are stroke-only outlines (moveTo/lineTo per segment, an open
+  // subpath per entity) -- but QPainter::drawPath() both fills AND
+  // strokes by default, using whatever brush is currently set. Without
+  // this, the brush is left over from paintDensity()'s last-drawn band
+  // (a solid QColor, no alpha), so the network of crossing/closing
+  // segment+arc lines gets implicitly closed and flood-filled with that
+  // leftover color wherever the lines happen to enclose an area --
+  // confirmed live as the exact root cause of a solid-color area that
+  // precisely followed geometry boundaries and swallowed the real
+  // per-element density gradient underneath it.
+  painter->setBrush(Qt::NoBrush);
   QPen segPen(AppTheme::densityOverlayColor());
   segPen.setCosmetic(true);
   segPen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
@@ -978,8 +1161,22 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
       continue;
     const FemmNode& n0 = problem.nodes[seg.n0];
     const FemmNode& n1 = problem.nodes[seg.n1];
-    if (!exposedRect.intersects(QRectF(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y)).normalized()))
-      continue;
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was an
+    // exposedRect.intersects() viewport-culling check here, same idea as
+    // the mesh-element culling elsewhere in this file -- but a perfectly
+    // horizontal or vertical segment (extremely common: any axis-aligned
+    // rectangle boundary) has a bounding QRectF with zero width or zero
+    // height, which QRectF::intersects() treats as empty and never
+    // intersecting anything, even when the segment plainly crosses the
+    // visible area. That silently culled every axis-aligned segment,
+    // confirmed directly against a real .ans (4/4 segments, all axis-
+    // aligned, none rendered) -- per user report ("the edges-lines of the
+    // geometry are not shown... you will only see nodes with no lines").
+    // Segments/arcs are always a small fraction of a solved mesh's
+    // element count (they're the PRE-mesh geometry), so this culling was
+    // never load-bearing for performance the way the mesh-element culling
+    // is -- just drop it rather than chase a correct-but-fiddly
+    // epsilon-padded rect test.
     segPath.moveTo(n0.x, n0.y);
     segPath.lineTo(n1.x, n1.y);
   }
@@ -1000,10 +1197,20 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
     double cx, cy, R, startAngleDeg;
     if (!arcGeometry(n0.x, n0.y, n1.x, n1.y, arc.arcLength, cx, cy, R, startAngleDeg))
       continue;
-    if (!exposedRect.intersects(QRectF(QPointF(cx - R, cy - R), QSizeF(2 * R, 2 * R))))
-      continue;
+    // No exposedRect culling here -- see the identical removal (and its
+    // comment) on the segment loop above. This bounding box (2R x 2R) was
+    // never actually degenerate the way a segment's could be, but dropped
+    // for the same reasoning (segments/arcs are always few relative to a
+    // solved mesh's element count) rather than leave an inconsistent,
+    // asymmetric special case between the two loops.
     arcPath.moveTo(n0.x, n0.y);
-    arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
+    // Sweep negated -- see GeometryScene.cpp's updateArcItemGeometry for
+    // the full writeup (a real, general bug confirmed live with a debug
+    // print, not specific to this file): this view also applies a
+    // scale(1,-1) y-flip (SolutionWindow's constructor), which the
+    // unnegated sweep didn't compensate for, same as the editor's copy of
+    // this exact code didn't.
+    arcPath.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, -arc.arcLength);
   }
   painter->drawPath(arcPath);
 
@@ -1019,6 +1226,34 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
     if (!cullRect.contains(n.x, n.y))
       continue;
     painter->drawRect(QRectF(n.x - half, n.y - half, 2 * half, 2 * half));
+  }
+
+  if (m_showBlockNames) {
+    // Matches femm.rc's IDR_FEMMVIEWTYPE View > Show Block Names and
+    // GeometryScene::updateBlockLabelItemGeometry's own text (assigned
+    // material's name, or "<None>" for a hole) -- that side uses
+    // ItemIgnoresTransformations on a per-label QGraphicsSimpleTextItem to
+    // keep the text upright and a constant screen size regardless of the
+    // view's zoom/y-flip; this item has no per-label child items to hang
+    // that flag on (paint() draws everything itself in one call), so the
+    // same effect is done manually here: map each label's scene position
+    // through the CURRENT world transform to get its pixel location, then
+    // reset to identity before drawing so the text itself is never
+    // flipped/scaled by the outer view transform, only positioned by it.
+    QTransform sceneToDevice = painter->worldTransform();
+    painter->save();
+    painter->resetTransform();
+    painter->setPen(AppTheme::blockLabelNameColor());
+    for (const FemmBlockLabel& b : problem.blockLabels) {
+      if (!exposedRect.contains(b.x, b.y))
+        continue;
+      QString text = (b.blockTypeIndex >= 1 && b.blockTypeIndex <= problem.materialProps.size())
+          ? problem.materialProps[b.blockTypeIndex - 1].name
+          : QStringLiteral("<None>");
+      QPointF devicePos = sceneToDevice.map(QPointF(b.x, b.y));
+      painter->drawText(devicePos + QPointF(4, -4), text);
+    }
+    painter->restore();
   }
 }
 
@@ -1110,12 +1345,104 @@ class SolutionLegendWidget : public QWidget {
   MeshSolutionItem* m_item = nullptr;
 };
 
+void SolutionGraphicsScene::setShowGrid(bool show)
+{
+  m_showGrid = show;
+  resetViewBackgroundCache();
+}
+
+void SolutionGraphicsScene::setGridSize(double size)
+{
+  m_gridSize = size;
+  if (m_showGrid)
+    resetViewBackgroundCache();
+}
+
+void SolutionGraphicsScene::resetViewBackgroundCache()
+{
+  // See GeometryScene::resetViewBackgroundCache()'s comment -- this view
+  // now uses QGraphicsView::CacheBackground too (see SolutionGraphicsView's
+  // constructor), for the same reason: a plain update()/invalidate() call
+  // doesn't regenerate that cache, only a view transform/resize or this.
+  for (QGraphicsView* view : views()) {
+    view->resetCachedContent();
+    view->viewport()->update();
+  }
+}
+
+void SolutionGraphicsScene::drawBackground(QPainter* painter, const QRectF& rect)
+{
+  QGraphicsScene::drawBackground(painter, rect);
+  if (!m_showGrid || m_gridSize <= 0)
+    return;
+
+  // See GeometryScene::drawBackground's identical addition/comment -- a
+  // new, deliberate feature (classic FEMM has no visual polar grid at
+  // all), shown here when the opened file's own Coordinates tag was
+  // polar (this window has no Cartesian/Polar UI of its own to change it,
+  // just displays whatever the file was saved with).
+  if (m_problemGeometry && m_problemGeometry->coordsPolar) {
+    double maxR = std::hypot(std::max(std::abs(rect.left()), std::abs(rect.right())),
+        std::max(std::abs(rect.top()), std::abs(rect.bottom())));
+    int nRings = static_cast<int>(std::ceil(maxR / m_gridSize));
+    if (nRings > 2000)
+      return;
+    QPen gridPen(AppTheme::gridLine());
+    gridPen.setCosmetic(true);
+    gridPen.setWidthF(1.0);
+    painter->setPen(gridPen);
+    painter->setBrush(Qt::NoBrush);
+    for (int i = 1; i <= nRings; i++) {
+      double r = i * m_gridSize;
+      painter->drawEllipse(QPointF(0, 0), r, r);
+    }
+    constexpr int kNumSpokes = 24; // every 15 degrees
+    for (int i = 0; i < kNumSpokes; i++) {
+      double theta = i * 2.0 * M_PI / kNumSpokes;
+      painter->drawLine(QPointF(0, 0), QPointF(maxR * std::cos(theta), maxR * std::sin(theta)));
+    }
+    return;
+  }
+
+  // See this class's header comment -- ported directly from
+  // GeometryScene::drawBackground.
+  double x0 = std::floor(rect.left() / m_gridSize) * m_gridSize;
+  double y0 = std::floor(rect.top() / m_gridSize) * m_gridSize;
+  int nx = static_cast<int>(std::ceil(rect.width() / m_gridSize)) + 2;
+  int ny = static_cast<int>(std::ceil(rect.height() / m_gridSize)) + 2;
+  if ((qint64)nx * (qint64)ny > 200000)
+    return;
+
+  double screenScale = painter->worldTransform().m11();
+  double r = 1.0 / std::max(screenScale, 1e-9);
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(AppTheme::gridLine());
+  for (int i = 0; i < nx; i++) {
+    double x = x0 + i * m_gridSize;
+    for (int j = 0; j < ny; j++)
+      painter->drawEllipse(QPointF(x, y0 + j * m_gridSize), r, r);
+  }
+}
+
 SolutionGraphicsView::SolutionGraphicsView(QGraphicsScene* scene, QWidget* parent)
     : QGraphicsView(scene, parent)
 {
   setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
   setResizeAnchor(QGraphicsView::AnchorUnderMouse);
   setMouseTracking(true); // needed for hoveredAt() to fire without a button held
+  setFocusPolicy(Qt::StrongFocus); // needed for keyPressEvent (Delete/Escape) to ever fire
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report of dark-theme artifacts trailing the cursor tooltip as it moves
+  // -- root cause matches GeometryView's own prior drag-trail bug (see its
+  // constructor's comment) exactly: drawBackground's antialiased grid dots
+  // (only visible with Show Grid on) get repeatedly recomposited instead of
+  // cleanly erased-then-redrawn whenever mouseMoveEvent below calls
+  // scene()->invalidate() on the tooltip's vacated rect, which happens on
+  // every single mouse move. CacheBackground fixes it the same way it did
+  // there: the background is rendered into an offscreen pixmap once and
+  // blitted (not recomposited) for subsequent partial repaints.
+  setCacheMode(QGraphicsView::CacheBackground);
 
 #ifdef FEMMQT_HAVE_OPENGL
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -1205,15 +1532,50 @@ void SolutionGraphicsView::scrollContentsBy(int dx, int dy)
     m_legend->update();
 }
 
+void SolutionGraphicsView::startZoomWindow()
+{
+  m_zoomWindowActive = true;
+  viewport()->setCursor(Qt::CrossCursor);
+}
+
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 {
+  if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
+    m_rubberBandOrigin = event->pos();
+    if (!m_rubberBand)
+      m_rubberBand = new QRubberBand(QRubberBand::Rectangle, viewport());
+    m_rubberBand->setGeometry(QRect(m_rubberBandOrigin, QSize()));
+    m_rubberBand->show();
+    return;
+  }
   if (event->button() == Qt::LeftButton)
     emit clickedAt(mapToScene(event->pos()));
   QGraphicsView::mousePressEvent(event);
 }
 
+void SolutionGraphicsView::mouseReleaseEvent(QMouseEvent* event)
+{
+  if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
+    m_zoomWindowActive = false;
+    viewport()->unsetCursor();
+    QRect selected = m_rubberBand ? m_rubberBand->geometry() : QRect();
+    if (m_rubberBand)
+      m_rubberBand->hide();
+    if (selected.width() > 2 && selected.height() > 2) {
+      QRectF sceneRect = mapToScene(selected).boundingRect();
+      emit zoomWindowSelected(sceneRect);
+    }
+    return;
+  }
+  QGraphicsView::mouseReleaseEvent(event);
+}
+
 void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
 {
+  if (m_zoomWindowActive && m_rubberBand && m_rubberBand->isVisible()) {
+    m_rubberBand->setGeometry(QRect(m_rubberBandOrigin, event->pos()).normalized());
+    return;
+  }
   QGraphicsView::mouseMoveEvent(event);
 
   // Position tracks every move (cheap); the text is refreshed separately
@@ -1266,6 +1628,19 @@ void SolutionGraphicsView::setTooltipText(const QString& text)
   m_cursorTooltip->adjustSize();
 }
 
+void SolutionGraphicsView::keyPressEvent(QKeyEvent* event)
+{
+  if (event->key() == Qt::Key_Delete) {
+    emit removeLastContourPointRequested();
+    return;
+  }
+  if (event->key() == Qt::Key_Escape) {
+    emit clearContourRequested();
+    return;
+  }
+  QGraphicsView::keyPressEvent(event);
+}
+
 void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
 {
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;
@@ -1296,7 +1671,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   setWindowTitle("FEMMX (Qt) - Solution Viewer");
   resize(1024, 768);
 
-  m_scene = new QGraphicsScene(this);
+  m_scene = new SolutionGraphicsScene(this);
   m_scene->setBackgroundBrush(AppTheme::background());
   m_view = new SolutionGraphicsView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing, true); // see updateAntialiasingForScale()
@@ -1306,6 +1681,15 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   setCentralWidget(m_view);
   connect(m_view, &SolutionGraphicsView::clickedAt, this, &SolutionWindow::onCanvasClicked);
   connect(m_view, &SolutionGraphicsView::hoveredAt, this, &SolutionWindow::onCanvasHovered);
+  connect(m_view, &SolutionGraphicsView::zoomWindowSelected, this, &SolutionWindow::onZoomWindowSelected);
+  connect(m_view, &SolutionGraphicsView::removeLastContourPointRequested, this, &SolutionWindow::onRemoveLastContourPointTriggered);
+  // Guarded here (not inside onClearContourTriggered itself) so the
+  // "Operation > Clear Contour" menu item keeps working unconditionally --
+  // only the Escape key path needs to be a silent no-op outside Contour mode.
+  connect(m_view, &SolutionGraphicsView::clearContourRequested, this, [this]() {
+    if (m_toolMode == SolutionToolMode::Contour)
+      onClearContourTriggered();
+  });
 
   m_positionLabel = new QLabel(this);
   m_positionLabel->setMinimumWidth(360);
@@ -1335,11 +1719,15 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
   QMenu* editMenu = menuBar()->addMenu("&Edit");
   editMenu->addAction("Copy as &Bitmap", this, &SolutionWindow::onCopyBitmapTriggered);
+  editMenu->addSeparator();
+  editMenu->addAction("&Preferences...", this, &SolutionWindow::onPreferencesTriggered);
 
   QMenu* zoomMenu = menuBar()->addMenu("&Zoom");
   zoomMenu->addAction("Zoom &In", this, &SolutionWindow::onZoomIn, QKeySequence(Qt::Key_PageUp));
   zoomMenu->addAction("Zoom &Out", this, &SolutionWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
   zoomMenu->addAction("&Natural", this, &SolutionWindow::onZoomNatural, QKeySequence(Qt::Key_Home));
+  zoomMenu->addAction("&Window", this, &SolutionWindow::onZoomWindowTriggered);
+  zoomMenu->addAction("&Keyboard", this, &SolutionWindow::onKbdZoomTriggered);
   zoomMenu->addSeparator();
   zoomMenu->addAction("Scroll &Left", this, &SolutionWindow::onPanLeft, QKeySequence(Qt::Key_Left));
   zoomMenu->addAction("Scroll &Right", this, &SolutionWindow::onPanRight, QKeySequence(Qt::Key_Right));
@@ -1359,61 +1747,27 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   // Density, the expensive one to rasterize on a large mesh, since it's
   // no longer the default and only gets enabled by deliberate user
   // action now.
-  QAction* densityAction = viewMenu->addAction("&Density Plot");
-  densityAction->setCheckable(true);
-  plotGroup->addAction(densityAction);
-  connect(densityAction, &QAction::triggered, this, [this]() {
-    if (m_item)
-      m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
-    m_view->updateAntialiasingForScale();
-    m_view->refreshLegend();
-  });
-  QAction* contourAction = viewMenu->addAction("&Contour Plot");
-  contourAction->setCheckable(true);
-  contourAction->setChecked(true);
-  plotGroup->addAction(contourAction);
-  connect(contourAction, &QAction::triggered, this, [this]() {
-    if (m_item)
-      m_item->setPlotMode(MeshSolutionItem::PlotMode::Contour);
-    m_view->updateAntialiasingForScale();
-    m_view->refreshLegend();
-  });
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
-  // per user request for "all the different heatmap possibilities" the
-  // classic GUI's Density Plot offers -- see MeshSolutionItem::
-  // DensityQuantity's header comment for exactly which ones. Applies
-  // regardless of which plot mode is currently active, matching how
-  // Smoothing/Show Mesh/Show Points below are all independent toggles
-  // rather than plot modes of their own -- only actually visible in
-  // Density mode's own rendering, but there's no harm in it being
-  // selectable while Contour is shown too.
-  QMenu* densityQtyMenu = viewMenu->addMenu("Density &Quantity");
-  auto* densityQtyGroup = new QActionGroup(this);
-  densityQtyGroup->setExclusive(true);
-  auto addDensityQtyAction = [&](const QString& text, MeshSolutionItem::DensityQuantity q, bool checked) {
-    QAction* a = densityQtyMenu->addAction(text);
-    a->setCheckable(true);
-    a->setChecked(checked);
-    densityQtyGroup->addAction(a);
-    connect(a, &QAction::triggered, this, [this, q]() {
-      if (m_item)
-        m_item->setDensityQuantity(q);
-      m_view->refreshLegend();
-    });
-  };
-  addDensityQtyAction("|B| (Tesla)", MeshSolutionItem::DensityQuantity::BMag, true);
-  addDensityQtyAction("|B_re| (Tesla)", MeshSolutionItem::DensityQuantity::BReMag, false);
-  addDensityQtyAction("|B_im| (Tesla)", MeshSolutionItem::DensityQuantity::BImMag, false);
-  addDensityQtyAction("log10(|B|)", MeshSolutionItem::DensityQuantity::LogBMag, false);
-  addDensityQtyAction("|H| (Amp/m)", MeshSolutionItem::DensityQuantity::HMag, false);
-  addDensityQtyAction("|Js+Je| (MA/m^2)", MeshSolutionItem::DensityQuantity::JMag, false);
-
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
-  // user request ("I think the density plots have more options (greyscale,
-  // range ...)") -- see DensityPlotOptionsDialog for the classic-dialog
-  // fields this ports (femm/cv_DPlotDlg2.h's cvCDPlotDlg2).
-  viewMenu->addAction("Density Plot &Options...", this, &SolutionWindow::onDensityOptionsTriggered);
-
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+  // user request ("a dialog box when clicking the density plot icon,
+  // similar to the classical gui, to set the different quantities and
+  // plotting options and range") -- clicking Density Plot now always
+  // opens DensityPlotOptionsDialog (which itself now carries the
+  // quantity combo, matching femm/cv_DPlotDlg2.h's cvCDPlotDlg2 dialog),
+  // instead of silently switching plot mode with quantity/range/greyscale
+  // picked separately elsewhere. The formerly-separate "Density Quantity"
+  // submenu is gone -- its job is now this dialog's combo box.
+  m_densityAction = viewMenu->addAction("&Density Plot...");
+  m_densityAction->setCheckable(true);
+  plotGroup->addAction(m_densityAction);
+  connect(m_densityAction, &QAction::triggered, this, &SolutionWindow::onDensityOptionsTriggered);
+  // Matches femm/FemmviewView.cpp's OnCplot -- clicking Contour Plot
+  // always opens its options dialog first too, same as Density Plot just
+  // above (see that field's comment).
+  m_contourAction = viewMenu->addAction("&Contour Plot...");
+  m_contourAction->setCheckable(true);
+  m_contourAction->setChecked(true);
+  plotGroup->addAction(m_contourAction);
+  connect(m_contourAction, &QAction::triggered, this, &SolutionWindow::onContourOptionsTriggered);
   QAction* smoothAction = viewMenu->addAction("&Smoothing");
   smoothAction->setCheckable(true);
   smoothAction->setChecked(true);
@@ -1425,26 +1779,29 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   QAction* showPointsAction = viewMenu->addAction("Show &Points");
   showPointsAction->setCheckable(true);
   connect(showPointsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowPoints(on); });
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
-  // user request -- direction arrows along Contour Plot's field lines,
-  // off by default (see paintContour's comment for the math behind why
-  // each field line segment already knows its own correct arrow
-  // direction).
-  QAction* showFieldArrowsAction = viewMenu->addAction("Show Field &Arrows");
-  showFieldArrowsAction->setCheckable(true);
-  connect(showFieldArrowsAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowFieldArrows(on); });
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
-  // per user request for a "colourmap bar on the side, similar to old
-  // gui" -- mirrors femm/FemmviewView.cpp's own LegendFlag/d_LegendFlag,
-  // default-on like classic FEMM's own default.
-  QAction* showLegendAction = viewMenu->addAction("Show &Legend");
-  showLegendAction->setCheckable(true);
-  showLegendAction->setChecked(true);
-  connect(showLegendAction, &QAction::toggled, this, [this](bool on) { m_view->setLegendVisible(on); });
+  viewMenu->addSeparator();
+  // Matches femm.rc's IDR_FEMMVIEWTYPE View menu, which nests Grid items
+  // directly in View here rather than a separate top-level Grid menu the
+  // way IDR_FEMMETYPE (the editor) does -- classic itself is inconsistent
+  // between the two views, and MainWindow already mirrors the editor's
+  // own layout, so this mirrors the post-processor's.
+  QAction* showGridAction = viewMenu->addAction("Show &Grid");
+  showGridAction->setCheckable(true);
+  showGridAction->setChecked(m_scene->showGrid());
+  connect(showGridAction, &QAction::toggled, m_scene, &SolutionGraphicsScene::setShowGrid);
+  QAction* snapGridAction = viewMenu->addAction("S&nap Grid");
+  snapGridAction->setCheckable(true);
+  snapGridAction->setChecked(m_scene->snapToGrid());
+  connect(snapGridAction, &QAction::toggled, m_scene, &SolutionGraphicsScene::setSnapToGrid);
+  viewMenu->addAction("Se&t Grid...", this, &SolutionWindow::onSetGridTriggered);
   viewMenu->addSeparator();
   viewMenu->addAction("&Circuit Props...", this, &SolutionWindow::onCircuitPropsTriggered);
   viewMenu->addAction("&BH Curves...", this, &SolutionWindow::onBhCurvesTriggered);
   viewMenu->addAction("Problem &Info...", this, &SolutionWindow::onProblemInfoTriggered);
+  viewMenu->addSeparator();
+  QAction* showBlockNamesAction = viewMenu->addAction("Show &Block Names");
+  showBlockNamesAction->setCheckable(true);
+  connect(showBlockNamesAction, &QAction::toggled, this, [this](bool on) { if (m_item) m_item->setShowBlockNames(on); });
   viewMenu->addSeparator();
   QAction* outputWindowAction = viewMenu->addAction("&Output Window");
   outputWindowAction->setCheckable(true);
@@ -1491,8 +1848,42 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   opMenu->addSeparator();
   opMenu->addAction("&Finish Contour", this, &SolutionWindow::onFinishContourTriggered);
   opMenu->addAction("&Clear Contour", this, &SolutionWindow::onClearContourTriggered);
+  opMenu->addAction("Clear &Area Selection", this, &SolutionWindow::onClearAreaSelectionTriggered);
   menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
   menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
+
+  // Matches femm.rc's IDR_LEFTBAR -- confirmed in femm/MainFrm.cpp that
+  // m_leftbar (Zoom/Pan/Grid) is shared across every doc type's frame,
+  // including the postprocessor (FV_toolBar1) -- so the classic Solution
+  // Viewer has this toolbar too, not just the geometry editor. Found
+  // missing during a full icon-by-icon toolbar audit (the earlier passes
+  // were menu/dialog-level only). Reuses the exact same QAction objects
+  // the Zoom/View menus above already created (not copies), same pattern
+  // as MainWindow::MainWindow's own Navigate toolbar.
+  QToolBar* navToolBar = addToolBar("Navigate");
+  addToolBar(Qt::LeftToolBarArea, navToolBar);
+  navToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  navToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(navToolBar, ":/icons/zoom_in.svg", "Zoom In", "Zoom in", &SolutionWindow::onZoomIn);
+  addThemedAction(navToolBar, ":/icons/zoom_out.svg", "Zoom Out", "Zoom out", &SolutionWindow::onZoomOut);
+  addThemedAction(navToolBar, ":/icons/zoom_natural.svg", "Natural", "Zoom to fit the entire mesh", &SolutionWindow::onZoomNatural);
+  addThemedAction(navToolBar, ":/icons/zoom_window.svg", "Window", "Drag a rectangle to zoom into", &SolutionWindow::onZoomWindowTriggered);
+  navToolBar->addSeparator();
+  addThemedAction(navToolBar, ":/icons/pan_up.svg", "Scroll Up", "Move the view up", &SolutionWindow::onPanUp);
+  addThemedAction(navToolBar, ":/icons/pan_down.svg", "Scroll Down", "Move the view down", &SolutionWindow::onPanDown);
+  addThemedAction(navToolBar, ":/icons/pan_left.svg", "Scroll Left", "Move the view left", &SolutionWindow::onPanLeft);
+  addThemedAction(navToolBar, ":/icons/pan_right.svg", "Scroll Right", "Move the view right", &SolutionWindow::onPanRight);
+  navToolBar->addSeparator();
+  navToolBar->addAction(showGridAction);
+  showGridAction->setIcon(IconTheme::themedToolIcon(":/icons/show_grid.svg"));
+  showGridAction->setToolTip("Show grid points");
+  m_themedActions.push_back({ showGridAction, ":/icons/show_grid.svg" });
+  navToolBar->addAction(snapGridAction);
+  snapGridAction->setIcon(IconTheme::themedToolIcon(":/icons/snap_grid.svg"));
+  snapGridAction->setToolTip("Snap new points and drags to the nearest grid point");
+  m_themedActions.push_back({ snapGridAction, ":/icons/snap_grid.svg" });
+  addThemedAction(navToolBar, ":/icons/set_grid.svg", "Set Grid", "Change the grid spacing", &SolutionWindow::onSetGridTriggered);
+  HoverTooltip::installOn(navToolBar);
 
   // Matches femm.rc's IDR_FEMMVIEWTYPE toolbar -- every one of these
   // already exists as a menu item above; per direct user request (the
@@ -1525,14 +1916,14 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   showMeshAction->setIcon(IconTheme::themedToolIcon(":/icons/mesh.svg"));
   showMeshAction->setToolTip("Show Mesh -- overlay the finite element mesh");
   m_themedActions.push_back({ showMeshAction, ":/icons/mesh.svg" });
-  toolBar->addAction(contourAction);
-  contourAction->setIcon(IconTheme::themedToolIcon(":/icons/contour_plot.svg"));
-  contourAction->setToolTip("Contour Plot -- draw equipotential (constant A) lines");
-  m_themedActions.push_back({ contourAction, ":/icons/contour_plot.svg" });
-  toolBar->addAction(densityAction);
-  densityAction->setIcon(IconTheme::themedToolIcon(":/icons/density_plot.svg"));
-  densityAction->setToolTip("Density Plot -- color-shaded field magnitude");
-  m_themedActions.push_back({ densityAction, ":/icons/density_plot.svg" });
+  toolBar->addAction(m_contourAction);
+  m_contourAction->setIcon(IconTheme::themedToolIcon(":/icons/contour_plot.svg"));
+  m_contourAction->setToolTip("Contour Plot -- draw equipotential (constant A) lines, with a dialog to pick the contour count/range");
+  m_themedActions.push_back({ m_contourAction, ":/icons/contour_plot.svg" });
+  toolBar->addAction(m_densityAction);
+  m_densityAction->setIcon(IconTheme::themedToolIcon(":/icons/density_plot.svg"));
+  m_densityAction->setToolTip("Density Plot -- color-shaded field magnitude, with a dialog to pick the quantity/range");
+  m_themedActions.push_back({ m_densityAction, ":/icons/density_plot.svg" });
   HoverTooltip::installOn(toolBar);
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
@@ -1575,7 +1966,7 @@ void SolutionWindow::openAnsFile(const QString& path)
 
   if (AnsxFileIO::isUpToDate(ansxPath, ansPath)) {
     int coordSystem = 0;
-    if (AnsxFileIO::readAnsx(ansxPath, m_solution, error, &coordSystem)) {
+    if (AnsxFileIO::readAnsx(ansxPath, m_solution, error, &coordSystem, &m_frequency)) {
       loadedFromAnsx = true;
       m_axisymmetric = (coordSystem == (int)FemmCoordinateType::Axisymmetric);
     }
@@ -1595,6 +1986,7 @@ void SolutionWindow::openAnsFile(const QString& path)
       return;
     }
     m_axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
+    m_frequency = problem.frequency;
     // Cache for next time -- best-effort: a failure here (e.g. a
     // read-only directory) shouldn't block viewing the solution we
     // already have loaded, just means no speedup next time.
@@ -1638,8 +2030,11 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_contourPoints.clear();
   m_item = new MeshSolutionItem(&m_solution);
   m_item->setProblemGeometry(&m_problemGeometry);
+  m_scene->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
-  m_view->fitInViewSafe(m_item->boundingRect());
+  QRectF itemBounds = m_item->boundingRect();
+  m_view->fitInViewSafe(itemBounds);
+  m_scene->setGridSize(niceIntegerGridSize(itemBounds));
   m_view->updateAntialiasingForScale();
   m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
@@ -1837,15 +2232,35 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
 
 void SolutionWindow::onPointToolTriggered()
 {
+  // Matches femm/FemmviewView.cpp's OnMenuContour/OnMenuPoint: leaving
+  // Area mode (EditAction==2) clears any block-label selection rather
+  // than leaving a stale highlight from a tool that's no longer active.
+  if (m_toolMode == SolutionToolMode::Area && m_item)
+    m_item->clearBlockLabelSelection();
   m_toolMode = SolutionToolMode::Point;
   statusBar()->showMessage("Point Properties: click a point on the mesh.");
 }
 
 void SolutionWindow::onContourToolTriggered()
 {
+  if (m_toolMode == SolutionToolMode::Area && m_item)
+    m_item->clearBlockLabelSelection();
   m_toolMode = SolutionToolMode::Contour;
   statusBar()->showMessage("Contours: click points to build a contour, then Operation > Finish Contour.");
 }
+
+// femm/FemmeView.cpp's OnKeyDown, while drawing a contour (EditAction==1,
+// this app's SolutionToolMode::Contour): Delete removes the last-placed
+// point and Escape clears the whole contour -- both now wired up, see
+// SolutionGraphicsView::keyPressEvent + onRemoveLastContourPointTriggered/
+// onClearContourTriggered. Still a known, documented gap: Shift opens
+// CBendContourDlg ("Bend Contour": an angle + angle-step pair that
+// reshapes the straight-line contour between its first and last points
+// into a circular arc through them, via CFemmviewDoc::BendContour --
+// useful for sampling along an air-gap circle in a rotating machine
+// without clicking dozens of points by hand). Not attempted here -- it's
+// a real, self-contained new feature (its own small dialog + a
+// point-set transform), not a partial version of one already in place.
 
 void SolutionWindow::onAreaToolTriggered()
 {
@@ -1886,6 +2301,38 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     QString aLabel = m_axisymmetric ? "Flux (re, im)" : "A (re, im)";
     QString aUnit = m_axisymmetric ? "Wb" : "Wb/m";
 
+    // Matches femm/FemmviewView.cpp's DisplayPointProperties, which also
+    // shows mu_x/mu_y and, for a permanent-magnet material (Hc != 0), the
+    // B.H energy product -- resolved the same way BlockLabelPropDialog
+    // resolves a label's material, via m_problemGeometry (this window's
+    // parsed .fem header, already loaded for the geometry overlay).
+    // Deliberately NOT shown here: "E" (energy density, needs the
+    // material's possibly-nonlinear B-H curve integral -- see
+    // elementQuantity's own comment on that same limitation) and
+    // "Winding Fill %" (classic's u.ff comes from CBlockLabel::
+    // FillFactor, a per-LABEL field this app's FemmBlockLabel doesn't
+    // carry at all yet -- a real, separate gap, not attempted here with
+    // the wrong data source).
+    // Mutually exclusive ONLY for a DC solution, matching classic's own
+    // if(Hc==0){mu}else{B.H} exactly (a permanent-magnet material shows
+    // B.H instead of mu_x/mu_y there) -- classic's AC/harmonic branch has
+    // no B.H term at all and shows mu_x/mu_y unconditionally, so this
+    // stays gated on m_frequency, not just Hc.
+    QString muLine, bhLine;
+    if (e.lbl >= 0 && e.lbl < m_problemGeometry.blockLabels.size()) {
+      int matIdx = m_problemGeometry.blockLabels[e.lbl].blockTypeIndex - 1;
+      if (matIdx >= 0 && matIdx < m_problemGeometry.materialProps.size()) {
+        const FemmMaterialProp& mat = m_problemGeometry.materialProps[matIdx];
+        if (m_frequency == 0 && mat.Hc != 0) {
+          double bh = std::abs(std::complex<double>(e.B1re, e.B1im) * std::complex<double>(h1re, h1im)
+              + std::complex<double>(e.B2re, e.B2im) * std::complex<double>(h2re, h2im));
+          bhLine = QString("%1 J/m^3 (%2 MGOe)").arg(bh, 0, 'g', 6).arg(bh * kMuo * 100.0, 0, 'g', 6);
+        } else {
+          muLine = QString("%1, %2 (rel)").arg(mat.muX, 0, 'g', 6).arg(mat.muY, 0, 'g', 6);
+        }
+      }
+    }
+
     QDialog dlg(this);
     dlg.setWindowTitle("Point Properties");
     auto* form = new QFormLayout(&dlg);
@@ -1897,6 +2344,10 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     form->addRow("H1 (re, im):", new QLabel(QString("%1, %2").arg(h1re, 0, 'g', 6).arg(h1im, 0, 'g', 6)));
     form->addRow("H2 (re, im):", new QLabel(QString("%1, %2").arg(h2re, 0, 'g', 6).arg(h2im, 0, 'g', 6)));
     form->addRow("|H|:", new QLabel(QString("%1 A/m").arg(hMag, 0, 'g', 6)));
+    if (!muLine.isEmpty())
+      form->addRow("mu_x, mu_y:", new QLabel(muLine));
+    if (!bhLine.isEmpty())
+      form->addRow("B.H:", new QLabel(bhLine));
     form->addRow("Js+Je (re, im):", new QLabel(QString("%1, %2").arg(e.jRe, 0, 'g', 6).arg(e.jIm, 0, 'g', 6)));
     form->addRow("|Js+Je|:", new QLabel(QString("%1 MA/m^2").arg(jMag, 0, 'g', 6)));
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
@@ -1924,46 +2375,24 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     statusBar()->showMessage(QString("Contour: %1 point(s). Operation > Finish Contour when done.").arg(m_contourPoints.size()));
     break;
   case SolutionToolMode::Area: {
+    // Matches femm/FemmviewView.cpp's OnLButtonUp (EditAction==2): a click
+    // TOGGLES the clicked block label's selection (highlighted on screen
+    // via paintSelectedBlocks -- see MeshSolutionItem::
+    // toggleBlockLabelSelected's comment) rather than instantly computing
+    // and popping up a result. Multiple regions can be selected at once;
+    // Integrate reports the sum over the whole current selection, same
+    // split as classic's own select-then-Integrate flow.
     int elem = findContainingElement(scenePos);
     if (elem < 0) {
       statusBar()->showMessage("No mesh element at that point.");
       return;
     }
     int lbl = m_solution.elements[elem].lbl;
-    double totalArea = 0;
-    double bSum = 0;
-    int count = 0;
-    for (const MeshSolutionElement& e : m_solution.elements) {
-      if (e.lbl != lbl)
-        continue;
-      if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
-        continue;
-      const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
-      const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
-      const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
-      double area = triangleArea(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y));
-      totalArea += area;
-      bSum += area * std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-      count++;
-    }
-    double avgB = totalArea > 0 ? bSum / totalArea : 0;
-
-    QDialog dlg(this);
-    dlg.setWindowTitle("Area Properties");
-    auto* form = new QFormLayout(&dlg);
-    form->addRow("Block label index:", new QLabel(QString::number(lbl)));
-    form->addRow("Elements:", new QLabel(QString::number(count)));
-    form->addRow("Area:", new QLabel(QString("%1").arg(totalArea, 0, 'g', 6)));
-    form->addRow("Area-weighted avg |B|:", new QLabel(QString("%1 T").arg(avgB, 0, 'g', 6)));
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
-    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    form->addRow(buttons);
-    appendOutput(QString("Area: block label %1  elements=%2  area=%3  avg|B|=%4 T")
-                      .arg(lbl)
-                      .arg(count)
-                      .arg(totalArea, 0, 'g', 6)
-                      .arg(avgB, 0, 'g', 6));
-    dlg.exec();
+    m_item->toggleBlockLabelSelected(lbl);
+    int n = m_item->selectedBlockLabels().size();
+    statusBar()->showMessage(n > 0
+            ? QString("Areas: %1 block(s) selected. Integrate to compute, or Operation > Clear Area Selection.").arg(n)
+            : "Areas: selection cleared.");
     break;
   }
   }
@@ -1995,42 +2424,289 @@ void SolutionWindow::onFinishContourTriggered()
   showContourIntegral();
 }
 
+namespace {
+// Matches CircuitAnalysis.cpp's identically-named file-local helper
+// (femm/FemmviewDoc.cpp's LengthConv[] table) -- kept as its own small
+// copy rather than shared, consistent with this codebase's existing
+// precedent of AnsFileIO.cpp's kLengthConv doing the same.
+double lengthConvToMeters(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return 0.0254;
+  case FemmLengthUnits::Millimeters: return 0.001;
+  case FemmLengthUnits::Centimeters: return 0.01;
+  case FemmLengthUnits::Meters: return 1.0;
+  case FemmLengthUnits::Mils: return 0.0000254;
+  case FemmLengthUnits::Microns: return 0.000001;
+  }
+  return 1.0;
+}
+
+// Matches ProblemPropertiesDialog.cpp's m_lengthUnits combo text (same
+// enum order) -- own small copy of MainWindow.cpp's identically-named
+// helper, consistent with this file's lengthConvToMeters above.
+QString lengthUnitsName(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return "Inches";
+  case FemmLengthUnits::Millimeters: return "Millimeters";
+  case FemmLengthUnits::Centimeters: return "Centimeters";
+  case FemmLengthUnits::Meters: return "Meters";
+  case FemmLengthUnits::Mils: return "Mils";
+  case FemmLengthUnits::Microns: return "Microns";
+  }
+  return QString();
+}
+}
+
 void SolutionWindow::showContourIntegral()
 {
   if (m_contourPoints.size() < 2) {
     QMessageBox::information(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
     return;
   }
-  double length = 0;
+
+  double length = 0; // scene units (== the problem's own LengthUnits)
   for (int i = 1; i < m_contourPoints.size(); i++) {
     QPointF d = m_contourPoints[i] - m_contourPoints[i - 1];
     length += std::hypot(d.x(), d.y());
   }
+  double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
+  double lengthM = length * lc;
 
   int elemStart = findContainingElement(m_contourPoints.first());
   int elemEnd = findContainingElement(m_contourPoints.last());
-  QString deltaAText = "n/a (endpoint outside mesh)";
-  if (elemStart >= 0 && elemEnd >= 0) {
+  bool endpointsOk = elemStart >= 0 && elemEnd >= 0;
+  std::complex<double> deltaA(0, 0);
+  if (endpointsOk) {
     std::complex<double> aStart = interpolateA(m_contourPoints.first(), elemStart);
     std::complex<double> aEnd = interpolateA(m_contourPoints.last(), elemEnd);
-    std::complex<double> delta = aEnd - aStart;
-    deltaAText = QString("%1, %2 (re, im)").arg(delta.real(), 0, 'g', 6).arg(delta.imag(), 0, 'g', 6);
+    deltaA = aEnd - aStart;
   }
 
   QDialog dlg(this);
   dlg.setWindowTitle("Contour Properties");
-  auto* form = new QFormLayout(&dlg);
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* form = new QFormLayout;
   form->addRow("Points:", new QLabel(QString::number(m_contourPoints.size())));
   form->addRow("Length:", new QLabel(QString("%1").arg(length, 0, 'g', 6)));
-  form->addRow("Delta A (end - start):", new QLabel(deltaAText));
+
+  // Matches femm/LIntDlg.cpp's CLIntDlg combo (femm/FemmviewDoc.cpp's
+  // LineIntegral) -- only B.n and Contour Length are offered here: both
+  // reduce to a closed-form Stokes'-theorem shortcut from the two
+  // endpoints' A values (B.n) or the already-computed segment lengths
+  // (Contour Length/Surface Area), needing no new machinery. H.t, Force
+  // from Stress Tensor, Torque from Stress Tensor, and (B.n)^2 all
+  // instead need classic's fine per-sample-point numerical integration
+  // along the contour (d_LineIntegralPoints subdivisions per segment,
+  // locating the containing mesh element at each one) -- a real, scoped
+  // follow-up, not attempted here as a partial/rushed version.
+  auto* typeCombo = new QComboBox(&dlg);
+  typeCombo->addItem("B.n");
+  typeCombo->addItem("Contour length");
+  form->addRow("Integral:", typeCombo);
+
+  auto* resultLabel = new QLabel(&dlg);
+  resultLabel->setWordWrap(true);
+  resultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  form->addRow(resultLabel);
+  layout->addLayout(form);
+
+  // depthM: femmqt's FemmProblem::depth is in the problem's own native
+  // LengthUnits (same representation CircuitAnalysis.cpp's flux-linkage
+  // calc already established -- see its "problem.depth * lc" line), so
+  // it needs the same *lc scaling as length does to become meters.
+  double depthM = m_problemGeometry.depth * lc;
+  auto updateResult = [this, endpointsOk, deltaA, lengthM, lc, depthM](int index) {
+    if (index == 0) {
+      // B.n: matches LineIntegral's inttype==0 exactly, including its own
+      // differing sign convention between planar and axisymmetric.
+      if (!endpointsOk) {
+        return QString("n/a (an endpoint is outside the mesh)");
+      }
+      if (!m_axisymmetric) {
+        std::complex<double> flux = -deltaA * depthM;
+        std::complex<double> avgBn = lengthM * depthM != 0 ? flux / (lengthM * depthM) : std::complex<double>(0, 0);
+        return QString("Normal flux = %1, %2 Webers\nAverage B.n = %3, %4 Tesla")
+            .arg(flux.real(), 0, 'g', 6).arg(flux.imag(), 0, 'g', 6)
+            .arg(avgBn.real(), 0, 'g', 6).arg(avgBn.imag(), 0, 'g', 6);
+      } else {
+        double area = 0; // Pappus-theorem swept surface area of the axisymmetric contour
+        for (int i = 1; i < m_contourPoints.size(); i++) {
+          QPointF d = m_contourPoints[i] - m_contourPoints[i - 1];
+          area += M_PI * (m_contourPoints[i - 1].x() + m_contourPoints[i].x()) * std::hypot(d.x(), d.y());
+        }
+        area *= lc * lc;
+        std::complex<double> flux = deltaA;
+        std::complex<double> avgBn = area != 0 ? flux / area : std::complex<double>(0, 0);
+        return QString("Normal flux = %1, %2 Webers\nAverage B.n = %3, %4 Tesla")
+            .arg(flux.real(), 0, 'g', 6).arg(flux.imag(), 0, 'g', 6)
+            .arg(avgBn.real(), 0, 'g', 6).arg(avgBn.imag(), 0, 'g', 6);
+      }
+    } else {
+      double surfaceArea = m_axisymmetric ? 0.0 : lengthM * depthM;
+      if (m_axisymmetric) {
+        for (int i = 1; i < m_contourPoints.size(); i++) {
+          QPointF d = m_contourPoints[i] - m_contourPoints[i - 1];
+          surfaceArea += M_PI * (m_contourPoints[i - 1].x() + m_contourPoints[i].x()) * std::hypot(d.x(), d.y());
+        }
+        surfaceArea *= lc * lc;
+      }
+      return QString("Contour length = %1 meters\nSurface Area = %2 meter^2").arg(lengthM, 0, 'g', 6).arg(surfaceArea, 0, 'g', 6);
+    }
+  };
+  connect(typeCombo, &QComboBox::currentIndexChanged, &dlg, [resultLabel, updateResult](int index) { resultLabel->setText(updateResult(index)); });
+  resultLabel->setText(updateResult(0));
+
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-  form->addRow(buttons);
-  appendOutput(QString("Contour: points=%1  length=%2  deltaA=%3")
-                    .arg(m_contourPoints.size())
-                    .arg(length, 0, 'g', 6)
-                    .arg(deltaAText));
+  layout->addWidget(buttons);
+  appendOutput(QString("Contour: points=%1  length=%2  %3").arg(m_contourPoints.size()).arg(length, 0, 'g', 6).arg(updateResult(typeCombo->currentIndex())));
   dlg.exec();
+}
+
+void SolutionWindow::showAreaIntegral()
+{
+  // Matches femm/BlockInt.cpp's IDD_BLOCKINT combo exactly (item text and
+  // order decoded from femm.rc's DLGINIT), reached via Integrate the same
+  // way classic's own OnMenuIntegrate does when EditAction==2 with a
+  // nonempty block selection. Per direct user request ("add a drop down
+  // list for the calculated quantity same as in classical gui").
+  //
+  // Only 4 of the 17 are actually computed -- Block cross-section area,
+  // Block volume, Total current, and Integral of B over block -- because
+  // those are the ones femm/FemmviewDoc.cpp's BlockIntegral() computes as
+  // a plain per-element sum of data this app already has (area, depth/
+  // Pappus-theorem revolution volume, jRe/jIm, B1/B2). Verified against
+  // BlockIntegral()'s own source, case by case, rather than guessed:
+  // case 5 (area) is `a`; case 10 (volume) is `a*Depth` or `a*2*pi*R`;
+  // case 7 (total current) is `a*J`; cases 8/9 (integral of B) are
+  // `a*Depth*B1`/`a*Depth*B2` (or the axisymmetric Pappus equivalent) --
+  // none of the four have an extra AC/DC scaling factor the way e.g. case
+  // 4 (Resistive losses) does. The other 13 (A.J, A, energy/coenergy,
+  // hysteresis/eddy/resistive/total losses, Lorentz force/torque, Weighted
+  // Stress Tensor force/torque, R^2) need either a proper per-node
+  // polynomial integral (BlockIntegral's PlnInt/AxiInt, not just area
+  // times an element average -- exact for a single linear field like A
+  // alone, but NOT for a product of two, like A.J), conductivity/
+  // nonlinear-BH-curve/permanent-magnet data, or the Weighted Stress
+  // Tensor mask -- same documented gap as Circuit Props, BH Curves, and
+  // the Line Integral's H.t/Force/Torque types. Rather than risk a
+  // plausible-looking but subtly wrong number, those show a plain
+  // "not available" message instead.
+  if (!m_item || !m_item->hasBlockLabelSelection()) {
+    QMessageBox::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
+    return;
+  }
+  const QSet<int>& labels = m_item->selectedBlockLabels();
+  double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
+  double depthM = m_problemGeometry.depth * lc;
+
+  double totalAreaM2 = 0;
+  double volumeM3 = 0;
+  int count = 0;
+  std::complex<double> totalCurrent(0, 0);
+  std::complex<double> intB1(0, 0), intB2(0, 0); // Tesla*meter^3, x/y or r/z component
+
+  for (const MeshSolutionElement& e : m_solution.elements) {
+    if (!labels.contains(e.lbl))
+      continue;
+    if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
+      continue;
+    const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
+    const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
+    const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
+    double areaM2 = triangleArea(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y)) * lc * lc;
+    totalAreaM2 += areaM2;
+    count++;
+
+    totalCurrent += areaM2 * std::complex<double>(e.jRe, e.jIm);
+
+    double weight = depthM;
+    if (m_axisymmetric) {
+      double rCtrM = (n0.x + n1.x + n2.x) / 3.0 * lc;
+      weight = 2.0 * M_PI * rCtrM;
+    }
+    intB1 += (areaM2 * weight) * std::complex<double>(e.B1re, e.B1im);
+    intB2 += (areaM2 * weight) * std::complex<double>(e.B2re, e.B2im);
+    volumeM3 += areaM2 * weight;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Area Properties");
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* form = new QFormLayout;
+  QStringList labelList;
+  for (int lbl : labels)
+    labelList << QString::number(lbl);
+  form->addRow("Block labels selected:", new QLabel(QString("%1 (%2)").arg(labels.size()).arg(labelList.join(", "))));
+  form->addRow("Elements:", new QLabel(QString::number(count)));
+
+  const QStringList kQuantities = {
+    "A . J", "A", "Magnetic field energy",
+    "Hysteresis, Laminated eddy, or Proximity effect", "Resistive losses",
+    "Block cross-section area", "Total losses", "Total current",
+    "Integral of B over block", "Block volume", "Lorentz force (J x B)",
+    "Lorentz torque (r x J x B)", "Magnetic field coenergy",
+    "Force via Weighted Stress Tensor", "Torque via Weighted Stress Tensor",
+    "R^2 (i.e. Moment of Inertia / Density)", "Total Loss Density",
+  };
+  auto* typeCombo = new QComboBox(&dlg);
+  typeCombo->addItems(kQuantities);
+  typeCombo->setCurrentIndex(5); // Block cross-section area -- matches the old default (this was the only quantity before)
+  form->addRow("Integral:", typeCombo);
+
+  auto* resultLabel = new QLabel(&dlg);
+  resultLabel->setWordWrap(true);
+  resultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  form->addRow(resultLabel);
+  layout->addLayout(form);
+
+  QString axis1 = m_axisymmetric ? "r" : "x";
+  QString axis2 = m_axisymmetric ? "z" : "y";
+  bool isAc = m_frequency != 0;
+  auto updateResult = [this, totalAreaM2, volumeM3, totalCurrent, intB1, intB2, axis1, axis2, isAc](int index) -> QString {
+    switch (index) {
+    case 5: // Block cross-section area
+      return QString("%1 meter^2").arg(totalAreaM2, 0, 'g', 6);
+    case 7: // Total current
+      return isAc ? QString("%1 Amps").arg(complexToString(totalCurrent))
+                  : QString("%1 Amps").arg(totalCurrent.real(), 0, 'g', 6);
+    case 8: // Integral of B over block
+      if (isAc)
+        return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
+            .arg(axis1, complexToString(intB1), axis2, complexToString(intB2));
+      return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
+          .arg(axis1).arg(intB1.real(), 0, 'g', 6).arg(axis2).arg(intB2.real(), 0, 'g', 6);
+    case 9: // Block volume
+      return QString("%1 meter^3").arg(volumeM3, 0, 'g', 6);
+    default:
+      return "Not available in this version -- needs per-node potential/current data for a "
+             "proper polynomial integral, material conductivity/nonlinear-BH-curve/permanent-"
+             "magnet data, or the Weighted Stress Tensor mask, none of which this app currently "
+             "extracts from .ans.";
+    }
+  };
+  connect(typeCombo, &QComboBox::currentIndexChanged, &dlg, [resultLabel, updateResult](int index) { resultLabel->setText(updateResult(index)); });
+  resultLabel->setText(updateResult(typeCombo->currentIndex()));
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  appendOutput(QString("Area: %1 block(s) [%2]  elements=%3  %4: %5")
+                    .arg(labels.size())
+                    .arg(labelList.join(", "))
+                    .arg(count)
+                    .arg(kQuantities[typeCombo->currentIndex()])
+                    .arg(updateResult(typeCombo->currentIndex())));
+  dlg.exec();
+}
+
+void SolutionWindow::onClearAreaSelectionTriggered()
+{
+  if (m_item)
+    m_item->clearBlockLabelSelection();
+  statusBar()->showMessage("Area selection cleared.");
 }
 
 void SolutionWindow::appendOutput(const QString& text)
@@ -2043,6 +2719,18 @@ void SolutionWindow::onClearContourTriggered()
   m_contourPoints.clear();
   updateContourVisual();
   statusBar()->showMessage("Contour cleared.");
+}
+
+void SolutionWindow::onRemoveLastContourPointTriggered()
+{
+  // femm/FemmeView.cpp's OnKeyDown: Delete removes only the last-placed
+  // contour point (clears entirely if just one point was left), letting a
+  // misclick be corrected without restarting the whole contour.
+  if (m_toolMode != SolutionToolMode::Contour || m_contourPoints.isEmpty())
+    return;
+  m_contourPoints.removeLast();
+  updateContourVisual();
+  statusBar()->showMessage(QString("Contour: %1 point(s). Operation > Finish Contour when done.").arg(m_contourPoints.size()));
 }
 
 void SolutionWindow::onPlotXYTriggered()
@@ -2084,8 +2772,21 @@ void SolutionWindow::onPlotXYTriggered()
   // plain QVector<double>s so PlotXYChartWidget can draw them, and the
   // text is kept (as CSV, comma- not tab-separated, for the Export CSV
   // button) rather than just for display.
+  // Known, documented gap: classic's real Plot X-Y quantity combo
+  // (femm/xyplotdlg.cpp's CXYPlotDlg::OnInitDialog) offers Potential
+  // (=|A|), |B|, B.n, B.t, |H|, H.n, H.t, and (AC only) J_eddy/Js+J_eddy
+  // -- 7-9 choices, not just the 2 (|A|, |B|) plotted here. B.n/B.t/H.n/
+  // H.t need a per-sample-point normal/tangent projection (using each
+  // contour segment's own local direction) that isn't built yet; adding
+  // them is a real, scoped follow-up, not attempted here as a partial
+  // version that only covers some of the missing quantities.
+  const QString qtyALabel = "|A|";
+  const QString qtyBLabel = "|B|";
+  const QString qtyAUnit = m_axisymmetric ? "Wb" : "Wb/m";
+  const QString qtyBUnit = "T";
+
   QVector<double> arcLen, xs, ys, aMags, bMags;
-  QString csv = "arc length,x,y,|A|,|B|\n";
+  QString csv = QString("arc length,x,y,%1,%2\n").arg(qtyALabel, qtyBLabel);
   for (int s = 0; s <= samples; s++) {
     double target = totalLen * s / samples;
     double acc = 0;
@@ -2128,17 +2829,18 @@ void SolutionWindow::onPlotXYTriggered()
   auto* chartTab = new QWidget(tabs);
   auto* chartLayout = new QVBoxLayout(chartTab);
   auto* quantityCombo = new QComboBox(chartTab);
-  quantityCombo->addItem("|A|");
-  quantityCombo->addItem("|B|");
+  quantityCombo->addItem(QString("%1 (%2)").arg(qtyALabel, qtyAUnit));
+  quantityCombo->addItem(QString("%1 (%2)").arg(qtyBLabel, qtyBUnit));
   chartLayout->addWidget(quantityCombo);
   auto* chart = new PlotXYChartWidget(arcLen, aMags, bMags, chartTab);
+  chart->setTitles(QString("%1 along contour").arg(qtyALabel), QString("%1 along contour").arg(qtyBLabel));
   chartLayout->addWidget(chart);
   connect(quantityCombo, &QComboBox::currentIndexChanged, chart, [chart](int index) {
     chart->setQuantity(index == 0 ? PlotXYChartWidget::Quantity::AMag : PlotXYChartWidget::Quantity::BMag);
   });
   tabs->addTab(chartTab, "Chart");
 
-  QString tableText = "arc length\tx\ty\t|A|\t|B|\n";
+  QString tableText = QString("arc length\tx\ty\t%1\t%2\n").arg(qtyALabel, qtyBLabel);
   for (int i = 0; i < arcLen.size(); i++)
     tableText += QString("%1\t%2\t%3\t%4\t%5\n").arg(arcLen[i], 0, 'g', 6).arg(xs[i], 0, 'g', 6).arg(ys[i], 0, 'g', 6).arg(aMags[i], 0, 'g', 6).arg(bMags[i], 0, 'g', 6);
   auto* table = new QPlainTextEdit(tableText, tabs);
@@ -2175,15 +2877,32 @@ void SolutionWindow::onIntegrateTriggered()
 {
   // femm.rc's "Integrate" is a standalone command distinct from "Finish
   // Contour" (which also shows the same result) -- kept as a thin alias
-  // onto the same contour-integral logic rather than a second
-  // implementation, since both operate on "the contour currently drawn."
-  // The classic GUI's own Integrate additionally supports integrating
-  // over an Area selection (energy, force, etc.) -- not implemented here
-  // yet, since that needs per-element J/sigma data this app doesn't
-  // currently extract from .ans (see the Areas tool's own simpler
-  // area+avg-|B| scope).
-  showContourIntegral();
+  // onto the same contour-integral logic when a contour is what's active,
+  // since both operate on "the contour currently drawn." Matches classic's
+  // own OnMenuIntegrate branching (EditAction==2 && bBlocksAreSelected)
+  // when the Areas tool has an active multi-block selection instead --
+  // see showAreaIntegral's comment for what's ported vs still deferred
+  // from classic's full 17-quantity Block Integral combo (IDD_BLOCKINT).
+  if (m_toolMode == SolutionToolMode::Area && m_item && m_item->hasBlockLabelSelection())
+    showAreaIntegral();
+  else
+    showContourIntegral();
 }
+
+// Known, documented gap found during the femm.rc dialog sweep: femm/
+// FemmviewView.cpp's OnMenuIntegrate has a second branch (GapIntegral,
+// IDD_GAPINTEGRAL/IDD_GAPPLOTDLG) reached "for any EditAction so long as
+// no other integration region has been defined and at least one Air Gap
+// Element exists" -- Torque/Force/Flux-linkage/etc. integrated via
+// Arkkio's method along a circular Air Gap Element arc, the standard way
+// classic FEMM gets rotating-machine torque without a full Maxwell-
+// stress-tensor mask. Not implemented here: unlike the already-deferred
+// stress-tensor Force/Torque (missing math only), this needs a new
+// geometry primitive from scratch -- "Air Gap Element" doesn't exist
+// anywhere in FemmProblem/GeometryScene today, so it's an editor-side
+// addition (a new entity type, its own properties dialog, PSLG/mesh
+// marker encoding) plus the Arkkio integral itself. A real future round,
+// not a menu-item-sized addition.
 
 void SolutionWindow::onReloadTriggered()
 {
@@ -2200,9 +2919,43 @@ void SolutionWindow::onDensityOptionsTriggered()
     QMessageBox::information(this, "Density Plot Options", "No solution loaded.");
     return;
   }
-  DensityPlotOptionsDialog dlg(m_item, this);
-  if (dlg.exec() == QDialog::Accepted)
+  // Triggering this via the Density Plot action itself (part of an
+  // exclusive QActionGroup) already auto-checked it before this slot
+  // runs -- remember whether Contour was actually active so a Cancel
+  // below can put the checkmark back where it belongs instead of leaving
+  // Density checked despite nothing having actually switched.
+  bool wasContour = m_item->plotMode() == MeshSolutionItem::PlotMode::Contour;
+  DensityPlotOptionsDialog dlg(m_item, m_view->legendVisible(), m_frequency != 0, this);
+  if (dlg.exec() == QDialog::Accepted) {
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+    if (m_densityAction)
+      m_densityAction->setChecked(true);
+    m_view->setLegendVisible(dlg.legendVisible());
+    m_view->updateAntialiasingForScale();
     m_view->refreshLegend();
+  } else if (wasContour && m_contourAction) {
+    m_contourAction->setChecked(true);
+  }
+}
+
+void SolutionWindow::onContourOptionsTriggered()
+{
+  if (!m_item) {
+    QMessageBox::information(this, "Contour Plot", "No solution loaded.");
+    return;
+  }
+  // See onDensityOptionsTriggered's identical reasoning.
+  bool wasDensity = m_item->plotMode() == MeshSolutionItem::PlotMode::Density;
+  ContourPlotOptionsDialog dlg(m_item, m_frequency != 0, this);
+  if (dlg.exec() == QDialog::Accepted) {
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Contour);
+    if (m_contourAction)
+      m_contourAction->setChecked(true);
+    m_view->updateAntialiasingForScale();
+    m_view->refreshLegend();
+  } else if (wasDensity && m_densityAction) {
+    m_densityAction->setChecked(true);
+  }
 }
 
 void SolutionWindow::onProblemInfoTriggered()
@@ -2213,32 +2966,61 @@ void SolutionWindow::onProblemInfoTriggered()
   }
   FemmProblem problem;
   QString error;
-  // .ans shares .fem's tag format for its header/property section (see
-  // FemmFileIO.h) -- readFem happily parses that part and silently skips
-  // the trailing [Solution] mesh data it doesn't recognize, so this is a
-  // full second file read but a cheap one relative to actually parsing
-  // the mesh (which is already loaded in m_solution anyway).
-  if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
+  // .ans shares its non-solved format's tag set for this header/property
+  // section (see FemmFileIO.h) -- readFem happily parses that part and
+  // silently skips the trailing [Solution] mesh data it doesn't
+  // recognize, so this is a full second file read but a cheap one
+  // relative to actually parsing the mesh (which is already loaded in
+  // m_solution anyway).
+  bool ok = FemmFileIO::readFem(m_currentPath, problem, error);
+  if (!ok) {
     QMessageBox::warning(this, "Problem Info", error);
     return;
   }
 
+  // Matches femm/FemmviewView.cpp's OnViewInfo exactly -- Title, Length
+  // Units, Problem Type (+ Depth only for Planar, omitted entirely for
+  // Axisymmetric), Frequency, mesh node/element counts. Classic doesn't
+  // show Precision or Materials/Boundaries/Circuits counts here at all
+  // (an earlier, unverified pass had added those) -- and writes this
+  // straight into the Output Window rather than a popup dialog; kept as
+  // a small OK dialog here (consistent with this app's other on-demand
+  // info displays) but ALSO echoed to the Output Window for parity with
+  // where classic actually puts it.
+  QString lengthUnitsText;
+  switch (problem.lengthUnits) {
+  case FemmLengthUnits::Inches: lengthUnitsText = "Inches"; break;
+  case FemmLengthUnits::Millimeters: lengthUnitsText = "Millimeters"; break;
+  case FemmLengthUnits::Centimeters: lengthUnitsText = "Centimeters"; break;
+  case FemmLengthUnits::Mils: lengthUnitsText = "Mils"; break;
+  case FemmLengthUnits::Microns: lengthUnitsText = "Micrometers"; break;
+  default: lengthUnitsText = "Meters"; break;
+  }
+  bool axisymmetric = problem.problemType == FemmCoordinateType::Axisymmetric;
+
   QDialog dlg(this);
   dlg.setWindowTitle("Problem Info");
   auto* form = new QFormLayout(&dlg);
-  form->addRow("File:", new QLabel(m_currentPath));
+  form->addRow("Title:", new QLabel(QFileInfo(m_currentPath).fileName()));
+  form->addRow("Length Units:", new QLabel(lengthUnitsText));
+  if (axisymmetric)
+    form->addRow("Problem Type:", new QLabel("Axisymmetric Solution"));
+  else
+    form->addRow("Problem Type:", new QLabel(QString("2-D Planar (Depth: %1)").arg(problem.depth, 0, 'g', 6)));
   form->addRow("Frequency:", new QLabel(QString("%1 Hz").arg(problem.frequency, 0, 'g', 6)));
-  form->addRow("Problem Type:", new QLabel(problem.problemType == FemmCoordinateType::Axisymmetric ? "Axisymmetric" : "Planar"));
-  form->addRow("Depth:", new QLabel(QString::number(problem.depth, 'g', 6)));
-  form->addRow("Precision:", new QLabel(QString::number(problem.precision, 'g', 3)));
-  form->addRow("Materials:", new QLabel(QString::number(problem.materialProps.size())));
-  form->addRow("Boundaries:", new QLabel(QString::number(problem.boundaryProps.size())));
-  form->addRow("Circuits:", new QLabel(QString::number(problem.circuitProps.size())));
-  form->addRow("Mesh nodes:", new QLabel(QString::number(m_solution.nodes.size())));
-  form->addRow("Mesh elements:", new QLabel(QString::number(m_solution.elements.size())));
+  form->addRow("Nodes:", new QLabel(QString::number(m_solution.nodes.size())));
+  form->addRow("Elements:", new QLabel(QString::number(m_solution.elements.size())));
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   form->addRow(buttons);
+
+  QString outputText = QString("Title: %1\nLength Units: %2\n%3\nFrequency: %4 Hz\n\n%5 Nodes\n%6 Elements")
+                            .arg(QFileInfo(m_currentPath).fileName(), lengthUnitsText,
+                                axisymmetric ? "Axisymmetric Solution" : QString("2-D Planar (Depth: %1)").arg(problem.depth, 0, 'g', 6))
+                            .arg(problem.frequency, 0, 'g', 6)
+                            .arg(m_solution.nodes.size())
+                            .arg(m_solution.elements.size());
+  appendOutput(outputText);
   dlg.exec();
 }
 
@@ -2292,8 +3074,13 @@ void SolutionWindow::onCircuitPropsTriggered()
     }
     QString text = QString("Total current = %1 Amps\nVoltage Drop = %2 Volts\nFlux Linkage = %3 Webers\n")
                        .arg(complexToString(r.amps), complexToString(r.voltsDrop), complexToString(r.fluxLinkage));
-    text += QString("Flux/Current = %1 Henries\nVoltage/Current = %2 Ohms\n")
-                .arg(complexToString(r.fluxLinkage / r.amps), complexToString(r.voltsDrop / r.amps));
+    // Matches femm/CircDlg.cpp's CCircDlg::OnSelchangeCircname exactly --
+    // these two ratio lines are skipped entirely (not shown as inf/nan)
+    // whenever the circuit's total current is zero.
+    if (r.amps != std::complex<double>(0, 0)) {
+      text += QString("Flux/Current = %1 Henries\nVoltage/Current = %2 Ohms\n")
+                  .arg(complexToString(r.fluxLinkage / r.amps), complexToString(r.voltsDrop / r.amps));
+    }
     if (problem.frequency == 0) {
       text += QString("Power = %1 Watts").arg(std::real(r.amps * r.voltsDrop), 0, 'g', 6);
     } else {
@@ -2394,6 +3181,64 @@ void SolutionWindow::onZoomNatural()
   m_view->updateAntialiasingForScale();
 }
 
+void SolutionWindow::onZoomWindowTriggered()
+{
+  m_view->startZoomWindow();
+}
+
+void SolutionWindow::onZoomWindowSelected(QRectF sceneRect)
+{
+  m_view->fitInViewSafe(sceneRect);
+  m_view->updateAntialiasingForScale();
+}
+
+void SolutionWindow::onKbdZoomTriggered()
+{
+  // Matches femm/FemmviewView.cpp's OnKbdZoom (IDD_KBDZOOM) -- see
+  // MainWindow::onKbdZoomTriggered's identical geometry-editor version for
+  // the full comment on reusing fitInViewSafe.
+  QRectF visible = m_view->mapToScene(m_view->viewport()->rect()).boundingRect();
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Set View Bounds");
+  auto* form = new QFormLayout(&dlg);
+  auto* leftEdit = new QLineEdit(QString::number(visible.left(), 'g', 6));
+  auto* rightEdit = new QLineEdit(QString::number(visible.right(), 'g', 6));
+  auto* topEdit = new QLineEdit(QString::number(visible.bottom(), 'g', 6));
+  auto* bottomEdit = new QLineEdit(QString::number(visible.top(), 'g', 6));
+  for (auto* e : {leftEdit, rightEdit, topEdit, bottomEdit})
+    e->setValidator(new QDoubleValidator(e));
+  form->addRow("Left:", leftEdit);
+  form->addRow("Right:", rightEdit);
+  form->addRow("Top:", topEdit);
+  form->addRow("Bottom:", bottomEdit);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  form->addRow(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  double x0 = leftEdit->text().toDouble();
+  double x1 = rightEdit->text().toDouble();
+  double y0 = topEdit->text().toDouble();
+  double y1 = bottomEdit->text().toDouble();
+  QRectF rect(qMin(x0, x1), qMin(y0, y1), qAbs(x1 - x0), qAbs(y1 - y0));
+  m_view->fitInViewSafe(rect);
+  m_view->updateAntialiasingForScale();
+}
+
+void SolutionWindow::onSetGridTriggered()
+{
+  // Per direct user request -- classic's own Grid Properties dialog shows
+  // a bare number with no unit indication at all.
+  QString label = QString("Grid Spacing (%1):").arg(lengthUnitsName(m_problemGeometry.lengthUnits));
+  bool ok = false;
+  double size = QInputDialog::getDouble(this, "Set Grid", label, m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
+  if (ok)
+    m_scene->setGridSize(size);
+}
+
 void SolutionWindow::onPanLeft()
 {
   auto* bar = m_view->horizontalScrollBar();
@@ -2427,6 +3272,17 @@ void SolutionWindow::onCopyBitmapTriggered()
   QPixmap pixmap = m_view->viewport()->grab();
   QApplication::clipboard()->setPixmap(pixmap);
   statusBar()->showMessage("Copied view to clipboard as a bitmap.");
+}
+
+void SolutionWindow::onPreferencesTriggered()
+{
+  bool wasDark = AppTheme::isDark();
+  PreferencesDialog dlg(this);
+  if (dlg.exec() == QDialog::Accepted && AppTheme::isDark() != wasDark) {
+    m_scene->setBackgroundBrush(AppTheme::background());
+    m_scene->update();
+    refreshToolbarIcons();
+  }
 }
 
 void SolutionWindow::onPrintTriggered()
@@ -2537,8 +3393,8 @@ void SolutionWindow::onOpenRecentFile()
     return;
   }
   // A recent-files entry might be a .fem (geometry, from MainWindow's own
-  // shared list) rather than a .ans/.ansx -- route it back to a geometry
-  // editor window instead of trying to open it here.
+  // shared list) rather than a solved .ans/.ansx -- route it back to a
+  // geometry editor window instead of trying to open it here.
   QString suffix = QFileInfo(path).suffix();
   if (suffix.compare("ans", Qt::CaseInsensitive) != 0 && suffix.compare("ansx", Qt::CaseInsensitive) != 0) {
     auto* window = new MainWindow();

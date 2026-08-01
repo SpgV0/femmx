@@ -682,7 +682,27 @@ void GeometryScene::updateArcItemGeometry(QGraphicsItem* item, int arcIndex)
   QPainterPath path;
   if (arcGeometry(a.x, a.y, b.x, b.y, arc.arcLength, cx, cy, R, startAngleDeg)) {
     path.moveTo(a.x, a.y);
-    path.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, arc.arcLength);
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was
+    // `arc.arcLength` (unnegated) -- confirmed live, with a debug print of
+    // QPainterPath::currentPosition() after arcTo(), that the path did NOT
+    // end at n1: a real 90-degree arc from a straight_wire_field.fem test
+    // file (n0=(20,0), n1=(0,20)) rendered ending at (0,-20) instead.
+    // startAngleDeg's own negation (see arcGeometry's comment) correctly
+    // compensates the STARTING point for this view's scale(1,-1) y-flip
+    // (GeometryView::GeometryView), but a plain-math-CCW sweep computed
+    // from y-up node coordinates becomes visually CW once that same flip
+    // is applied to the whole path -- so the sweep needs the identical
+    // compensation the start angle already gets. This went unnoticed all
+    // session because every arc actually exercised happened to be
+    // direction-insensitive: exactly 180 degrees (immune, since +180 and
+    // -180 land on the same point), or part of a heavily-overlapping,
+    // rotationally-symmetric multi-arc assembly (this same wire file's
+    // full circle) where one arc silently ending at the wrong point left
+    // no visible gap because another arc's stroke already covered that
+    // same screen position. Create Radius's fillet arc (a single,
+    // asymmetric, non-multiple-of-180 arc with nothing else nearby to
+    // mask it) is what actually exposed this.
+    path.arcTo(cx - R, cy - R, 2 * R, 2 * R, startAngleDeg, -arc.arcLength);
   }
   static_cast<QGraphicsPathItem*>(item)->setPath(path);
 }
@@ -735,6 +755,51 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     event->accept();
     return;
   }
+  if (event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::SelectCircle) {
+    m_selectCircleStartPos = event->scenePos();
+    if (!m_selectCircleItem) {
+      m_selectCircleItem = new QGraphicsEllipseItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_selectCircleItem->setPen(pen);
+      m_selectCircleItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_selectCircleItem);
+    }
+    m_selectCircleItem->setRect(QRectF(m_selectCircleStartPos, QSizeF(0, 0)));
+    m_selectCircleItem->setVisible(true);
+    event->accept();
+    return;
+  }
+  if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawRectangle) {
+    m_drawRectStartPos = snapPoint(event->scenePos());
+    if (!m_drawRectItem) {
+      m_drawRectItem = new QGraphicsRectItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_drawRectItem->setPen(pen);
+      m_drawRectItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_drawRectItem);
+    }
+    m_drawRectItem->setRect(QRectF(m_drawRectStartPos, QSizeF(0, 0)));
+    m_drawRectItem->setVisible(true);
+    event->accept();
+    return;
+  }
+  if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawCircle) {
+    m_drawCircleStartPos = snapPoint(event->scenePos());
+    if (!m_drawCircleItem) {
+      m_drawCircleItem = new QGraphicsEllipseItem();
+      QPen pen(Qt::darkGray, 0, Qt::DashLine);
+      pen.setCosmetic(true);
+      m_drawCircleItem->setPen(pen);
+      m_drawCircleItem->setZValue(1000.0); // always on top while dragging
+      addItem(m_drawCircleItem);
+    }
+    m_drawCircleItem->setRect(QRectF(m_drawCircleStartPos, QSizeF(0, 0)));
+    m_drawCircleItem->setVisible(true);
+    event->accept();
+    return;
+  }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     QGraphicsScene::mousePressEvent(event);
     return;
@@ -748,6 +813,23 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
   if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
     m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, event->scenePos()).normalized());
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::SelectCircle && m_selectCircleItem && m_selectCircleItem->isVisible()) {
+    double r = QLineF(m_selectCircleStartPos, event->scenePos()).length();
+    m_selectCircleItem->setRect(QRectF(m_selectCircleStartPos.x() - r, m_selectCircleStartPos.y() - r, 2 * r, 2 * r));
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawRectangle && m_drawRectItem && m_drawRectItem->isVisible()) {
+    m_drawRectItem->setRect(QRectF(m_drawRectStartPos, snapPoint(event->scenePos())).normalized());
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawCircle && m_drawCircleItem && m_drawCircleItem->isVisible()) {
+    double r = QLineF(m_drawCircleStartPos, snapPoint(event->scenePos())).length();
+    m_drawCircleItem->setRect(QRectF(m_drawCircleStartPos.x() - r, m_drawCircleStartPos.y() - r, 2 * r, 2 * r));
     event->accept();
     return;
   }
@@ -766,6 +848,62 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
     if (r.width() > 1e-9 && r.height() > 1e-9)
       emit zoomWindowSelected(r);
     setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's ZoomWndFlag reset
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::SelectCircle && m_selectCircleItem && m_selectCircleItem->isVisible()) {
+    double r = QLineF(m_selectCircleStartPos, event->scenePos()).length();
+    m_selectCircleItem->setVisible(false);
+    if (r > 1e-9)
+      selectByCircle(m_selectCircleStartPos, r);
+    setToolMode(GeometryToolMode::Select); // one-shot, mirrors FemmeView.cpp's SelectCircFlag reset
+    emit selectByCircleCompleted();
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawRectangle && m_drawRectItem && m_drawRectItem->isVisible()) {
+    QRectF r = QRectF(m_drawRectStartPos, snapPoint(event->scenePos())).normalized();
+    m_drawRectItem->setVisible(false);
+    if (r.width() > 1e-9 && r.height() > 1e-9) {
+      // Persistent tool (see the enum's own comment) -- stays active for
+      // the next rectangle, unlike ZoomWindow/SelectCircle above.
+      emit aboutToEdit();
+      int n0 = FemmProblemEdit::addNode(*m_problem, r.left(), r.top());
+      int n1 = FemmProblemEdit::addNode(*m_problem, r.right(), r.top());
+      int n2 = FemmProblemEdit::addNode(*m_problem, r.right(), r.bottom());
+      int n3 = FemmProblemEdit::addNode(*m_problem, r.left(), r.bottom());
+      addNodeItem(n0);
+      addNodeItem(n1);
+      addNodeItem(n2);
+      addNodeItem(n3);
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n0, n1));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n1, n2));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n2, n3));
+      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n3, n0));
+      emit problemEdited();
+    }
+    event->accept();
+    return;
+  }
+  if (m_toolMode == GeometryToolMode::DrawCircle && m_drawCircleItem && m_drawCircleItem->isVisible()) {
+    QPointF center = m_drawCircleStartPos;
+    double r = QLineF(center, snapPoint(event->scenePos())).length();
+    m_drawCircleItem->setVisible(false);
+    if (r > 1e-9) {
+      // Persistent tool, same as DrawRectangle above.
+      emit aboutToEdit();
+      int n0 = FemmProblemEdit::addNode(*m_problem, center.x() + r, center.y());
+      int n1 = FemmProblemEdit::addNode(*m_problem, center.x() - r, center.y());
+      addNodeItem(n0);
+      addNodeItem(n1);
+      // Two 180-degree arcs, reusing whatever mesh density Add Arc last
+      // used (or its own default) -- see the enum's own comment for why
+      // this exact node/arc layout matches the codebase's established
+      // "full circle" convention.
+      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n0, n1, 180.0, m_lastArcMaxSegDeg));
+      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n1, n0, 180.0, m_lastArcMaxSegDeg));
+      emit problemEdited();
+    }
     event->accept();
     return;
   }
@@ -1022,14 +1160,32 @@ bool GeometryScene::selectedEntities(FemmItemKind& kind, QVector<int>& indices) 
 void GeometryScene::setShowGrid(bool show)
 {
   m_showGrid = show;
-  update();
+  resetViewBackgroundCache();
 }
 
 void GeometryScene::setGridSize(double size)
 {
   if (size > 0)
     m_gridSize = size;
-  update();
+  resetViewBackgroundCache();
+}
+
+void GeometryScene::resetViewBackgroundCache()
+{
+  // GeometryView uses QGraphicsView::CacheBackground (see its constructor's
+  // comment) -- that cache only regenerates on a view transform/resize, not
+  // on a plain update() or even invalidate(QRectF(), BackgroundLayer)
+  // (confirmed live: a null/default QRectF did NOT expand to "whole scene"
+  // here the way QGraphicsScene::update()'s docs describe -- drawBackground
+  // was re-entered but with a near-zero-area rect, so the cached pixmap's
+  // stale "no grid" content was left untouched outside that sliver).
+  // QGraphicsView::resetCachedContent() is the API actually documented for
+  // this exact case ("content changes but items don't") and reliably forces
+  // a full redraw on the next paint.
+  for (QGraphicsView* view : views()) {
+    view->resetCachedContent();
+    view->viewport()->update();
+  }
 }
 
 QPointF GeometryScene::snapPoint(QPointF p) const
@@ -1136,6 +1292,48 @@ void GeometryScene::selectByGroup(int groupNumber)
   }
 }
 
+bool GeometryScene::selectByCircle(QPointF center, double radius)
+{
+  if (!m_problem)
+    return false;
+  clearSelection();
+  auto within = [&](double x, double y) { return QLineF(center, QPointF(x, y)).length() <= radius; };
+  bool foundAny = false;
+  const auto all = items();
+  for (QGraphicsItem* item : all) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    bool matches = false;
+    switch (kind) {
+    case FemmItemKind::Node:
+      matches = index >= 0 && index < m_problem->nodes.size() && within(m_problem->nodes[index].x, m_problem->nodes[index].y);
+      break;
+    case FemmItemKind::BlockLabel:
+      matches = index >= 0 && index < m_problem->blockLabels.size() && within(m_problem->blockLabels[index].x, m_problem->blockLabels[index].y);
+      break;
+    case FemmItemKind::Segment:
+      if (index >= 0 && index < m_problem->segments.size()) {
+        const FemmSegment& s = m_problem->segments[index];
+        if (s.n0 >= 0 && s.n0 < m_problem->nodes.size() && s.n1 >= 0 && s.n1 < m_problem->nodes.size())
+          matches = within(m_problem->nodes[s.n0].x, m_problem->nodes[s.n0].y) && within(m_problem->nodes[s.n1].x, m_problem->nodes[s.n1].y);
+      }
+      break;
+    case FemmItemKind::Arc:
+      if (index >= 0 && index < m_problem->arcSegments.size()) {
+        const FemmArcSegment& a = m_problem->arcSegments[index];
+        if (a.n0 >= 0 && a.n0 < m_problem->nodes.size() && a.n1 >= 0 && a.n1 < m_problem->nodes.size())
+          matches = within(m_problem->nodes[a.n0].x, m_problem->nodes[a.n0].y) && within(m_problem->nodes[a.n1].x, m_problem->nodes[a.n1].y);
+      }
+      break;
+    }
+    if (matches) {
+      item->setSelected(true);
+      foundAny = true;
+    }
+  }
+  return foundAny;
+}
+
 void GeometryScene::applyGroupToSelected(int groupNumber)
 {
   if (!m_problem)
@@ -1170,6 +1368,39 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
   QGraphicsScene::drawBackground(painter, rect);
   if (!m_showGrid || m_gridSize <= 0)
     return;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // request, following up on Set Grid's Cartesian/Polar combo (see
+  // MainWindow::onSetGridTriggered) actually changing what the grid looks
+  // like when Polar is selected, not just Enter Point's field labels and
+  // the status bar readout. Confirmed directly against femm/FemmeView.cpp
+  // (OnDraw's grid-drawing block, and the plain x/y snap in OnLButtonUp)
+  // that classic FEMM has no visual polar grid at all -- Coords/polar
+  // there never affects rendering or snapping, only those two read-outs
+  // -- so this is a new, deliberate addition (concentric rings spaced by
+  // the same Grid Size, spokes every 15 degrees), not a classic port.
+  if (m_problem && m_problem->coordsPolar) {
+    double maxR = std::hypot(std::max(std::abs(rect.left()), std::abs(rect.right())),
+        std::max(std::abs(rect.top()), std::abs(rect.bottom())));
+    int nRings = static_cast<int>(std::ceil(maxR / m_gridSize));
+    if (nRings > 2000) // matches the cartesian grid's own too-dense-to-draw bailout
+      return;
+    QPen gridPen(AppTheme::gridLine());
+    gridPen.setCosmetic(true);
+    gridPen.setWidthF(1.0);
+    painter->setPen(gridPen);
+    painter->setBrush(Qt::NoBrush);
+    for (int i = 1; i <= nRings; i++) {
+      double r = i * m_gridSize;
+      painter->drawEllipse(QPointF(0, 0), r, r);
+    }
+    constexpr int kNumSpokes = 24; // every 15 degrees
+    for (int i = 0; i < kNumSpokes; i++) {
+      double theta = i * 2.0 * M_PI / kNumSpokes;
+      painter->drawLine(QPointF(0, 0), QPointF(maxR * std::cos(theta), maxR * std::sin(theta)));
+    }
+    return;
+  }
 
   double x0 = std::floor(rect.left() / m_gridSize) * m_gridSize;
   double y0 = std::floor(rect.top() / m_gridSize) * m_gridSize;

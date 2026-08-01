@@ -28,6 +28,13 @@ void PlotXYChartWidget::setQuantity(Quantity q)
   update();
 }
 
+void PlotXYChartWidget::setTitles(const QString& aTitle, const QString& bTitle)
+{
+  m_aTitle = aTitle;
+  m_bTitle = bTitle;
+  update();
+}
+
 void PlotXYChartWidget::paintEvent(QPaintEvent*)
 {
   QPainter painter(this);
@@ -36,9 +43,9 @@ void PlotXYChartWidget::paintEvent(QPaintEvent*)
 
   QRectF full(0, 0, width(), height());
   if (m_quantity == Quantity::AMag)
-    paintSubplot(painter, full, m_aMag, "|A| along contour", QColor(0x4E, 0xC9, 0xB0));
+    paintSubplot(painter, full, m_aMag, m_aTitle, QColor(0x4E, 0xC9, 0xB0));
   else
-    paintSubplot(painter, full, m_bMag, "|B| along contour", QColor(0x00, 0x7A, 0xCC));
+    paintSubplot(painter, full, m_bMag, m_bTitle, QColor(0x00, 0x7A, 0xCC));
 }
 
 void PlotXYChartWidget::paintSubplot(QPainter& painter, const QRectF& rect, const QVector<double>& y, const QString& title, const QColor& color) const

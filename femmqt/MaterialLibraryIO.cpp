@@ -35,7 +35,7 @@ QVector<QString> splitFields(const QString& line)
   return out;
 }
 
-// Parses one <BeginBlock>...<EndBlock> material -- field set/tags match
+// Parses one <BeginBlock>...<EndBlock> material -- tags match
 // FemmFileIO.cpp's BlockProps case exactly (both ultimately mirror
 // femm/FemmeDoc.cpp's .fem writer for a CMaterialProp).
 bool readBlock(QTextStream& in, FemmMaterialProp& m)
@@ -92,8 +92,9 @@ bool readBlock(QTextStream& in, FemmMaterialProp& m)
   return false; // ran off the end of the file without <EndBlock>
 }
 
-// Parses the children of a folder (or the implicit top-level "folder")
-// until a matching <EndFolder> (or end of file, for the top level).
+// Parses the children of a matlib.dat folder (or the implicit top-level
+// "folder") until a matching <EndFolder> (or end of file, for the top
+// level).
 void readChildren(QTextStream& in, MaterialLibraryNode& node)
 {
   while (!in.atEnd()) {
@@ -119,12 +120,7 @@ void readChildren(QTextStream& in, MaterialLibraryNode& node)
         // MaterialLibraryNode::name is what populateTree() displays --
         // for a folder it comes from <FolderName>, but a block's own name
         // only ever lands in child.material.name (set by readBlock() from
-        // <BlockName>). Without this, every leaf material in the tree
-        // renders as a real, selectable, functional item with no visible
-        // text at all -- confirmed directly: clicking the blank row and
-        // hitting Add to Problem correctly added the right material by
-        // name, proving the data was always fine and only the tree
-        // display's copy of the name was missing.
+        // <BlockName>).
         child.name = child.material.name;
         node.children.push_back(child);
       }
@@ -134,16 +130,17 @@ void readChildren(QTextStream& in, MaterialLibraryNode& node)
 
 } // namespace
 
-bool MaterialLibraryIO::load(const QString& path, MaterialLibraryNode& root, QString& errorMessage)
+bool MaterialLibraryIO::load(const QString& matlibPath, MaterialLibraryNode& root, QString& errorMessage)
 {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    errorMessage = QStringLiteral("Could not open \"%1\" for reading.").arg(path);
-    return false;
-  }
   root = MaterialLibraryNode();
   root.isFolder = true;
-  QTextStream in(&file);
+
+  QFile matFile(matlibPath);
+  if (!matFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    errorMessage = QStringLiteral("Could not open \"%1\" for reading.").arg(matlibPath);
+    return false;
+  }
+  QTextStream in(&matFile);
   readChildren(in, root);
   return true;
 }

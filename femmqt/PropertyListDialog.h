@@ -6,14 +6,16 @@
 
 class QListWidget;
 
-// Generic list-management UI (Add New / Duplicate / Edit / Delete / Close)
-// shared by the Material/Boundary/Circuit/PointProp property libraries --
-// each is, at this UI layer, the same CRUD-over-a-named-list pattern; only
-// the item type and its edit dialog differ, so those are supplied as
+// Generic list-management UI (Add New / Edit / Delete / Close) shared by
+// the Material/Boundary/Circuit/PointProp property libraries -- each is,
+// at this UI layer, the same CRUD-over-a-named-list pattern; only the
+// item type and its edit dialog differ, so those are supplied as
 // callbacks instead of writing four nearly-identical QDialog subclasses.
 // Not templated on the item type itself (a QObject-derived class can't be
 // a class template in Qt without extra moc machinery) -- type erasure via
-// std::function is the simpler option here.
+// std::function is the simpler option here. Deliberately no "Duplicate"
+// button -- classic's own list dialog (femm/PtProp.h's CPtProp, IDD_PTPROP)
+// has exactly Add/Delete/Modify, nothing more.
 class PropertyListDialog : public QDialog {
   Q_OBJECT
 
@@ -25,7 +27,6 @@ class PropertyListDialog : public QDialog {
     // place; returns once the dialog closes (accepted or cancelled).
     std::function<void(int)> editAt;
     std::function<void()> addNew;
-    std::function<void(int)> duplicate;
     // Number of geometry entities (segments/arcs/block labels/nodes)
     // currently referencing the item at `index` -- shown in the delete
     // confirmation prompt so the user knows what un-assigning will affect.
@@ -41,7 +42,6 @@ class PropertyListDialog : public QDialog {
   private slots:
   void refreshList();
   void onAdd();
-  void onDuplicate();
   void onEdit();
   void onDelete();
 

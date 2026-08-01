@@ -54,4 +54,12 @@ QColor meshPointColor();
 // model.
 QColor densityOverlayColor();
 
+// Matches femm/FemmviewView.cpp's default RegionColor (RGB(120,220,120))
+// -- the solid fill PlotSelectedElm draws over every element belonging to
+// a block label selected via the Area tool, on top of whatever Density/
+// Contour plot is active. Classic makes this user-configurable via
+// GeneralPrefs; femmqt doesn't expose that (no Preferences UI hook for
+// it yet), so this is the fixed default only.
+QColor regionSelectionColor();
+
 } // namespace AppTheme

@@ -54,6 +54,7 @@ class MainWindow : public QMainWindow {
   void onPrintPreviewTriggered();
   void onPrintSetupTriggered();
   void onDeleteSelectedTriggered();
+  void onSelectByCircleTriggered();
   void onOpenSelectedTriggered();
   void onCopyBitmapTriggered();
   void onEntityDoubleClicked(FemmItemKind kind, int index);
@@ -62,6 +63,7 @@ class MainWindow : public QMainWindow {
   void onZoomNatural();
   void onZoomWindowTriggered();
   void onZoomWindowSelected(QRectF sceneRect);
+  void onKbdZoomTriggered();
   void onPanLeft();
   void onPanRight();
   void onPanUp();
@@ -82,6 +84,10 @@ class MainWindow : public QMainWindow {
   void onAboutTriggered();
   void onOpenRecentFile();
   void onMousePositionChanged(QPointF scenePos);
+  // Matches femm/FemmeView.cpp's EnterPoint() -- TAB while Add Node/Add
+  // Block Label is active (see GeometryView::enterPointRequested), types
+  // an exact coordinate instead of clicking one on the canvas.
+  void onEnterPointTriggered();
 
   private:
   bool saveAs(const QString& path);
@@ -111,6 +117,10 @@ class MainWindow : public QMainWindow {
   FemmProblem m_problem;
   QString m_currentPath;
   bool m_dirty = false;
+  // Updated by onMousePositionChanged; used as onEnterPointTriggered's
+  // starting point, matching femm/FemmeView.cpp's EnterPoint() defaulting
+  // to the cursor's current (mx, my).
+  QPointF m_lastMousePos;
 
   // A bounded undo stack (up to kMaxUndoSteps snapshots), unlike classic
   // FEMM's own CFemmeDoc::UpdateUndo/Undo (a single overwritten snapshot)
@@ -124,6 +134,8 @@ class MainWindow : public QMainWindow {
   QAction* m_addSegmentToolAction = nullptr;
   QAction* m_addArcToolAction = nullptr;
   QAction* m_addBlockLabelToolAction = nullptr;
+  QAction* m_addRectangleToolAction = nullptr;
+  QAction* m_addCircleToolAction = nullptr;
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;

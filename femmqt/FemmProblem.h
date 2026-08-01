@@ -13,6 +13,12 @@
 // MFC. Field names/semantics match the .fem text format exactly (see
 // FemmFileIO::readFem), which is the authoritative, shared contract with
 // femmx.exe, fkn.exe and triangle.exe -- not this struct's own layout.
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com: heat-flow (Round
+// 6) support was added and then removed again per direct user request
+// ("remove all the functionality regarding thermal problems in qt and
+// revert back to magnetics") -- femmqt is magnetics-only again, matching
+// the classic GUI's own scope for this app.
 
 struct FemmPointProp {
   QString name;
