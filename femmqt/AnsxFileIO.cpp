@@ -23,7 +23,16 @@ namespace {
 // other stale-cache case. Fine for a pure performance cache with no
 // independent data of its own to lose.
 //
-constexpr uint32_t kAnsxVersion = 3;
+// Modified by Claude (Anthropic), noreply@anthropic.com: 3 -> 4 adds
+// isExternal (see MeshSolutionElement's own comment) -- caught the exact
+// same way jRe/jIm was: a stale .ansx cache from before this field
+// existed silently left every element's isExternal at its 0/false
+// default, so the density-plot auto-range bug this fixes only reproduced
+// on a first/forced-fresh .ans load, never on a cached re-open, until the
+// version bump here made every pre-existing cache correctly stale.
+// 4 -> 5 adds rsqr (same MeshSolutionElement comment), needed for the
+// size-weighted auto-range heuristic alongside isExternal.
+constexpr uint32_t kAnsxVersion = 5;
 
 #pragma pack(push, 1)
 struct AnsxHeader {
@@ -80,10 +89,18 @@ struct AnsxElementRecord {
   // read, which showed correct numbers) -- see MeshSolutionElement's own
   // jRe/jIm comment.
   double jRe, jIm;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: see
+  // MeshSolutionElement::isExternal's own comment. int64_t (0/1), not
+  // bool, for the same fixed-8-byte-field alignment reason as p0/p1/p2/lbl
+  // above.
+  int64_t isExternal;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: see
+  // MeshSolutionElement::rsqr's own comment.
+  double rsqr;
 };
 #pragma pack(pop)
 static_assert(sizeof(AnsxNodeRecord) == 32, "AnsxNodeRecord must stay a fixed, packed layout");
-static_assert(sizeof(AnsxElementRecord) == 136, "AnsxElementRecord must stay a fixed, packed layout");
+static_assert(sizeof(AnsxElementRecord) == 152, "AnsxElementRecord must stay a fixed, packed layout");
 
 bool readHeader(QFile& file, AnsxHeader& header)
 {
@@ -183,6 +200,8 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
     rec.jSrcIm = e.jSrcIm;
     rec.jRe = e.jRe;
     rec.jIm = e.jIm;
+    rec.isExternal = e.isExternal ? 1 : 0;
+    rec.rsqr = e.rsqr;
     if (file.write(reinterpret_cast<const char*>(&rec), sizeof(rec)) != (qint64)sizeof(rec)) {
       errorMessage = QStringLiteral("Failed writing \"%1\" element data.").arg(ansxPath);
       return false;
@@ -253,6 +272,8 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
     e.jSrcIm = recs[i].jSrcIm;
     e.jRe = recs[i].jRe;
     e.jIm = recs[i].jIm;
+    e.isExternal = recs[i].isExternal != 0;
+    e.rsqr = recs[i].rsqr;
   }
 
   return true;

@@ -316,6 +316,21 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     }
   }
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com: matches femm/
+  // FemmviewDoc.cpp's own "catch the special case where _every_ element
+  // seems to be in an external region" fallback -- if excluding
+  // MeshSolutionElement::isExternal elements from the range below would
+  // leave nothing to search (a model that's somehow all ABC shell/
+  // Exterior Region, or just none of either), don't exclude anything
+  // rather than left qd.vMin/vMax at their default-constructed 0/0.
+  bool anyNonExternal = false;
+  for (const MeshSolutionElement& e : solution->elements) {
+    if (!e.isExternal) {
+      anyNonExternal = true;
+      break;
+    }
+  }
+
   // Precompute each node's average value (across every element touching
   // it -- see QuantityData's header comment for why) plus the min/max
   // range, for every DensityQuantity at once. Done once here rather than
@@ -328,14 +343,52 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     qd.nodeAvg.fill(0.0, solution->nodes.size());
     QVector<int> touchCount(solution->nodes.size(), 0);
     bool first = true;
+    // Size-weighted candidate score for vMax -- see MeshSolutionElement::
+    // rsqr's comment. -1 so even a genuine 0-valued mesh still picks a
+    // candidate on the first eligible element (weight is always >= 0).
+    double bestWeight = -1.0;
     for (const MeshSolutionElement& e : solution->elements) {
       double v = elementQuantity(e, q);
-      if (first) {
-        qd.vMin = qd.vMax = v;
-        first = false;
-      } else {
-        qd.vMin = std::min(qd.vMin, v);
-        qd.vMax = std::max(qd.vMax, v);
+      // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+      // user report ("compare the flux density in the old and new gui
+      // from .ansx they do not look similar") -- root-caused to exactly
+      // matching femm/FemmviewDoc.cpp's own isExt[] exclusion (see
+      // MeshSolutionElement::isExternal's comment): elements inside
+      // mi_makeABC's Kelvin-transform shells can compute a legitimately
+      // huge B (confirmed matching classic's own GetElementB/mo_getb
+      // exactly at the same point -- not a wrong-formula bug), which
+      // isn't a real physical flux density and shouldn't stretch the
+      // whole density plot's color range the way it was. Still
+      // contributes to nodeAvg below (still drawn, just not searched for
+      // the range), matching PlotFluxDensity's own behavior.
+      if (!(anyNonExternal && e.isExternal)) {
+        if (first) {
+          qd.vMin = v;
+          first = false;
+        } else {
+          qd.vMin = std::min(qd.vMin, v);
+        }
+        // Modified by Claude (Anthropic), noreply@anthropic.com: per the
+        // same user report -- excluding isExternal alone wasn't enough. A
+        // handful of small, awkwardly-shaped (but perfectly legitimate,
+        // non-external) elements right at this app's own geometry
+        // corners -- e.g. where a Draw Rectangle/Circle wedge's straight
+        // edge meets its arc -- computed a real-per-formula but locally
+        // spurious high B that a plain max() let dominate vMax, badly
+        // skewing the whole plot's color range toward one or two pixels'
+        // worth of area (confirmed live: elementCount for the top band
+        // was ~4x its neighbors', all clustered at a handful of tiny
+        // rects). femm/FemmviewDoc.cpp's own B_High search has exactly
+        // this same protection built in (a1 = sqrt(rsqr)*b*b candidate
+        // weighting, "discounts really small elements with really high
+        // flux density, which sometimes happens in corners") -- adapted
+        // here to femmqt's one-value-per-element model (classic's version
+        // uses nodal, not per-element, B).
+        double weight = std::sqrt(e.rsqr) * v * v;
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          qd.vMax = v;
+        }
       }
       for (int p : { e.p0, e.p1, e.p2 }) {
         if (p >= 0 && p < qd.nodeAvg.size()) {
@@ -744,7 +797,21 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
     lo = m_customLo[qIdx];
     hi = m_customHi[qIdx];
   } else {
+    // Modified by Claude (Anthropic), noreply@anthropic.com: see the
+    // constructor's identical isExternal exclusion for why -- mirrored
+    // here for this same range calculation's zoom-adaptive (visible-
+    // elements-only) variant. loIncl/hiIncl (every visible element,
+    // regardless of isExternal) is the fallback for the degenerate case
+    // where every currently-visible element happens to be external (e.g.
+    // zoomed into just the ABC shell region) -- matches the constructor's
+    // own "don't exclude anything if that would exclude everything".
     bool first = true;
+    bool firstIncl = true;
+    double loIncl = 0, hiIncl = 0;
+    // Size-weighted vMax candidates -- see the constructor's identical
+    // heuristic (MeshSolutionElement::rsqr's comment) for why hi/hiIncl
+    // aren't just plain max()s here either.
+    double bestWeight = -1.0, bestWeightIncl = -1.0;
     for (int ei : visible) {
       const MeshSolutionElement& e = m_solution->elements[ei];
       if (e.p0 < 0 || e.p0 >= m_solution->nodes.size() || e.p1 < 0 || e.p1 >= m_solution->nodes.size() || e.p2 < 0 || e.p2 >= m_solution->nodes.size())
@@ -761,15 +828,35 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       double v = m_smooth
           ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
           : elementQuantity(e, m_densityQuantity);
-      if (first) {
-        lo = hi = v;
-        first = false;
+      double weight = std::sqrt(e.rsqr) * v * v;
+      if (firstIncl) {
+        loIncl = v;
+        firstIncl = false;
       } else {
-        lo = std::min(lo, v);
-        hi = std::max(hi, v);
+        loIncl = std::min(loIncl, v);
+      }
+      if (weight > bestWeightIncl) {
+        bestWeightIncl = weight;
+        hiIncl = v;
+      }
+      if (!e.isExternal) {
+        if (first) {
+          lo = v;
+          first = false;
+        } else {
+          lo = std::min(lo, v);
+        }
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          hi = v;
+        }
       }
     }
-    if (first || hi <= lo) {
+    if (first) {
+      lo = loIncl;
+      hi = hiIncl;
+    }
+    if (firstIncl || hi <= lo) {
       lo = qd.vMin;
       hi = qd.vMax;
     }
@@ -1050,6 +1137,18 @@ void MeshSolutionItem::paintProblemGeometry(QPainter* painter, const QRectF& exp
   // own comment for why a single magenta/pink -- for BOTH segments and
   // arcs, not kept separately distinct -- is the fix rather than picking
   // yet another "safer" blue/teal shade.
+  // Modified by Claude (Anthropic), noreply@anthropic.com: segPath/arcPath
+  // below are stroke-only outlines (moveTo/lineTo per segment, an open
+  // subpath per entity) -- but QPainter::drawPath() both fills AND
+  // strokes by default, using whatever brush is currently set. Without
+  // this, the brush is left over from paintDensity()'s last-drawn band
+  // (a solid QColor, no alpha), so the network of crossing/closing
+  // segment+arc lines gets implicitly closed and flood-filled with that
+  // leftover color wherever the lines happen to enclose an area --
+  // confirmed live as the exact root cause of a solid-color area that
+  // precisely followed geometry boundaries and swallowed the real
+  // per-element density gradient underneath it.
+  painter->setBrush(Qt::NoBrush);
   QPen segPen(AppTheme::densityOverlayColor());
   segPen.setCosmetic(true);
   segPen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
