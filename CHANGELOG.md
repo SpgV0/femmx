@@ -1,24 +1,56 @@
-﻿26Jul2026 (v2.1.0)
+﻿01Aug2026 (v2.1.0)
 
-* `femmqt` gained thermal (heat-flow) problem support alongside its
-  existing magnetics support, sharing the same geometry, materials-
-  library workflow, and property-editing UI between the two physics
-  types -- draw once, solve magnetics, then assign thermal materials/
-  boundaries to the same nodes/segments/arcs/block labels and solve heat
-  flow too. Every entity's property dialog shows a second "(Heat Flow)"
-  field alongside its existing magnetics one rather than a separate mode
-  switch; the Problem menu gained parallel Heat Flow Materials/Boundary/
-  Point Properties commands and a Heat Flow Materials Library browsing
-  `heatlib.dat`. Reads/writes `.feh`/`.anh` (byte-for-byte verified
-  against real `hsolv`-produced files) and drives `hsolv.exe` through the
-  same `triangle.exe` mesh pipeline `fkn.exe` already uses. The Solution
-  Viewer's existing Density/Contour plots and Point/Contour/Area tools
-  now show temperature and heat flux for a solved heat-flow problem
-  (verified against a real solved model: Contour Plot rendered correct
-  isotherms, and a clicked point's heat-flux vector pointed radially
-  outward from the source, matching the underlying physics). Scoped
-  entirely to `femmqt` -- the classic MFC GUI and every solver executable
-  are unmodified.
+* `femmqt`'s Solution Viewer Density Plot had two rendering bugs on
+  models with an asymptotic open boundary (`mi_makeABC`'s Kelvin-
+  transform "u1".."u9" shells) or a nonlinear (BH-curve) material near
+  a current source, both found on a real 3-phase toroidal common-mode
+  choke model: (1) its auto-range search included the ABC shell's own
+  legitimately-huge-but-nonphysical flux density and a handful of tiny,
+  spuriously-high-value elements at sharp geometry corners, badly
+  skewing the color range -- fixed by porting `femm/FemmviewDoc.cpp`'s
+  own `isExt[]` exclusion and size-weighted (`sqrt(rsqr)*v^2`) candidate
+  weighting for the range search, matching classic FEMM's `GetBounds()`
+  exactly. (2) The geometry-outline overlay drawn on top of the density
+  plot never reset the painter's brush before stroking segment/arc
+  paths, so it inherited the last-drawn density band's solid fill color
+  and flood-filled it across whatever area the crisscrossing outline
+  lines happened to enclose, hiding the real per-element gradient
+  underneath -- fixed with an explicit `NoBrush`. Root-caused via a bulk
+  cross-check of every mesh element's flux density against classic
+  FEMM's own `mo_getb` (confirmed matching to numerical noise) and a
+  from-scratch reimplementation of femmqt's own coloring algorithm on
+  its own data (produced the correct gradient, proving the bug was in
+  the paint step, not the physics) -- verified live afterward against
+  classic FEMM's rendering of the same file at a matched color range.
+* `femmqt` gained a suite of geometry-editor and Solution Viewer
+  parity/bug-fix improvements against the classic GUI, found via an
+  icon-by-icon and dialog-by-dialog audit against `femm.rc` and the
+  classic source: Draw Rectangle and Draw Circle drag-based drawing
+  tools; Select by Circle; a real Rotate mode for Move/Copy (About
+  Point X/Y, angle, number of copies); Polar coordinate mode with a
+  matching Enter Point (Tab) dialog; Zoom Window and Zoom > Keyboard;
+  the Solution Viewer's missing left Navigate toolbar, Grid submenu,
+  Show Block Names, and Contour Plot Options dialog; full parity for
+  the Density Plot Options dialog (all 10 quantities, correctly gated
+  by AC vs. DC); Area tool selection highlighting (selected regions now
+  actually highlight, and Integrate sums across the whole multi-region
+  selection using the full 17-item Block Integral quantity list);
+  Circuit Props' divide-by-zero on a zero-amp circuit; a Line Integral
+  fix; corrected Problem Info fields; Point Properties gained mu_x/
+  mu_y/B.H. Real bugs fixed along the way: Create Radius left the
+  original edges undeleted-but-orphaned instead of trimming them to the
+  new fillet, arc rendering direction was never compensated for the
+  editor's y-flip (a rendering-only bug -- solves were always correct),
+  perfectly horizontal/vertical geometry segments were silently culled
+  from the Solution Viewer's overlay (a degenerate zero-area bounding
+  box), and Show Grid/grid-size/Cartesian-Polar changes plus the
+  Solution Viewer's hover tooltip stopped repainting correctly once
+  background caching was added for an earlier drag-trail fix.
+  Grid now defaults off and auto-sizes from the model's bounding box on
+  first open, and the Load Monitor's chart now follows Dark Theme
+  live. `femmqt` briefly gained, and then had fully reverted, thermal
+  (heat-flow) problem support during this cycle -- it remains
+  magnetics-only, matching the classic GUI's own scope.
 
 19Jul2026 (v2.0.0)
 

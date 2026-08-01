@@ -72,10 +72,12 @@
 // separate, manually-synced value: NSIS has its own preprocessor and
 // can't read a C header.
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-19:
-// bumped to v2.1.0 -- femmqt gained thermal (heat-flow) problem support
-// alongside its existing magnetics support, sharing geometry/materials/
-// boundary workflow between the two physics types (see CHANGELOG.md).
-// Not tagged yet -- version bump only, per explicit instruction.
+// bumped to v2.1.0. Not tagged yet at the time -- version bump only, per
+// explicit instruction.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-08-01:
+// v2.1.0 finalized and tagged -- the thermal support this bump originally
+// referenced was fully reverted in the meantime (femmqt is magnetics-only
+// again); see CHANGELOG.md for what's actually in this release.
 #define FEMMX_VERSION_MAJOR 2
 #define FEMMX_VERSION_MINOR 1
 #define FEMMX_VERSION_PATCH 0
