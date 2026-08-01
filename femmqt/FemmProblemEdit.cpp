@@ -328,6 +328,108 @@ void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, doubl
 }
 
 namespace {
+void rotatePoint(double& x, double& y, double aboutX, double aboutY, double cosT, double sinT)
+{
+  double dx = x - aboutX, dy = y - aboutY;
+  x = aboutX + dx * cosT - dy * sinT;
+  y = aboutY + dx * sinT + dy * cosT;
+}
+
+// True if block label `b`'s assigned material is a permanent magnet
+// (Hc != 0) -- matches femm/MOVECOPY.CPP's own blockproplist[j].H_c != 0
+// check, gating whether a rotation also bumps magDir.
+bool isPermanentMagnet(const FemmProblem& p, const FemmBlockLabel& b)
+{
+  return b.blockTypeIndex >= 1 && b.blockTypeIndex <= p.materialProps.size()
+      && p.materialProps[b.blockTypeIndex - 1].Hc != 0;
+}
+}
+
+void FemmProblemEdit::rotateSelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg)
+{
+  double t = angleDeg * M_PI / 180.0;
+  double cosT = std::cos(t), sinT = std::sin(t);
+  for (FemmNode& n : p.nodes)
+    if (n.isSelected)
+      rotatePoint(n.x, n.y, aboutX, aboutY, cosT, sinT);
+  for (FemmBlockLabel& b : p.blockLabels) {
+    if (!b.isSelected)
+      continue;
+    rotatePoint(b.x, b.y, aboutX, aboutY, cosT, sinT);
+    if (isPermanentMagnet(p, b))
+      b.magDir += angleDeg;
+  }
+}
+
+void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg, int nCopies)
+{
+  for (int nc = 0; nc < nCopies; nc++) {
+    double t = angleDeg * (nc + 1) * M_PI / 180.0;
+    double cosT = std::cos(t), sinT = std::sin(t);
+
+    // Old node index -> new node index, for remapping copied segments/arcs
+    // -- see copySelected's identical pattern/comment.
+    QHash<int, int> nodeMap;
+    int originalNodeCount = p.nodes.size();
+    for (int i = 0; i < originalNodeCount; i++) {
+      if (!p.nodes[i].isSelected)
+        continue;
+      FemmNode copy = p.nodes[i];
+      rotatePoint(copy.x, copy.y, aboutX, aboutY, cosT, sinT);
+      copy.isSelected = false;
+      nodeMap[i] = p.nodes.size();
+      p.nodes.push_back(copy);
+    }
+
+    int originalSegmentCount = p.segments.size();
+    for (int i = 0; i < originalSegmentCount; i++) {
+      const FemmSegment& s = p.segments[i];
+      if (!s.isSelected || !nodeMap.contains(s.n0) || !nodeMap.contains(s.n1))
+        continue;
+      FemmSegment copy = s;
+      copy.n0 = nodeMap[s.n0];
+      copy.n1 = nodeMap[s.n1];
+      copy.isSelected = false;
+      p.segments.push_back(copy);
+    }
+
+    int originalArcCount = p.arcSegments.size();
+    for (int i = 0; i < originalArcCount; i++) {
+      const FemmArcSegment& a = p.arcSegments[i];
+      if (!a.isSelected || !nodeMap.contains(a.n0) || !nodeMap.contains(a.n1))
+        continue;
+      FemmArcSegment copy = a;
+      copy.n0 = nodeMap[a.n0];
+      copy.n1 = nodeMap[a.n1];
+      copy.isSelected = false;
+      p.arcSegments.push_back(copy);
+    }
+
+    int originalBlockLabelCount = p.blockLabels.size();
+    for (int i = 0; i < originalBlockLabelCount; i++) {
+      if (!p.blockLabels[i].isSelected)
+        continue;
+      FemmBlockLabel copy = p.blockLabels[i];
+      rotatePoint(copy.x, copy.y, aboutX, aboutY, cosT, sinT);
+      if (isPermanentMagnet(p, copy))
+        copy.magDir += angleDeg * (nc + 1);
+      copy.isSelected = false;
+      p.blockLabels.push_back(copy);
+    }
+  }
+}
+
+void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy, int nCopies)
+{
+  // Each call only ever copies the ORIGINAL selection -- copySelected
+  // clears isSelected on every copy it creates, so looping this way
+  // reproduces femm/MOVECOPY.CPP's TranslateCopy exactly (copy i offset by
+  // (dx,dy)*(i+1)) without needing a second, separate implementation.
+  for (int nc = 0; nc < nCopies; nc++)
+    copySelected(p, dx * (nc + 1), dy * (nc + 1));
+}
+
+namespace {
 using Complex = std::complex<double>;
 
 // Mirrors CFemmeDoc::GetCircle (femm/FemmeDoc.cpp) -- same formula as
@@ -426,8 +528,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (segIdx.size() == 2) {
     // Two lines (femm/FemmeDoc.cpp's CreateRadius, "case 2").
-    const FemmSegment* seg0 = &p.segments[segIdx[0]];
-    const FemmSegment* seg1 = &p.segments[segIdx[1]];
+    FemmSegment* seg0 = &p.segments[segIdx[0]];
+    FemmSegment* seg1 = &p.segments[segIdx[1]];
     Complex p1 = (seg0->n0 == n) ? Complex(p.nodes[seg0->n1].x, p.nodes[seg0->n1].y) : Complex(p.nodes[seg0->n0].x, p.nodes[seg0->n0].y);
     Complex p2 = (seg1->n0 == n) ? Complex(p.nodes[seg1->n1].x, p.nodes[seg1->n1].y) : Complex(p.nodes[seg1->n0].x, p.nodes[seg1->n0].y);
 
@@ -453,6 +555,28 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, t1.real(), t1.imag());
     int n2idx = addNode(p, t2.real(), t2.imag());
+
+    // Modified by Claude (Anthropic), noreply@anthropic.com: deleteNode()
+    // below cascades and REMOVES any segment still referencing the
+    // deleted corner node `n` (see its own comment) -- seg0/seg1 must be
+    // rewired to terminate at the new trim points t1/t2 BEFORE that call,
+    // or both original edges vanish along with the corner instead of
+    // being trimmed. Confirmed live: without this, filleting a triangle
+    // corner deleted both adjoining edges, leaving only the new arc and
+    // an orphaned node. seg0/seg1 are raw pointers into p.segments, so
+    // mutating through them here is safe -- addNode() above may have
+    // reallocated the QVector, but segments and nodes are separate
+    // arrays, and neither addNode nor anything since has touched
+    // p.segments.
+    if (seg0->n0 == n)
+      seg0->n0 = n1idx;
+    else
+      seg0->n1 = n1idx;
+    if (seg1->n0 == n)
+      seg1->n0 = n2idx;
+    else
+      seg1->n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;
@@ -471,8 +595,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (segIdx.size() == 1 && arcIdx.size() == 1) {
     // One line, one arc (femm/FemmeDoc.cpp's CreateRadius, "case 0").
-    const FemmArcSegment& arc = p.arcSegments[arcIdx[0]];
-    const FemmSegment& seg = p.segments[segIdx[0]];
+    FemmArcSegment& arc = p.arcSegments[arcIdx[0]];
+    FemmSegment& seg = p.segments[segIdx[0]];
 
     Complex c;
     double rc;
@@ -532,6 +656,20 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, i1.real(), i1.imag());
     int n2idx = addNode(p, i2.real(), i2.imag());
+
+    // See the segIdx.size()==2 case above's comment -- deleteNode() below
+    // cascades and removes any segment/arc still referencing the deleted
+    // corner node, so seg and arc must be rewired to the new trim points
+    // (i1 on the line, i2 on the arc) first.
+    if (seg.n0 == n)
+      seg.n0 = n1idx;
+    else
+      seg.n1 = n1idx;
+    if (arc.n0 == n)
+      arc.n0 = n2idx;
+    else
+      arc.n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;
@@ -556,8 +694,8 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
   if (arcIdx.size() == 2) {
     // Two arcs (femm/FemmeDoc.cpp's CreateRadius, "case -2").
-    const FemmArcSegment& arc0 = p.arcSegments[arcIdx[0]];
-    const FemmArcSegment& arc1 = p.arcSegments[arcIdx[1]];
+    FemmArcSegment& arc0 = p.arcSegments[arcIdx[0]];
+    FemmArcSegment& arc1 = p.arcSegments[arcIdx[1]];
     Complex c1, c2;
     double r1, r2;
     if (!circleFromArc(p, arc0, c1, r1) || !circleFromArc(p, arc1, c2, r2))
@@ -614,6 +752,19 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
 
     int n1idx = addNode(p, i1.real(), i1.imag());
     int n2idx = addNode(p, i2.real(), i2.imag());
+
+    // See the segIdx.size()==2 case above's comment -- rewire arc0/arc1
+    // (i1 on arc0, i2 on arc1) to the new trim points before deleteNode()
+    // cascades and removes them.
+    if (arc0.n0 == n)
+      arc0.n0 = n1idx;
+    else
+      arc0.n1 = n1idx;
+    if (arc1.n0 == n)
+      arc1.n0 = n2idx;
+    else
+      arc1.n1 = n2idx;
+
     deleteNode(p, n);
     if (n1idx > n)
       n1idx--;

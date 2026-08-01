@@ -22,9 +22,32 @@ enum class GeometryToolMode {
   AddSegment,
   AddArc,
   AddBlockLabel,
+  // Persistent (like the 4 Add* tools above, not one-shot) -- drag between
+  // two diagonal corners to place an axis-aligned rectangle: 4 new nodes
+  // plus 4 new segments forming a closed loop. No classic FEMM precedent
+  // (its own editor only ever builds a rectangle out of manually-placed
+  // nodes/segments); a new, deliberate CAD-style convenience per direct
+  // user request.
+  DrawRectangle,
+  // Persistent -- drag from a center point out to the perimeter to place
+  // a circle: 2 new nodes (diametrically opposite, on the horizontal axis
+  // through the center) plus 2 new 180-degree arc segments connecting
+  // them, matching this codebase's own existing convention for a "full
+  // circle" (see e.g. test/results/straight_wire_field/
+  // straight_wire_field.fem's concentric circles, each built the same
+  // way) -- also the direction-insensitive angle (GeometryScene::
+  // drawBackground's arc-sweep-sign history), so which way the two nodes
+  // end up doesn't matter for correct rendering.
+  DrawCircle,
   // One-shot: next click-drag defines a rectangle to zoom into, then
   // reverts to Select -- mirrors FemmeView.cpp's OnZoomWnd/ZoomWndFlag.
   ZoomWindow,
+  // One-shot: next click-drag defines a circle (center = press point,
+  // radius = drag distance); on release, everything inside it is
+  // selected, then reverts to Select -- mirrors FemmeView.cpp's
+  // OnFDSelectCirc/SelectCircFlag. Toolbar-only in the classic GUI (no
+  // menu item), found missing during a full icon-by-icon toolbar audit.
+  SelectCircle,
 };
 
 // Editable rendering of a FemmProblem's geometry. Holds a non-owning
@@ -194,6 +217,15 @@ class GeometryScene : public QGraphicsScene {
   void selectByGroup(int groupNumber);
   void applyGroupToSelected(int groupNumber);
 
+  // Selects every node/block-label whose point falls within the given
+  // circle, and every segment/arc whose BOTH endpoint nodes do -- exact
+  // match to femm/FemmeView.cpp's OnLButtonUp SelectCircFlag==2 branch
+  // (its EditAction==4 case, since this app's Select mode isn't
+  // restricted to one entity type at a time the way classic's Node/
+  // Segment/Arc/Block toolbar modes are). Returns true if anything was
+  // selected. Used by GeometryToolMode::SelectCircle's one-shot drag.
+  bool selectByCircle(QPointF center, double radius);
+
   // Deletes one selected item (matching femm.rc's "Delete" -- see the
   // .cpp's comment on why this is one-item-per-call, same as the Delete
   // key's own handling in keyPressEvent, which now just forwards here).
@@ -242,6 +274,15 @@ class GeometryScene : public QGraphicsScene {
   // QGraphicsView and does the actual fitInView().
   void zoomWindowSelected(QRectF sceneRect);
 
+  // Emitted when a SelectCircle drag completes (the actual selection has
+  // already happened by this point, see selectByCircle) -- MainWindow
+  // uses this only to re-check its Select toolbar button, same reason
+  // onZoomWindowSelected does: the one-shot mode reverts the SCENE back
+  // to Select internally, but whichever Draw-toolbar QAction was checked
+  // before arming this tool (if not already Select) has no other way to
+  // find out it should un-check itself.
+  void selectByCircleCompleted();
+
   protected:
   void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
   void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
@@ -266,6 +307,7 @@ class GeometryScene : public QGraphicsScene {
   void addBlockLabelItem(int index);
   void updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex);
   void updateArcItemGeometry(QGraphicsItem* item, int arcIndex);
+  void resetViewBackgroundCache();
 
   FemmProblem* m_problem = nullptr;
   GeometryToolMode m_toolMode = GeometryToolMode::Select;
@@ -291,7 +333,13 @@ class GeometryScene : public QGraphicsScene {
   double m_lastArcAngleDeg = 90.0;
   double m_lastArcMaxSegDeg = 1.0;
 
-  bool m_showGrid = true; // matches femm.rc's IDR_FEMMETYPE Show Grid, CHECKED by default
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was `true`
+  // (matching femm.rc's IDR_FEMMETYPE Show Grid, checked by default) --
+  // per direct user request, femmqt now defaults Show Grid to OFF. Menu/
+  // toolbar checked-state is seeded from this same member (MainWindow's
+  // View > Grid > Show Grid and the Navigate toolbar button), so this one
+  // change covers both.
+  bool m_showGrid = false;
   bool m_snapToGrid = false;
   double m_gridSize = 1.0;
 
@@ -300,6 +348,19 @@ class GeometryScene : public QGraphicsScene {
 
   QGraphicsRectItem* m_zoomWindowRectItem = nullptr;
   QPointF m_zoomWindowStartPos;
+
+  QGraphicsEllipseItem* m_selectCircleItem = nullptr;
+  QPointF m_selectCircleStartPos;
+
+  // Rubber-band previews for DrawRectangle/DrawCircle -- same dashed-
+  // preview-item pattern as m_zoomWindowRectItem/m_selectCircleItem above,
+  // just committing real geometry into m_problem on release instead of
+  // zooming/selecting.
+  QGraphicsRectItem* m_drawRectItem = nullptr;
+  QPointF m_drawRectStartPos;
+
+  QGraphicsEllipseItem* m_drawCircleItem = nullptr;
+  QPointF m_drawCircleStartPos;
 
   // See snapshotOnceForDrag()'s own comment -- reset on every mouse
   // release so the NEXT drag gesture gets its own single snapshot.

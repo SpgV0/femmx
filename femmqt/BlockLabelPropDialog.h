@@ -29,6 +29,19 @@ class QCheckBox;
 // "<Multiple>" placeholder; accepting without changing it leaves each
 // label's existing material/circuit untouched, and picking any real
 // entry applies it to the whole batch same as any other field.
+//
+// Magnetization Direction is ONE field (m_magDir), matching classic's
+// single IDC_MAGDIR edit exactly (see OpBlkDlg.cpp's DDX_Text(pDX,
+// IDC_MAGDIR, m_magdir, m_magdirfctn) and luaDDX.cpp's Lua_DDX_Text) --
+// classic feeds the text through a throwaway Lua interpreter and keeps
+// whichever of {numeric result, raw text} it evaluates to. femmqt has no
+// Lua interpreter linked in (see the plan's MagDirFctn scope note), so
+// onAccept() uses a plain numeric-parse check instead: text that parses
+// as a number sets magDir and clears magDirFctn; anything else is stored
+// verbatim as magDirFctn (rendered using the block's scalar magDir as a
+// fallback -- see FemmBlockLabel::magDirFctn's own comment). This was
+// previously two separate line edits (a Qt-only addition beyond
+// classic's single field) -- merged back per the classic-parity pass.
 class BlockLabelPropDialog : public QDialog {
   Q_OBJECT
 
@@ -47,7 +60,6 @@ class BlockLabelPropDialog : public QDialog {
   QCheckBox* m_automesh = nullptr;
   QLineEdit* m_meshSize = nullptr;
   QLineEdit* m_magDir = nullptr;
-  QLineEdit* m_magDirFctn = nullptr;
   QLineEdit* m_turns = nullptr;
   QLineEdit* m_inGroup = nullptr;
   QCheckBox* m_isExternal = nullptr;

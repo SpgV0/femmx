@@ -2,6 +2,7 @@
 
 #include "GeometryScene.h"
 
+#include <QEvent>
 #include <QKeyEvent>
 #ifdef FEMMQT_HAVE_OPENGL
 #include <QOpenGLWidget>
@@ -122,6 +123,26 @@ void GeometryView::keyReleaseEvent(QKeyEvent* event)
   if (event->key() == Qt::Key_Shift && !event->isAutoRepeat())
     setDragMode(QGraphicsView::NoDrag);
   QGraphicsView::keyReleaseEvent(event);
+}
+
+bool GeometryView::event(QEvent* ev)
+{
+  // Matches femm/FemmeView.cpp's OnKeyDown: TAB while Node (EditAction 0)
+  // or Block (EditAction 2) mode is active opens "Enter Point" to type an
+  // exact coordinate instead of clicking one -- gated the same way here
+  // (AddNode/AddBlockLabel are this app's equivalent tool modes). See this
+  // method's header-comment for why Tab has to be caught at this level.
+  if (ev->type() == QEvent::KeyPress) {
+    auto* keyEvent = static_cast<QKeyEvent*>(ev);
+    if (keyEvent->key() == Qt::Key_Tab) {
+      auto* gs = qobject_cast<GeometryScene*>(scene());
+      if (gs && (gs->toolMode() == GeometryToolMode::AddNode || gs->toolMode() == GeometryToolMode::AddBlockLabel)) {
+        emit enterPointRequested();
+        return true;
+      }
+    }
+  }
+  return QGraphicsView::event(ev);
 }
 
 void GeometryView::showEvent(QShowEvent* event)

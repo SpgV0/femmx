@@ -19,17 +19,14 @@ PropertyListDialog::PropertyListDialog(const QString& title, const QString& item
   connect(m_list, &QListWidget::itemDoubleClicked, this, &PropertyListDialog::onEdit);
 
   auto* addBtn = new QPushButton("Add New", this);
-  auto* dupBtn = new QPushButton("Duplicate", this);
   auto* editBtn = new QPushButton("Edit...", this);
   auto* delBtn = new QPushButton("Delete", this);
   connect(addBtn, &QPushButton::clicked, this, &PropertyListDialog::onAdd);
-  connect(dupBtn, &QPushButton::clicked, this, &PropertyListDialog::onDuplicate);
   connect(editBtn, &QPushButton::clicked, this, &PropertyListDialog::onEdit);
   connect(delBtn, &QPushButton::clicked, this, &PropertyListDialog::onDelete);
 
   auto* buttonCol = new QVBoxLayout;
   buttonCol->addWidget(addBtn);
-  buttonCol->addWidget(dupBtn);
   buttonCol->addWidget(editBtn);
   buttonCol->addWidget(delBtn);
   buttonCol->addStretch();
@@ -63,16 +60,6 @@ void PropertyListDialog::refreshList()
 void PropertyListDialog::onAdd()
 {
   m_cb.addNew();
-  refreshList();
-  m_list->setCurrentRow(m_list->count() - 1);
-}
-
-void PropertyListDialog::onDuplicate()
-{
-  int row = m_list->currentRow();
-  if (row < 0)
-    return;
-  m_cb.duplicate(row);
   refreshList();
   m_list->setCurrentRow(m_list->count() - 1);
 }

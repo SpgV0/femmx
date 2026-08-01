@@ -1,0 +1,59 @@
+[Format]      =  1
+[Precision]   =  1e-08
+[GPUAccel]    =  0
+[MinAngle]    =  30
+[DoSmartMesh] =  1
+[Depth]       =  1
+[LengthUnits] =  millimeters
+[ProblemType] =  planar
+[Coordinates] =  cartesian
+[PrevSoln] = ""
+[dT] = 0
+[Comment]     =  "femmqt manual example -- a simple coil cross-section"
+[PointProps]   = 1
+  <BeginPoint>
+    <PointName> = "New Point Property"
+    <Tp> = 0
+    <qp> = 0
+  <EndPoint>
+[BdryProps]   = 1
+  <BeginBdry>
+    <BdryName> = "Ambient Air"
+    <BdryType> = 2
+    <Tset> = 0
+    <qs>   = 0
+    <beta> = 0
+    <h>    = 25
+    <Tinf> = 293
+    <TinfRad> = 0
+  <EndBdry>
+[BlockProps]  = 2
+  <BeginBlock>
+    <BlockName> = "Air"
+    <Kx> = 0
+    <Ky> = 0
+    <Kt> = 0
+    <qv> = 0
+  <EndBlock>
+  <BeginBlock>
+    <BlockName> = "Copper"
+    <Kx> = 401
+    <Ky> = 401
+    <Kt> = 3.4500000000000002
+    <qv> = 2000000
+  <EndBlock>
+[ConductorProps]  = 0
+[NumPoints] = 4
+0	0	0	0	0
+100	0	0	0	0
+100	60	0	0	0
+0	60	0	0	0
+[NumSegments] = 4
+0	1	-1	1	0	0	0
+1	2	-1	1	0	0	0
+2	3	-1	1	0	0	0
+3	0	-1	1	0	0	0
+[NumArcSegments] = 0
+[NumHoles] = 0
+[NumBlockLabels] = 1
+50	30	2	2	0	0

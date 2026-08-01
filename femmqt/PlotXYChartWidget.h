@@ -30,6 +30,11 @@ class PlotXYChartWidget : public QWidget {
   void setQuantity(Quantity q);
   Quantity quantity() const { return m_quantity; }
 
+  // Lets the caller relabel the two curves -- e.g. "Flux" instead of "A"
+  // for an axisymmetric problem (see SolutionWindow::onPlotXYTriggered),
+  // instead of the default "|A|"/"|B|" titles.
+  void setTitles(const QString& aTitle, const QString& bTitle);
+
   QSize sizeHint() const override { return QSize(560, 320); }
 
   protected:
@@ -42,4 +47,6 @@ class PlotXYChartWidget : public QWidget {
   QVector<double> m_aMag;
   QVector<double> m_bMag;
   Quantity m_quantity = Quantity::AMag;
+  QString m_aTitle = "|A| along contour";
+  QString m_bTitle = "|B| along contour";
 };

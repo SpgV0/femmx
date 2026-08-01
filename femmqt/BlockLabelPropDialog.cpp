@@ -83,16 +83,15 @@ BlockLabelPropDialog::BlockLabelPropDialog(const QVector<FemmBlockLabel*>& label
   connect(m_automesh, &QCheckBox::toggled, m_meshSize, [this](bool checked) { m_meshSize->setEnabled(!checked); });
   form->addRow("Mesh Size:", m_meshSize);
 
-  // No cross-label aggregation for these three, matching OpBlkDlg (which
+  // No cross-label aggregation for these two, matching OpBlkDlg (which
   // just takes the last selected label's raw values as a starting point,
   // no mixed-value detection) -- close enough here with the first.
+  // Single field, matching classic's one IDC_MAGDIR edit -- see this
+  // dialog's header comment for how a non-numeric entry becomes
+  // magDirFctn instead of magDir.
   FemmBlockLabel* rep = labels.first();
-  m_magDir = new QLineEdit(QString::number(rep->magDir, 'g', 17), this);
-  m_magDir->setValidator(new QDoubleValidator(m_magDir));
-  form->addRow("Magnetization Direction (deg):", m_magDir);
-
-  m_magDirFctn = new QLineEdit(rep->magDirFctn, this);
-  form->addRow("Mag. Direction Function (Lua, optional):", m_magDirFctn);
+  m_magDir = new QLineEdit(rep->magDirFctn.isEmpty() ? QString::number(rep->magDir, 'g', 17) : rep->magDirFctn, this);
+  form->addRow("Magnetization Direction:", m_magDir);
 
   m_turns = new QLineEdit(QString::number(rep->turns), this);
   m_turns->setValidator(new QIntValidator(-1000000, 1000000, m_turns));
@@ -146,7 +145,6 @@ void BlockLabelPropDialog::onMaterialChanged()
   m_automesh->setEnabled(enable);
   m_meshSize->setEnabled(enable && !m_automesh->isChecked());
   m_magDir->setEnabled(enable);
-  m_magDirFctn->setEnabled(enable);
   m_turns->setEnabled(enable);
   m_isExternal->setEnabled(enable);
   m_isDefault->setEnabled(enable && m_labels.size() == 1);
@@ -166,8 +164,14 @@ void BlockLabelPropDialog::onAccept()
     if (circuitTouched)
       l->circuitIndex = circIdx;
     l->maxArea = m_automesh->isChecked() ? 0.0 : (M_PI * std::pow(m_meshSize->text().toDouble(), 2) / 4.0);
-    l->magDir = m_magDir->text().toDouble();
-    l->magDirFctn = m_magDirFctn->text();
+    bool isNumeric = false;
+    double magDirValue = m_magDir->text().toDouble(&isNumeric);
+    if (isNumeric) {
+      l->magDir = magDirValue;
+      l->magDirFctn.clear();
+    } else {
+      l->magDirFctn = m_magDir->text();
+    }
     l->turns = m_turns->text().toInt();
     l->inGroup = m_inGroup->text().toInt();
     l->isExternal = m_isExternal->isChecked();

@@ -1,5 +1,8 @@
+#define _USE_MATH_DEFINES
+
 #include "MainWindow.h"
 
+#include "AnsFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
 #include "ArcPropDialog.h"
@@ -18,6 +21,7 @@
 #include "MaterialLibraryDialog.h"
 #include "MaterialPropDialog.h"
 #include "MeshOverlay.h"
+#include "MoveCopyDialog.h"
 #include "NodePropDialog.h"
 #include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
@@ -32,15 +36,19 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleValidator>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFormLayout>
 #include <QGraphicsView>
 #include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPageSetupDialog>
@@ -57,6 +65,8 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <cmath>
 
 namespace {
 // Generates "New <Base>"/"<Base> Copy", disambiguated with a trailing
@@ -79,6 +89,53 @@ QString uniqueName(const QVector<T>& list, const QString& base)
       return candidate;
   }
 }
+
+// Matches ProblemPropertiesDialog.cpp's m_lengthUnits combo text exactly
+// (same enum order), reused here so the Set Grid dialog's units label
+// reads the same word the user already picked in Problem Properties.
+QString lengthUnitsName(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return "Inches";
+  case FemmLengthUnits::Millimeters: return "Millimeters";
+  case FemmLengthUnits::Centimeters: return "Centimeters";
+  case FemmLengthUnits::Meters: return "Meters";
+  case FemmLengthUnits::Mils: return "Mils";
+  case FemmLengthUnits::Microns: return "Microns";
+  }
+  return QString();
+}
+
+// Per direct user request: right after a freshly-opened file's initial
+// Natural/fit-to-view zoom, pick a grid spacing so roughly 20 squares
+// span the model's larger dimension, snapped to a "nice" whole-number
+// step (1/2/5 x a power of ten -- the same progression axis tick marks
+// conventionally use) rather than an arbitrary fraction. Bottoms out at
+// 1 (a true integer, per the request) for any model whose full extent is
+// itself under ~20 units -- a sub-1 step would technically hit the
+// "~20 squares" target more precisely there, but wouldn't be a whole
+// number anymore.
+double niceIntegerGridSize(const QRectF& bounds)
+{
+  double extent = std::max(bounds.width(), bounds.height());
+  if (extent <= 0)
+    return 1.0;
+  double target = extent / 20.0;
+  if (target < 1.0)
+    return 1.0;
+  double magnitude = std::pow(10.0, std::floor(std::log10(target)));
+  double normalized = target / magnitude;
+  double nice;
+  if (normalized < 1.5)
+    nice = 1;
+  else if (normalized < 3.5)
+    nice = 2;
+  else if (normalized < 7.5)
+    nice = 5;
+  else
+    nice = 10;
+  return nice * magnitude;
+}
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -92,6 +149,7 @@ MainWindow::MainWindow(QWidget* parent)
   connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
   connect(m_scene, &GeometryScene::openSelectedRequested, this, &MainWindow::onOpenSelectedTriggered);
   connect(m_scene, &GeometryScene::zoomWindowSelected, this, &MainWindow::onZoomWindowSelected);
+  connect(m_scene, &GeometryScene::selectByCircleCompleted, this, [this]() { m_selectToolAction->setChecked(true); });
   connect(m_scene, &GeometryScene::aboutToEdit, this, &MainWindow::snapshotForUndo);
 
   m_view = new GeometryView(m_scene, this);
@@ -104,6 +162,7 @@ MainWindow::MainWindow(QWidget* parent)
   // in the .fem file with no transform bookkeeping of its own.
   m_view->scale(1, -1);
   setCentralWidget(m_view);
+  connect(m_view, &GeometryView::enterPointRequested, this, &MainWindow::onEnterPointTriggered);
 
   QMenu* fileMenu = menuBar()->addMenu("&File");
   fileMenu->addAction("&New", this, &MainWindow::onNewTriggered, QKeySequence::New);
@@ -181,6 +240,7 @@ MainWindow::MainWindow(QWidget* parent)
   viewMenu->addAction("Zoom &Out", this, &MainWindow::onZoomOut, QKeySequence(Qt::Key_PageDown));
   viewMenu->addAction("&Natural", this, &MainWindow::onZoomNatural, QKeySequence(Qt::Key_Home));
   viewMenu->addAction("&Window", this, &MainWindow::onZoomWindowTriggered);
+  viewMenu->addAction("&Keyboard", this, &MainWindow::onKbdZoomTriggered);
   viewMenu->addSeparator();
   viewMenu->addAction("Scroll &Left", this, &MainWindow::onPanLeft, QKeySequence(Qt::Key_Left));
   viewMenu->addAction("Scroll &Right", this, &MainWindow::onPanRight, QKeySequence(Qt::Key_Right));
@@ -274,6 +334,22 @@ MainWindow::MainWindow(QWidget* parent)
   m_addBlockLabelToolAction->setCheckable(true);
   toolGroup->addAction(m_addBlockLabelToolAction);
   connect(m_addBlockLabelToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddBlockLabel); });
+
+  // Per direct user request -- no classic FEMM precedent (see the enum's
+  // own comment), a new CAD-style convenience: drag out a rectangle/circle
+  // in one gesture instead of placing each node and connecting segment/
+  // arc by hand.
+  m_addRectangleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"), "Draw Rectangle");
+  m_addRectangleToolAction->setToolTip("Draw Rectangle -- drag between two diagonal corners");
+  m_addRectangleToolAction->setCheckable(true);
+  toolGroup->addAction(m_addRectangleToolAction);
+  connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
+
+  m_addCircleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_circle.svg"), "Draw Circle");
+  m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
+  m_addCircleToolAction->setCheckable(true);
+  toolGroup->addAction(m_addCircleToolAction);
+  connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
   HoverTooltip::installOn(toolBar);
 
   // Matches femm.rc's IDR_FEMMETYPE toolbar's edit/mesh/analyze section --
@@ -289,6 +365,12 @@ MainWindow::MainWindow(QWidget* parent)
   addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", "Undo the last operation", &MainWindow::onUndoTriggered);
   addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", "Open the properties dialog for the currently selected entity", &MainWindow::onOpenSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", "Delete the selected objects", &MainWindow::onDeleteSelectedTriggered);
+  // Matches femm.rc's IDR_FEMMETYPE toolbar's ID_FD_SELECTCIRC, right next
+  // to ID_SELECTWND (that one has no femmqt equivalent since it's just
+  // rubber-band drag-select, already the Select tool's default behavior)
+  // -- toolbar-only in the classic GUI, no menu item, found missing during
+  // a full icon-by-icon toolbar audit.
+  addThemedAction(editToolBar, ":/icons/select_circle.svg", "Select by Circle", "Drag out a circle -- everything inside it gets selected", &MainWindow::onSelectByCircleTriggered);
   editToolBar->addSeparator();
   addThemedAction(editToolBar, ":/icons/move.svg", "Move", "Move the selected objects", &MainWindow::onMoveSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/copy.svg", "Copy", "Copy the selected objects", &MainWindow::onCopySelectedTriggered);
@@ -354,7 +436,88 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::onMousePositionChanged(QPointF scenePos)
 {
-  m_positionLabel->setText(QString("x = %1, y = %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6));
+  m_lastMousePos = scenePos;
+  // Matches femm/FemmeView.cpp's OnMouseMove status-text format exactly:
+  // (x,y) for planar Cartesian, (r,z) for axisymmetric Cartesian, or
+  // (magnitude at angle) whenever Coords/coordsPolar is polar, regardless
+  // of problem type.
+  double x = scenePos.x(), y = scenePos.y();
+  if (!m_problem.coordsPolar) {
+    const char* label1 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "r" : "x";
+    const char* label2 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "z" : "y";
+    m_positionLabel->setText(QString("%1 = %2, %3 = %4").arg(label1).arg(x, 0, 'g', 6).arg(label2).arg(y, 0, 'g', 6));
+  } else {
+    double r = std::hypot(x, y);
+    double deg = std::atan2(y, x) * 180.0 / M_PI;
+    m_positionLabel->setText(QString("%1 at %2 deg").arg(r, 0, 'g', 6).arg(deg, 0, 'g', 6));
+  }
+}
+
+void MainWindow::onEnterPointTriggered()
+{
+  // Matches femm/FemmeView.cpp's EnterPoint()/IDD_ENTERPT exactly: two
+  // labeled fields whose meaning depends on coordsPolar (radius/degrees)
+  // or else problemType (x/y planar, r/z axisymmetric), defaulting to the
+  // cursor's last known position (converted to polar first if that's the
+  // active mode) the same way classic seeds m_coord1/m_coord2 from mx/my.
+  GeometryToolMode mode = m_scene->toolMode();
+  if (mode != GeometryToolMode::AddNode && mode != GeometryToolMode::AddBlockLabel)
+    return;
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Enter Point");
+  auto* form = new QFormLayout;
+
+  QString label1, label2;
+  double coord1, coord2;
+  if (!m_problem.coordsPolar) {
+    label1 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "r-coord" : "x-coord";
+    label2 = m_problem.problemType == FemmCoordinateType::Axisymmetric ? "z-coord" : "y-coord";
+    coord1 = m_lastMousePos.x();
+    coord2 = m_lastMousePos.y();
+  } else {
+    label1 = "radius";
+    label2 = "degrees";
+    coord1 = std::hypot(m_lastMousePos.x(), m_lastMousePos.y());
+    coord2 = std::atan2(m_lastMousePos.y(), m_lastMousePos.x()) * 180.0 / M_PI;
+  }
+
+  auto* coord1Edit = new QLineEdit(QString::number(coord1, 'g', 12), &dlg);
+  coord1Edit->setValidator(new QDoubleValidator(coord1Edit));
+  form->addRow(label1 + ":", coord1Edit);
+  auto* coord2Edit = new QLineEdit(QString::number(coord2, 'g', 12), &dlg);
+  coord2Edit->setValidator(new QDoubleValidator(coord2Edit));
+  form->addRow(label2 + ":", coord2Edit);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  double x, y;
+  if (!m_problem.coordsPolar) {
+    x = coord1Edit->text().toDouble();
+    y = coord2Edit->text().toDouble();
+  } else {
+    double r = coord1Edit->text().toDouble();
+    double deg = coord2Edit->text().toDouble();
+    x = r * std::cos(deg * M_PI / 180.0);
+    y = r * std::sin(deg * M_PI / 180.0);
+  }
+
+  snapshotForUndo();
+  if (mode == GeometryToolMode::AddNode)
+    FemmProblemEdit::addNode(m_problem, x, y);
+  else
+    FemmProblemEdit::addBlockLabel(m_problem, x, y);
+  m_scene->rebuild();
+  markEdited();
 }
 
 void MainWindow::onNewTriggered()
@@ -418,7 +581,9 @@ void MainWindow::openFile(const QString& path)
   m_problem = problem;
   m_currentPath = femPath;
   m_scene->setProblem(&m_problem);
-  m_view->fitInViewSafe(m_scene->computeProblemBounds());
+  QRectF problemBounds = m_scene->computeProblemBounds();
+  m_view->fitInViewSafe(problemBounds);
+  m_scene->setGridSize(niceIntegerGridSize(problemBounds));
   // After, not before, setProblem(): populating the scene calls setPos()
   // on every new NodeItem, which -- same as a real user drag -- fires
   // ItemPositionHasChanged -> onNodeMoved() -> problemEdited(), so a
@@ -671,12 +836,23 @@ void MainWindow::onDarkThemeToggled(bool dark)
   prefs.save();
   m_scene->refreshTheme();
   refreshToolbarIcons();
+  if (m_loadMonitor)
+    m_loadMonitor->refreshTheme();
 }
 
 void MainWindow::onLoadMonitorToggled(bool show)
 {
-  if (!m_loadMonitor)
+  if (!m_loadMonitor) {
     m_loadMonitor = new LoadMonitorDialog(this);
+    // Registers it with this window's docking system (per direct user
+    // request: "a floating window that can be attached in the main
+    // window") -- floating right away gives it the same default
+    // appearance the old always-separate dialog had; from there, Qt's
+    // own dock-widget title bar lets the user drag it into any of this
+    // window's dock areas, or back out again.
+    addDockWidget(Qt::RightDockWidgetArea, m_loadMonitor);
+    m_loadMonitor->setFloating(true);
+  }
   m_loadMonitor->setMonitoring(show);
 }
 
@@ -835,6 +1011,14 @@ void MainWindow::onDeleteSelectedTriggered()
   m_scene->deleteSelectedItem();
 }
 
+void MainWindow::onSelectByCircleTriggered()
+{
+  // Arms the one-shot drag; GeometryScene::mouseReleaseEvent does the
+  // actual selection and reverts back to Select mode itself, same pattern
+  // as onZoomWindowTriggered.
+  m_scene->setToolMode(GeometryToolMode::SelectCircle);
+}
+
 void MainWindow::onOpenSelectedTriggered()
 {
   FemmItemKind kind;
@@ -860,12 +1044,6 @@ void MainWindow::onMaterialsTriggered()
   cb.addNew = [this]() {
     FemmMaterialProp m;
     m.name = uniqueName(m_problem.materialProps, "New Material");
-    m_problem.materialProps.push_back(m);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmMaterialProp m = m_problem.materialProps[i];
-    m.name = uniqueName(m_problem.materialProps, m.name);
     m_problem.materialProps.push_back(m);
     markEdited();
   };
@@ -895,12 +1073,6 @@ void MainWindow::onBoundaryPropsTriggered()
     m_problem.boundaryProps.push_back(b);
     markEdited();
   };
-  cb.duplicate = [this](int i) {
-    FemmBoundaryProp b = m_problem.boundaryProps[i];
-    b.name = uniqueName(m_problem.boundaryProps, b.name);
-    m_problem.boundaryProps.push_back(b);
-    markEdited();
-  };
   cb.referenceCount = [this](int i) { return FemmProblemEdit::countBoundaryPropReferences(m_problem, i); };
   cb.remove = [this](int i) {
     FemmProblemEdit::deleteBoundaryProp(m_problem, i);
@@ -927,12 +1099,6 @@ void MainWindow::onCircuitsTriggered()
     m_problem.circuitProps.push_back(c);
     markEdited();
   };
-  cb.duplicate = [this](int i) {
-    FemmCircuitProp c = m_problem.circuitProps[i];
-    c.name = uniqueName(m_problem.circuitProps, c.name);
-    m_problem.circuitProps.push_back(c);
-    markEdited();
-  };
   cb.referenceCount = [this](int i) { return FemmProblemEdit::countCircuitPropReferences(m_problem, i); };
   cb.remove = [this](int i) {
     FemmProblemEdit::deleteCircuitProp(m_problem, i);
@@ -956,12 +1122,6 @@ void MainWindow::onPointPropsTriggered()
   cb.addNew = [this]() {
     FemmPointProp p;
     p.name = uniqueName(m_problem.pointProps, "New Point Property");
-    m_problem.pointProps.push_back(p);
-    markEdited();
-  };
-  cb.duplicate = [this](int i) {
-    FemmPointProp p = m_problem.pointProps[i];
-    p.name = uniqueName(m_problem.pointProps, p.name);
     m_problem.pointProps.push_back(p);
     markEdited();
   };
@@ -1076,6 +1236,42 @@ void MainWindow::onZoomWindowSelected(QRectF sceneRect)
   m_selectToolAction->setChecked(true);
 }
 
+void MainWindow::onKbdZoomTriggered()
+{
+  // Matches femm/FemmeView.cpp's OnKbdZoom (IDD_KBDZOOM): a numeric-entry
+  // alternative to Zoom > Window's mouse drag, prefilled with the current
+  // view bounds. Ends by reusing the exact same fitInViewSafe path Zoom
+  // Window uses -- only how the target rect is obtained differs.
+  QRectF visible = m_view->mapToScene(m_view->viewport()->rect()).boundingRect();
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Set View Bounds");
+  auto* form = new QFormLayout(&dlg);
+  auto* leftEdit = new QLineEdit(QString::number(visible.left(), 'g', 6));
+  auto* rightEdit = new QLineEdit(QString::number(visible.right(), 'g', 6));
+  auto* topEdit = new QLineEdit(QString::number(visible.bottom(), 'g', 6)); // scene is y-up (GeometryView::fitInViewSafe applies scale(1,-1)) -- bottom() is numerically the larger y, i.e. "Top" in problem space
+  auto* bottomEdit = new QLineEdit(QString::number(visible.top(), 'g', 6));
+  for (auto* e : {leftEdit, rightEdit, topEdit, bottomEdit})
+    e->setValidator(new QDoubleValidator(e));
+  form->addRow("Left:", leftEdit);
+  form->addRow("Right:", rightEdit);
+  form->addRow("Top:", topEdit);
+  form->addRow("Bottom:", bottomEdit);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  form->addRow(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  double x0 = leftEdit->text().toDouble();
+  double x1 = rightEdit->text().toDouble();
+  double y0 = topEdit->text().toDouble();
+  double y1 = bottomEdit->text().toDouble();
+  QRectF rect(qMin(x0, x1), qMin(y0, y1), qAbs(x1 - x0), qAbs(y1 - y0));
+  m_view->fitInViewSafe(rect);
+}
+
 void MainWindow::onPanLeft()
 {
   auto* bar = m_view->horizontalScrollBar();
@@ -1102,10 +1298,43 @@ void MainWindow::onPanDown()
 
 void MainWindow::onSetGridTriggered()
 {
-  bool ok = false;
-  double size = QInputDialog::getDouble(this, "Set Grid", "Grid Spacing:", m_scene->gridSize(), 1e-6, 1e6, 6, &ok);
-  if (ok)
-    m_scene->setGridSize(size);
+  // Matches femm/GRIDDLG.h's GRIDDLG exactly (CAPTION "Grid Properties"):
+  // Grid Size plus a Coordinates combo (Cartesian/Polar) -- the same
+  // coordsPolar flag EnterPoint() (onEnterPointTriggered) and the status
+  // bar's mouse-position readout (onMousePositionChanged) both read.
+  QDialog dlg(this);
+  dlg.setWindowTitle("Set Grid");
+  auto* form = new QFormLayout;
+
+  auto* sizeEdit = new QLineEdit(QString::number(m_scene->gridSize(), 'g', 12), &dlg);
+  sizeEdit->setValidator(new QDoubleValidator(1e-9, 1e9, 12, sizeEdit));
+  // Per direct user request -- classic's own Grid Properties dialog shows
+  // a bare number with no unit indication at all.
+  form->addRow(QString("Grid Size (%1):").arg(lengthUnitsName(m_problem.lengthUnits)), sizeEdit);
+
+  auto* coordsCombo = new QComboBox(&dlg);
+  coordsCombo->addItems({ "Cartesian", "Polar" });
+  coordsCombo->setCurrentIndex(m_problem.coordsPolar ? 1 : 0);
+  form->addRow("Coordinates:", coordsCombo);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  // setGridSize() unconditionally busts GeometryView's background cache
+  // (see GeometryScene::resetViewBackgroundCache()) -- relied on here to
+  // also repaint the Cartesian/Polar switch below, since that alone
+  // doesn't go through setShowGrid/setGridSize.
+  m_scene->setGridSize(sizeEdit->text().toDouble());
+  m_problem.coordsPolar = coordsCombo->currentIndex() == 1;
+  markEdited();
 }
 
 void MainWindow::snapshotForUndo()
@@ -1133,17 +1362,16 @@ void MainWindow::onMoveSelectedTriggered()
     QMessageBox::information(this, "Move", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double dx = QInputDialog::getDouble(this, "Move", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double dy = QInputDialog::getDouble(this, "Move", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  MoveCopyDialog dlg(/*isMove=*/true, this);
+  if (dlg.exec() != QDialog::Accepted)
     return;
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::moveSelected(m_problem, dx, dy);
+  if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
+    FemmProblemEdit::rotateSelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg());
+  else
+    FemmProblemEdit::moveSelected(m_problem, dlg.deltaX(), dlg.deltaY());
   m_scene->rebuild();
   markEdited();
 }
@@ -1154,17 +1382,16 @@ void MainWindow::onCopySelectedTriggered()
     QMessageBox::information(this, "Copy", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double dx = QInputDialog::getDouble(this, "Copy", "Delta X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double dy = QInputDialog::getDouble(this, "Copy", "Delta Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  MoveCopyDialog dlg(/*isMove=*/false, this);
+  if (dlg.exec() != QDialog::Accepted)
     return;
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::copySelected(m_problem, dx, dy);
+  if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
+    FemmProblemEdit::rotateCopySelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg(), dlg.numCopies());
+  else
+    FemmProblemEdit::translateCopySelected(m_problem, dlg.deltaX(), dlg.deltaY(), dlg.numCopies());
   m_scene->rebuild();
   markEdited();
 }
@@ -1433,7 +1660,8 @@ void MainWindow::onAboutTriggered()
 void MainWindow::updateTitle()
 {
   QString name = m_currentPath.isEmpty() ? QStringLiteral("Untitled") : m_currentPath;
-  setWindowTitle(QString("FEMMX (Qt) - Magnetics - %1%2").arg(name, m_dirty ? "*" : ""));
+  QString title = QString("FEMMX (Qt) - %1%2").arg(name, m_dirty ? "*" : "");
+  setWindowTitle(title);
 }
 
 QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)())
@@ -1456,6 +1684,8 @@ void MainWindow::refreshToolbarIcons()
   m_addSegmentToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_segment.svg"));
   m_addArcToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_arc.svg"));
   m_addBlockLabelToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_block_label.svg"));
+  m_addRectangleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"));
+  m_addCircleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_circle.svg"));
   for (const auto& entry : m_themedActions)
     entry.first->setIcon(IconTheme::themedToolIcon(entry.second));
 }

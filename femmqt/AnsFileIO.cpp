@@ -176,7 +176,9 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
     // sections in file order, and meshelem[k].lbl is used to index
     // blocklist directly with no adjustment there either.
     if (e.lbl >= 0 && e.lbl < problem.blockLabels.size()) {
-      int matIdx = problem.blockLabels[e.lbl].blockTypeIndex - 1; // 1-based -> 0-based
+      const FemmBlockLabel& blockLabel = problem.blockLabels[e.lbl];
+      e.isExternal = blockLabel.isExternal;
+      int matIdx = blockLabel.blockTypeIndex - 1; // 1-based -> 0-based
       if (matIdx >= 0 && matIdx < problem.materialProps.size()) {
         const FemmMaterialProp& mat = problem.materialProps[matIdx];
         e.muX = mat.muX;
@@ -184,6 +186,16 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
         e.sigma = mat.sigma;
         e.jSrcRe = mat.JsrcRe;
         e.jSrcIm = mat.JsrcIm;
+        // Matches femm/FemmviewDoc.cpp's own isExt[] detection: mi_makeABC
+        // (femm/femmeLua.cpp) names its Kelvin-transform shell materials
+        // "u1".."u9" -- see MeshSolutionElement::isExternal's own comment
+        // for why these need excluding from the auto-range the same way
+        // an explicitly-flagged Exterior Region block does.
+        if (!e.isExternal && mat.name.size() > 1 && mat.name[0] == QLatin1Char('u')) {
+          QChar c1 = mat.name[1];
+          if (c1 >= QLatin1Char('1') && c1 <= QLatin1Char('9'))
+            e.isExternal = true;
+        }
       }
     }
 
@@ -195,6 +207,14 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
 
     e.ctrX = (n0.x + n1.x + n2.x) / 3.0;
     e.ctrY = (n0.y + n1.y + n2.y) / 3.0;
+
+    // Matches femm/FemmviewDoc.cpp's rsqr -- see MeshSolutionElement's own
+    // comment.
+    e.rsqr = 0.0;
+    for (const MeshSolutionNode* n : { &n0, &n1, &n2 }) {
+      double d2 = (n->x - e.ctrX) * (n->x - e.ctrX) + (n->y - e.ctrY) * (n->y - e.ctrY);
+      e.rsqr = std::max(e.rsqr, d2);
+    }
 
     computeElementB(
         n0.x, n0.y, n0.Are, n0.Aim,

@@ -50,6 +50,38 @@ struct MeshSolutionElement {
   // conductor-area aggregation for current-specified ones) -- a real,
   // scoped follow-up, not attempted here as a partial/rushed version.
   double jRe = 0, jIm = 0;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: matches femm/
+  // FemmviewDoc.cpp's isExt[] (GetBounds -- "exclude external region from
+  // the extreme value calculation, otherwise flux in the external regions
+  // can give a spurious indication of limits"). True when the element's
+  // block label is flagged External, OR its material name matches
+  // mi_makeABC's own "u1".."u9" naming convention (femm/femmeLua.cpp) for
+  // its Kelvin-transform asymptotic boundary shells -- neither of which
+  // represents real, undistorted physical space, so a naive B = dA/dx
+  // there isn't a meaningful flux density (confirmed live: it can compute
+  // to several times the true field's peak, badly skewing the density
+  // plot's auto range even though the value matches classic FEMM's own
+  // GetElementB exactly -- classic just excludes it from MIN/MAX the same
+  // way this does, rather than computing it differently). Still rendered
+  // (this only affects auto-range, not what gets painted), matching
+  // PlotFluxDensity's own behavior.
+  bool isExternal = false;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: matches femm/
+  // FemmviewDoc.cpp's CElement::rsqr (GetBounds -- "max corner distance
+  // from centroid, squared") -- a per-element SIZE metric used, alongside
+  // isExternal above, to keep small/degenerate elements (common right at
+  // sharp geometric corners, e.g. where this app's Draw Rectangle/Circle
+  // wedge tools meet at a point) from setting the density plot's auto
+  // range on their own: classic weights each max-candidate by
+  // sqrt(rsqr)*value^2 rather than taking a plain max, so a tiny element
+  // with a spuriously large value (real per GetElementB's own formula,
+  // but not representative of anything you'd actually want the WHOLE
+  // plot's color scale stretched to accommodate) loses to a
+  // similar-or-lower value over a genuinely larger area. See
+  // SolutionView.cpp's identical adaptation of this same heuristic.
+  double rsqr = 0;
 };
 
 struct MeshSolution {

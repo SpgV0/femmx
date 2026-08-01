@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QWidget>
-#include <QDialog>
+#include <QDockWidget>
 #include <QVector>
 
 class QLabel;
@@ -61,7 +61,18 @@ class LoadMonitorChartWidget : public QWidget {
 // FEMM's fire-and-return interactive path -- this dialog's own QTimer can
 // only actually fire during that pumping, which is why that pumping loop
 // exists at all now (it didn't before this feature).
-class LoadMonitorDialog : public QDialog {
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com: QDockWidget
+// instead of QDialog, per direct user request ("a floating window that
+// can be attached in the main window") -- QMainWindow::addDockWidget
+// (see MainWindow::onLoadMonitorToggled) registers it with the main
+// window's docking system, and setFloating(true) right after gives it
+// the same default appearance as the old always-separate dialog; from
+// there Qt's own dock-widget title bar lets the user drag it into any
+// of the main window's dock areas, or back out again. The class name is
+// kept as-is (not renamed to e.g. LoadMonitorPanel) to avoid an
+// unrelated rename churning MainWindow.h/.cpp/CMakeLists.txt.
+class LoadMonitorDialog : public QDockWidget {
   Q_OBJECT
 
   public:
@@ -74,6 +85,14 @@ class LoadMonitorDialog : public QDialog {
   // femm/LoadMonitorDlg.h's MarkSolveStart/MarkSolveEnd.
   void markSolveStart(const QString& label);
   void markSolveEnd();
+
+  // The chart paints its background from AppTheme::background() directly
+  // (not the app palette QApplication::setPalette() already repaints
+  // everything else with), so it otherwise wouldn't pick up a live Dark
+  // Theme toggle until its next monitoring-driven update() -- called from
+  // MainWindow::onDarkThemeToggled so it repaints immediately like every
+  // other themed view does.
+  void refreshTheme();
 
   protected:
   void closeEvent(QCloseEvent* event) override;
