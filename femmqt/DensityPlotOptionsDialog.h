@@ -37,10 +37,15 @@ class DensityPlotOptionsDialog : public QDialog {
   using DensityQuantity = MeshSolutionItem::DensityQuantity;
 
   public:
-  // Kept in sync by hand with DensityQuantity's value count, same as
-  // MeshSolutionItem's own arrays (see that enum's comment). Public so
-  // the .cpp's file-scope quantity-label table can size itself off it.
-  static constexpr int kNumQuantities = 10;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was its own
+  // separately hand-synced "= 10" literal -- the exact same "kept in
+  // sync by hand" pattern this comment used to describe let
+  // MeshSolutionItem::m_quantityData drift out of sync with the enum
+  // when it grew from 6 to 10 values (a real crash, see
+  // MeshSolutionItem::kDensityQuantityCount's comment). Referencing that
+  // same constant here means there's only one number to update, not two
+  // that can silently disagree.
+  static constexpr int kNumQuantities = MeshSolutionItem::kDensityQuantityCount;
 
   // isAcSolution selects which of classic's two listtype combos to show
   // (matches ContourPlotOptionsDialog's identically-named parameter and

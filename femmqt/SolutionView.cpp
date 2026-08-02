@@ -337,7 +337,7 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
   // per-paint or per-quantity-switch, since paint() can run many times
   // (every pan/zoom) but the mesh itself never changes -- the whole
   // point of this precompute pass, same as the original |B|-only version.
-  for (int qi = 0; qi < 6; qi++) {
+  for (int qi = 0; qi < kDensityQuantityCount; qi++) {
     auto q = static_cast<DensityQuantity>(qi);
     QuantityData& qd = m_quantityData[qi];
     qd.nodeAvg.fill(0.0, solution->nodes.size());
