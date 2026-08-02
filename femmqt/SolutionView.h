@@ -114,6 +114,19 @@ class MeshSolutionItem : public QGraphicsItem {
   // persists these values (no .ans/.fem field, no QSettings key), so
   // reordering the existing 6 is safe.
   enum class DensityQuantity { BMag, BReMag, BImMag, HMag, HReMag, HImMag, JMag, JReMag, JImMag, LogBMag };
+  // Modified by Claude (Anthropic), noreply@anthropic.com: named count for
+  // DensityQuantity, used to size/fill m_quantityData below -- the enum
+  // grew from 6 to 10 values without this (still hardcoded as 6 in both
+  // places), leaving m_quantityData[6..9] both out of the fixed array's
+  // bounds AND never precomputed. Selecting |J|, Re(J), Im(J), or
+  // log10(|B|) in the Density Plot Options dialog read past the end of
+  // m_quantityData and dereferenced whatever garbage QVector<double>
+  // happened to be there -- confirmed live as a real crash (access
+  // violation reading an invalid address) via a Windows crash dump on a
+  // real model. A named constant kept in lockstep with the enum, rather
+  // than a second hardcoded number, is what actually prevents this class
+  // of bug from recurring the next time a quantity is added.
+  static constexpr int kDensityQuantityCount = 10;
   void setDensityQuantity(DensityQuantity q);
   DensityQuantity densityQuantity() const { return m_densityQuantity; }
 
@@ -288,9 +301,10 @@ class MeshSolutionItem : public QGraphicsItem {
     QVector<double> nodeAvg; // per-node average of touching elements' value -- see below for why
     double vMin = 0, vMax = 0;
   };
-  // Indexed by DensityQuantity's underlying int value -- kept in sync
-  // with that enum's value count by hand (6 now that HMag/JMag exist).
-  QuantityData m_quantityData[6];
+  // Indexed by DensityQuantity's underlying int value -- sized via
+  // kDensityQuantityCount (see its own comment) rather than a second
+  // hand-synced number.
+  QuantityData m_quantityData[kDensityQuantityCount];
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
   // the actual band range paintDensity() used the last time it ran --
