@@ -1,4 +1,17 @@
-﻿01Aug2026 (v2.1.0)
+﻿02Aug2026 (v2.1.1)
+
+* Fixed a `femmqt` crash selecting `|J|`, Re(J), Im(J), or `log10(|B|)`
+  in the Solution Viewer's Density Plot Options dialog. An earlier
+  change extending `DensityQuantity` from 6 to 10 values never updated
+  `MeshSolutionItem`'s fixed-size per-quantity precompute array or its
+  fill loop to match, so those 4 quantities read past the end of the
+  array and crashed. Found via a real user crash report and a Windows
+  crash dump; fixed by sizing/filling that array off a single named
+  constant instead of a second hand-synced number, and pointing the
+  dialog's own already-correct count at the same constant so the two
+  can't drift apart again.
+
+01Aug2026 (v2.1.0)
 
 * `femmqt`'s Solution Viewer Density Plot had two rendering bugs on
   models with an asymptotic open boundary (`mi_makeABC`'s Kelvin-
