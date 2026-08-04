@@ -7,6 +7,7 @@
 #include "MeshSolution.h"
 
 #include <QFile>
+#include <QHash>
 
 #include <algorithm>
 #include <cmath>
@@ -151,6 +152,13 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   bool axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
   double lengthConv = kLengthConv[(int)problem.lengthUnits];
   bool first = true;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: maps
+  // problem.materialProps index -> solution.nonlinearMaterials index, so
+  // the BH-curve slope solve (BHCurve::computeSlopes, real numerical
+  // work) runs once per unique nonlinear material rather than once per
+  // element referencing it -- same precompute-once rationale as B1/B2.
+  // See MeshSolutionElement::bhMaterialIndex.
+  QHash<int, int> bhIndexForMaterial;
   for (long i = 0; i < elemCount; i++) {
     line = file.readLine();
     const char* p = line.constData();
@@ -186,6 +194,28 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
         e.sigma = mat.sigma;
         e.jSrcRe = mat.JsrcRe;
         e.jSrcIm = mat.JsrcIm;
+        // Nonlinear (BH-curve) material -- see BHCurve.h. Scoped to the
+        // unlaminated (LamType==0) case that comment documents; laminated
+        // nonlinear materials fall through to the muX/muY placeholder
+        // above, same as before this fix (a documented gap, not silently
+        // guessed).
+        if (!mat.bhData.isEmpty() && mat.lamType == 0) {
+          auto it = bhIndexForMaterial.find(matIdx);
+          if (it == bhIndexForMaterial.end()) {
+            BHCurve::Curve curve;
+            curve.b.reserve(mat.bhData.size());
+            curve.h.reserve(mat.bhData.size());
+            for (const auto& pt : mat.bhData) {
+              curve.b.append(pt.first);
+              curve.h.append(pt.second);
+            }
+            BHCurve::computeSlopes(curve);
+            int newIdx = solution.nonlinearMaterials.size();
+            solution.nonlinearMaterials.append(curve);
+            it = bhIndexForMaterial.insert(matIdx, newIdx);
+          }
+          e.bhMaterialIndex = it.value();
+        }
         // Matches femm/FemmviewDoc.cpp's own isExt[] detection: mi_makeABC
         // (femm/femmeLua.cpp) names its Kelvin-transform shell materials
         // "u1".."u9" -- see MeshSolutionElement::isExternal's own comment
