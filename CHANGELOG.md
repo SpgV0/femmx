@@ -1,4 +1,30 @@
-﻿02Aug2026 (v2.1.1)
+﻿04Aug2026 (v2.1.2)
+
+* `femmqt`'s Solution Viewer Density Plot and Point Properties dialog
+  computed `|H|` (magnetic field intensity) wrong by 5-6 orders of
+  magnitude for nonlinear (BH-curve) materials -- `MeshSolutionElement::
+  muX/muY` are a linear-material-only placeholder (mu_r=1), so H was
+  computed as `B/(1*mu0)` regardless of the material's real, B-dependent
+  permeability. Found via a direct comparison against the classic GUI on
+  a real nanocrystalline-core toroidal choke model: classic reported
+  mu_r ~8.2 million at the tested point (`mo_getpointvalues`) where
+  femmqt's old formula implicitly used mu_r=1. Fixed by porting classic
+  FEMM's `CMaterialProp::GetSlopes`/`GetH` (natural cubic-Hermite-spline
+  BH-curve interpolation) for the real-valued (DC/magnetostatic),
+  unlaminated case (`femmqt/BHCurve.h`, new file) and wiring it through
+  every H-computation site via a shared `computeElementH()` helper.
+  Required extending the `.ansx` binary cache format (version 5 -> 6) to
+  persist each element's resolved BH-curve material index and the
+  solved slope data, so the fix also applies on the fast cached-load
+  path, not just a fresh `.ans` import -- verified live: `|H|` at a
+  fixed test point went from an incorrect 23317.5 A/m to the correct
+  0.00284 A/m, matching classic's mu_r ~8.2 million ground truth to
+  within numerical precision. AC/harmonic, laminated, and
+  permanent-magnet nonlinear materials remain on the old placeholder
+  formula, a documented, explicitly scoped gap (see `BHCurve.h`'s own
+  comment), not silently approximated.
+
+02Aug2026 (v2.1.1)
 
 * Fixed a `femmqt` crash selecting `|J|`, Re(J), Im(J), or `log10(|B|)`
   in the Solution Viewer's Density Plot Options dialog. An earlier

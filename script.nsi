@@ -54,10 +54,14 @@ Unicode True
 !include MUI2.nsh
 !include LogicLib.nsh
 !define PROJECT_NAME "FEMMX"
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-08-04:
+; bumped to v2.1.2 -- fixes femmqt's Density Plot H (magnetic field
+; intensity) being wrong by orders of magnitude for nonlinear (BH-curve)
+; materials (see CHANGELOG.md).
 ; Single source of truth for the installer's own display/file version --
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
-!define PROJECT_VERSION "2.1.1"
+!define PROJECT_VERSION "2.1.2"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
