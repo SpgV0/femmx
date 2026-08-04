@@ -32,7 +32,20 @@ namespace {
 // version bump here made every pre-existing cache correctly stale.
 // 4 -> 5 adds rsqr (same MeshSolutionElement comment), needed for the
 // size-weighted auto-range heuristic alongside isExternal.
-constexpr uint32_t kAnsxVersion = 5;
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com: 5 -> 6 adds
+// bhMaterialIndex (AnsxElementRecord) plus a new variable-length section
+// after the element records for MeshSolution::nonlinearMaterials itself
+// (see BHCurve.h) -- same "stale cache silently keeps old/wrong data"
+// risk as every version bump above: without it, a .ansx cached before
+// this fix existed would keep serving the WRONG (linear-placeholder)
+// H field for nonlinear materials indefinitely, since bhMaterialIndex
+// would silently read back as 0 (from zero-filled old records) instead
+// of -1, and readAnsx wouldn't know to interpret it as "no nonlinear
+// material" -- confirmed as the actual reason a first attempt at this
+// fix appeared not to work at all when tested live (a stale .ansx from
+// before bhMaterialIndex existed, not a logic bug in the fix itself).
+constexpr uint32_t kAnsxVersion = 6;
 
 #pragma pack(push, 1)
 struct AnsxHeader {
@@ -47,9 +60,14 @@ struct AnsxHeader {
   uint64_t sourceMtimeSecs; // source .ans's mtime, for the staleness check
   uint64_t nodeCount;
   uint64_t elementCount;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: number of
+  // MeshSolution::nonlinearMaterials entries in the variable-length
+  // section written after the (fixed-size) element records -- see
+  // BHCurve.h and kAnsxVersion's own comment.
+  uint64_t nonlinearMaterialCount;
 };
 #pragma pack(pop)
-static_assert(sizeof(AnsxHeader) == 80, "AnsxHeader must stay a fixed, packed layout");
+static_assert(sizeof(AnsxHeader) == 88, "AnsxHeader must stay a fixed, packed layout");
 
 // Node/element record layouts, kept deliberately separate from
 // MeshSolutionNode/MeshSolutionElement (MeshSolution.h) even though
@@ -97,10 +115,17 @@ struct AnsxElementRecord {
   // Modified by Claude (Anthropic), noreply@anthropic.com: see
   // MeshSolutionElement::rsqr's own comment.
   double rsqr;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: see
+  // MeshSolutionElement::bhMaterialIndex's own comment. Indexes the new
+  // nonlinearMaterials section written after all element records (below)
+  // -- -1 (not 0) means "no nonlinear material", so this deliberately
+  // does NOT default to a valid-looking index if ever read from a
+  // zero-filled/stale buffer.
+  int64_t bhMaterialIndex;
 };
 #pragma pack(pop)
 static_assert(sizeof(AnsxNodeRecord) == 32, "AnsxNodeRecord must stay a fixed, packed layout");
-static_assert(sizeof(AnsxElementRecord) == 152, "AnsxElementRecord must stay a fixed, packed layout");
+static_assert(sizeof(AnsxElementRecord) == 160, "AnsxElementRecord must stay a fixed, packed layout");
 
 bool readHeader(QFile& file, AnsxHeader& header)
 {
@@ -159,6 +184,7 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
   header.sourceMtimeSecs = (uint64_t)ansInfo.lastModified().toSecsSinceEpoch();
   header.nodeCount = (uint64_t)solution.nodes.size();
   header.elementCount = (uint64_t)solution.elements.size();
+  header.nonlinearMaterialCount = (uint64_t)solution.nonlinearMaterials.size();
 
   if (file.write(reinterpret_cast<const char*>(&header), sizeof(header)) != (qint64)sizeof(header)) {
     errorMessage = QStringLiteral("Failed writing \"%1\" header.").arg(ansxPath);
@@ -202,9 +228,31 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
     rec.jIm = e.jIm;
     rec.isExternal = e.isExternal ? 1 : 0;
     rec.rsqr = e.rsqr;
+    rec.bhMaterialIndex = e.bhMaterialIndex;
     if (file.write(reinterpret_cast<const char*>(&rec), sizeof(rec)) != (qint64)sizeof(rec)) {
       errorMessage = QStringLiteral("Failed writing \"%1\" element data.").arg(ansxPath);
       return false;
+    }
+  }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: variable-length
+  // section, one BH curve per solution.nonlinearMaterials entry -- each a
+  // point count followed by that many (b, h, slope) triples, all as raw
+  // doubles (no per-value formatting/parsing, same bulk-I/O spirit as the
+  // fixed-size sections above, just not fixed-size itself since different
+  // materials can have different numbers of BH points).
+  for (const BHCurve::Curve& curve : solution.nonlinearMaterials) {
+    uint64_t n = (uint64_t)curve.b.size();
+    if (file.write(reinterpret_cast<const char*>(&n), sizeof(n)) != (qint64)sizeof(n)) {
+      errorMessage = QStringLiteral("Failed writing \"%1\" BH curve data.").arg(ansxPath);
+      return false;
+    }
+    for (const QVector<double>* arr : { &curve.b, &curve.h, &curve.slope }) {
+      qint64 bytes = (qint64)n * sizeof(double);
+      if (arr->size() != (int)n || file.write(reinterpret_cast<const char*>(arr->constData()), bytes) != bytes) {
+        errorMessage = QStringLiteral("Failed writing \"%1\" BH curve data.").arg(ansxPath);
+        return false;
+      }
     }
   }
 
@@ -274,6 +322,28 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
     e.jIm = recs[i].jIm;
     e.isExternal = recs[i].isExternal != 0;
     e.rsqr = recs[i].rsqr;
+    e.bhMaterialIndex = (int)recs[i].bhMaterialIndex;
+  }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: read back the
+  // variable-length BH curve section written above -- see writeAnsx's
+  // matching comment.
+  solution.nonlinearMaterials.resize((int)header.nonlinearMaterialCount);
+  for (uint64_t i = 0; i < header.nonlinearMaterialCount; i++) {
+    uint64_t n = 0;
+    if (file.read(reinterpret_cast<char*>(&n), sizeof(n)) != (qint64)sizeof(n)) {
+      errorMessage = QStringLiteral("\"%1\" is truncated (BH curve data).").arg(ansxPath);
+      return false;
+    }
+    BHCurve::Curve& curve = solution.nonlinearMaterials[(int)i];
+    for (QVector<double>* arr : { &curve.b, &curve.h, &curve.slope }) {
+      arr->resize((int)n);
+      qint64 bytes = (qint64)n * sizeof(double);
+      if (n > 0 && file.read(reinterpret_cast<char*>(arr->data()), bytes) != bytes) {
+        errorMessage = QStringLiteral("\"%1\" is truncated (BH curve data).").arg(ansxPath);
+        return false;
+      }
+    }
   }
 
   return true;

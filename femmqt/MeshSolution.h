@@ -1,5 +1,7 @@
 #pragma once
 
+#include "BHCurve.h"
+
 #include <QVector>
 
 // Solved-mesh data read from a .ans file (femm/FemmviewDoc.cpp's
@@ -36,6 +38,15 @@ struct MeshSolutionElement {
   double muX = 1, muY = 1;
   double sigma = 0;
   double jSrcRe = 0, jSrcIm = 0;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: index into
+  // MeshSolution::nonlinearMaterials, or -1 for a linear material (use
+  // muX/muY above instead) -- see BHCurve.h for why muX/muY alone are
+  // wrong for a real (BHpoints>0) nonlinear material and what this
+  // fixes. Deduplicated across elements sharing the same material (the
+  // BH slope solve happens once per unique material at load time, not
+  // once per element).
+  int bhMaterialIndex = -1;
 
   // Total current density (source + induced eddy current), precomputed
   // the same way B1/B2 are -- unlike H (a pointwise function of B, muX,
@@ -91,4 +102,8 @@ struct MeshSolution {
   // |B| = sqrt(|B1|^2+|B2|^2) extremes across all elements, precomputed
   // once for the density plot's legend range.
   double bMagMin = 0, bMagMax = 0;
+
+  // One entry per unique nonlinear material referenced by any element --
+  // see MeshSolutionElement::bhMaterialIndex and BHCurve.h.
+  QVector<BHCurve::Curve> nonlinearMaterials;
 };

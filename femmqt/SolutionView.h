@@ -95,12 +95,15 @@ class MeshSolutionItem : public QGraphicsItem {
   // AnsFileIO::readAns now resolves and bakes both into every
   // MeshSolutionElement (see that struct's own comment). H = B/(mu*mu0)
   // is exact for linear, unlaminated, non-permanent-magnet materials
-  // (BHpoints==0, LamType==0/LamFill==1, H_c==0) -- femm/Problem.cpp's
-  // CMaterialProp::GetMu has additional cases (nonlinear BH-curve
-  // materials, laminations, incremental permeability for DC-offset AC
-  // problems) not ported here; see elementQuantity()'s .cpp comment for
-  // why that's a separate, larger follow-up rather than a silently-wrong
-  // approximation for those material types. J = total current density
+  // (BHpoints==0, LamType==0/LamFill==1, H_c==0). Nonlinear (BHpoints>0),
+  // unlaminated, DC (real-valued) materials are now also exact -- see
+  // BHCurve.h and elementQuantity()'s .cpp comment -- ported from femm/
+  // Problem.cpp's CMaterialProp::GetSlopes/GetH/GetMu. Still NOT ported
+  // (a separate, larger follow-up, not a silently-wrong approximation
+  // for those material types -- see BHCurve.h's own scope note): AC/
+  // harmonic nonlinear materials, laminated nonlinear materials,
+  // incremental permeability for DC-offset AC problems, and permanent-
+  // magnet (H_c != 0) coercive-force shifting. J = total current density
   // (source + eddy + solved circuit correction, femm/FemmviewDoc.cpp's
   // GetJA, ported faithfully including the circuit term since it reads
   // fkn.exe's own solved output rather than re-deriving it) -- MA/m^2,
