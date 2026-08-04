@@ -108,16 +108,24 @@ QString lengthUnitsName(FemmLengthUnits u)
 
 // Per direct user request: right after a freshly-opened file's initial
 // Natural/fit-to-view zoom, pick a grid spacing so roughly 20 squares
-// span the model's larger dimension, snapped to a "nice" whole-number
-// step (1/2/5 x a power of ten -- the same progression axis tick marks
-// conventionally use) rather than an arbitrary fraction. Bottoms out at
-// 1 (a true integer, per the request) for any model whose full extent is
-// itself under ~20 units -- a sub-1 step would technically hit the
-// "~20 squares" target more precisely there, but wouldn't be a whole
-// number anymore.
-double niceIntegerGridSize(const QRectF& bounds)
+// span the x axis, snapped to a "nice" whole-number step (1/2/5 x a
+// power of ten -- the same progression axis tick marks conventionally
+// use) rather than an arbitrary fraction. Takes the ACTUAL visible scene
+// width, not the raw model bounding box -- for anything other than a
+// model whose own aspect ratio matches the viewport's, fitInViewSafe's
+// Qt::KeepAspectRatio padding means more of the x axis is visible than
+// just the model's own width (confirmed live: a 50x200mm model in a
+// ~985x730px window shows ~295mm of scene width, not 50mm -- using the
+// model's width alone would have produced a ~150-square-wide grid, not
+// ~20). Callers pass view->mapToScene(view->viewport()->rect()).
+// boundingRect(), taken AFTER fitInViewSafe so it reflects what actually
+// ended up on screen. Bottoms out at 1 (a true integer, per the original
+// request this was built for) for any view whose width is itself under
+// ~20 units -- a sub-1 step would technically hit the "~20 squares"
+// target more precisely there, but wouldn't be a whole number anymore.
+double niceIntegerGridSize(const QRectF& visibleBounds)
 {
-  double extent = std::max(bounds.width(), bounds.height());
+  double extent = visibleBounds.width();
   if (extent <= 0)
     return 1.0;
   double target = extent / 20.0;
@@ -583,7 +591,7 @@ void MainWindow::openFile(const QString& path)
   m_scene->setProblem(&m_problem);
   QRectF problemBounds = m_scene->computeProblemBounds();
   m_view->fitInViewSafe(problemBounds);
-  m_scene->setGridSize(niceIntegerGridSize(problemBounds));
+  m_scene->setGridSize(niceIntegerGridSize(m_view->mapToScene(m_view->viewport()->rect()).boundingRect()));
   // After, not before, setProblem(): populating the scene calls setPos()
   // on every new NodeItem, which -- same as a real user drag -- fires
   // ItemPositionHasChanged -> onNodeMoved() -> problemEdited(), so a

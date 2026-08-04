@@ -287,6 +287,48 @@ QString complexToString(std::complex<double> z)
     return QString::number(z.real(), 'g', 6);
   return QString("%1 %2 j%3").arg(QString::number(z.real(), 'g', 6), z.imag() < 0 ? "-" : "+", QString::number(std::abs(z.imag()), 'g', 6));
 }
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: shared by
+// MeshSolutionItem::elementQuantity, SolutionGraphicsView::onCanvasHovered,
+// and SolutionWindow's Point Properties tool (onCanvasClicked) -- these
+// used to each duplicate the same H = B/(mu*mu0) formula (the hover/
+// click sites even said so explicitly, "duplicated rather than shared").
+// Per direct user report ("the density plot for H is wrong ... compare
+// with the old gui") -- muX/muY are a linear-material-only placeholder
+// (see MeshSolutionElement's own comment); for a nonlinear (BH-curve)
+// material this was off by orders of magnitude (confirmed live: ~5-6
+// orders of magnitude at a low-flux point on a nanocrystalline-core
+// test model, since the placeholder implies mu_r=1 while the real
+// material's initial permeability there was ~8.2 million). Matches
+// CFemmviewDoc::GetH's isotropic (LamType==0) nonlinear case: a scalar
+// |H| comes off the BH curve at |B|, then H is kept parallel to B
+// (H1=B1*|H|/|B|, H2=B2*|H|/|B|) -- see BHCurve.h for the curve-fitting
+// math this ports from femm/Problem.cpp's CMaterialProp::GetSlopes/GetH.
+// Falls back to the original muX/muY formula for linear materials, or
+// for the nonlinear cases BHCurve.h's own comment documents as not
+// (yet) ported (AC/harmonic, laminated, permanent-magnet).
+void computeElementH(const MeshSolutionElement& e, const MeshSolution& solution,
+    double& h1re, double& h1im, double& h2re, double& h2im)
+{
+  if (e.bhMaterialIndex >= 0 && e.bhMaterialIndex < solution.nonlinearMaterials.size()) {
+    const BHCurve::Curve& curve = solution.nonlinearMaterials[e.bhMaterialIndex];
+    double bMag = std::hypot(e.B1re, e.B2re); // DC only -- see BHCurve.h's AC/harmonic scope note
+    double hMag = BHCurve::interpolateH(curve, bMag);
+    // Degenerate near-zero-B case, matching CMaterialProp::GetMu's own
+    // "biron < 1e-8" branch: avoid a 0/0 by using the curve's initial
+    // slope (dH/dB at the origin) directly rather than hMag/bMag.
+    double hPerB = (bMag < 1e-8) ? (curve.slope.isEmpty() ? 0.0 : curve.slope[0]) : (hMag / bMag);
+    h1re = e.B1re * hPerB;
+    h2re = e.B2re * hPerB;
+    h1im = h2im = 0.0; // real-valued (DC) curve only, see above
+    return;
+  }
+  constexpr double kMuo = 1.2566370614359173e-6;
+  h1re = e.B1re / (e.muX * kMuo);
+  h1im = e.B1im / (e.muX * kMuo);
+  h2re = e.B2re / (e.muY * kMuo);
+  h2im = e.B2im / (e.muY * kMuo);
+}
 } // namespace
 
 MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
@@ -493,12 +535,25 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   // last bit or two). Exact for linear materials only -- see this
   // method's declaration in SolutionView.h for the nonlinear/laminated/
   // incremental-permeability cases not covered.
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+  // user report ("the density plot for H is wrong ... compare with the
+  // old gui") -- e.bhMaterialIndex >= 0 means e's material is nonlinear
+  // (see BHCurve.h and that field's own comment); the muX/muY-based
+  // formula below implicitly assumed mu_r=1 for those elements (muX/muY
+  // are only ever a linear-material placeholder), off from the correct,
+  // B-dependent permeability by orders of magnitude for a real
+  // ferromagnetic core (confirmed live: ~5-6 orders of magnitude at a
+  // low-flux point on a nanocrystalline-core test model). Matches
+  // CFemmviewDoc::GetH's isotropic (LamType==0) case: a scalar |H| comes
+  // off the BH curve at |B|, then H is kept parallel to B (H1=B1*|H|/
+  // |B|, H2=B2*|H|/|B|) -- physically correct for an isotropic nonlinear
+  // material, same assumption classic makes.
   case DensityQuantity::HMag:
   case DensityQuantity::HReMag:
   case DensityQuantity::HImMag: {
-    constexpr double kMuo = 1.2566370614359173e-6;
-    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
-    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    double h1re, h1im, h2re, h2im;
+    computeElementH(e, *m_solution, h1re, h1im, h2re, h2im);
     if (q == DensityQuantity::HReMag)
       return std::hypot(h1re, h2re);
     if (q == DensityQuantity::HImMag)
@@ -2186,9 +2241,13 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
     // formula; duplicated rather than shared since that case also breaks
     // H/J into re/im components for the dialog's extra rows, which this
     // tooltip has no room for.
-    constexpr double kMuo = 1.2566370614359173e-6;
-    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
-    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    //
+    // Modified by Claude (Anthropic), noreply@anthropic.com: now shared
+    // after all, via computeElementH() -- see that function's own
+    // comment for why the muX/muY formula alone was wrong for a
+    // nonlinear material.
+    double h1re, h1im, h2re, h2im;
+    computeElementH(e, m_solution, h1re, h1im, h2re, h2im);
     double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
     double jMag = std::hypot(e.jRe, e.jIm);
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
@@ -2290,9 +2349,12 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     // MeshSolutionItem::elementQuantity's HMag/JMag cases (see that
     // method's comment), just also broken into their re/im components
     // here to match how A/B1/B2 are already shown.
-    constexpr double kMuo = 1.2566370614359173e-6;
-    double h1re = e.B1re / (e.muX * kMuo), h1im = e.B1im / (e.muX * kMuo);
-    double h2re = e.B2re / (e.muY * kMuo), h2im = e.B2im / (e.muY * kMuo);
+    //
+    // Modified by Claude (Anthropic), noreply@anthropic.com: now shared
+    // via computeElementH() -- see that function's own comment for why
+    // the muX/muY formula alone was wrong for a nonlinear material.
+    double h1re, h1im, h2re, h2im;
+    computeElementH(e, m_solution, h1re, h1im, h2re, h2im);
     double hMag = std::hypot(std::hypot(h1re, h1im), std::hypot(h2re, h2im));
     double jMag = std::hypot(e.jRe, e.jIm);
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
@@ -2324,6 +2386,7 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
       if (matIdx >= 0 && matIdx < m_problemGeometry.materialProps.size()) {
         const FemmMaterialProp& mat = m_problemGeometry.materialProps[matIdx];
         if (m_frequency == 0 && mat.Hc != 0) {
+          constexpr double kMuo = 1.2566370614359173e-6;
           double bh = std::abs(std::complex<double>(e.B1re, e.B1im) * std::complex<double>(h1re, h1im)
               + std::complex<double>(e.B2re, e.B2im) * std::complex<double>(h2re, h2im));
           bhLine = QString("%1 J/m^3 (%2 MGOe)").arg(bh, 0, 'g', 6).arg(bh * kMuo * 100.0, 0, 'g', 6);
