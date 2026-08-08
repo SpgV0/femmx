@@ -52,5 +52,6 @@
     <file alias="dimension_distance.svg">toolbar_icons/dimension_distance.svg</file>
     <file alias="dimension_radius.svg">toolbar_icons/dimension_radius.svg</file>
     <file alias="dimension_angle.svg">toolbar_icons/dimension_angle.svg</file>
+    <file alias="dimension_smart.svg">toolbar_icons/dimension_smart.svg</file>
   </qresource>
 </RCC>

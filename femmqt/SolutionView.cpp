@@ -56,6 +56,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QRubberBand>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -1983,6 +1984,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &SolutionWindow::onHelpTopicsTriggered);
+  helpMenu->addAction("&Keyboard Shortcuts...", this, &SolutionWindow::onKeyboardShortcutsTriggered);
   helpMenu->addSeparator();
   helpMenu->addAction("&License", this, &SolutionWindow::onLicenseTriggered);
   helpMenu->addAction("&About FEMMX...", this, &SolutionWindow::onAboutTriggered);
@@ -3486,6 +3488,47 @@ void SolutionWindow::onHelpTopicsTriggered()
   QMessageBox::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: see
+// MainWindow::onKeyboardShortcutsTriggered's identical reasoning -- this
+// window has its own separate Help menu and its own distinct set of
+// shortcuts (SolutionGraphicsView::keyPressEvent for Delete/Escape, this
+// window's own Zoom menu for the rest), so it gets its own list rather
+// than pointing at the geometry editor's.
+void SolutionWindow::onKeyboardShortcutsTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Keyboard Shortcuts");
+  dlg.resize(420, 420);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  QString html = "<table cellspacing=6>"
+                  "<tr><td colspan=2><b>File</b></td></tr>"
+                  "<tr><td><b>Ctrl+O</b></td><td>Open Solution...</td></tr>"
+                  "<tr><td><b>Ctrl+P</b></td><td>Print...</td></tr>"
+                  "<tr><td colspan=2><b>View</b></td></tr>"
+                  "<tr><td><b>Page Up</b> / <b>Page Down</b></td><td>Zoom In / Out</td></tr>"
+                  "<tr><td><b>Home</b></td><td>Natural (fit to view)</td></tr>"
+                  "<tr><td><b>Arrow keys</b></td><td>Scroll Left/Right/Up/Down</td></tr>"
+                  "<tr><td colspan=2><b>Contours tool</b></td></tr>"
+                  "<tr><td><b>Delete</b></td><td>Remove the last-placed contour point</td></tr>"
+                  "<tr><td><b>Escape</b></td><td>Clear the current contour</td></tr>"
+                  "</table>";
+  auto* label = new QLabel(html, &dlg);
+  label->setTextFormat(Qt::RichText);
+  label->setWordWrap(true);
+
+  auto* scroll = new QScrollArea(&dlg);
+  scroll->setWidget(label);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  layout->addWidget(scroll);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 void SolutionWindow::onLicenseTriggered()

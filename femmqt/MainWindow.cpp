@@ -60,6 +60,7 @@
 #include <QPrintPreviewDialog>
 #include <QPrinter>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
 #include <QSettings>
@@ -354,6 +355,7 @@ MainWindow::MainWindow(QWidget* parent)
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &MainWindow::onHelpTopicsTriggered);
+  helpMenu->addAction("&Keyboard Shortcuts...", this, &MainWindow::onKeyboardShortcutsTriggered);
   helpMenu->addSeparator();
   helpMenu->addAction("&License", this, &MainWindow::onLicenseTriggered);
   helpMenu->addAction("&About FEMMX...", this, &MainWindow::onAboutTriggered);
@@ -450,6 +452,23 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addDimensionAngleToolAction);
   connect(m_addDimensionAngleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionAngle); });
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com: "Smart
+  // Dimension" -- per direct user request ("I want to be able to set
+  // dimension by pressing D and [click] the line or the nodes"), matching
+  // SolidWorks/Fusion 360's own "D" shortcut. setShortcut (not just a
+  // menu mnemonic) makes the bare "D" key work anywhere the canvas has
+  // focus, not just while a menu is open -- confirmed no existing action
+  // in this app already binds plain Key_D. See GeometryScene::
+  // handleToolClick's SmartDimension case for the actual click dispatch
+  // (segment -> Distance on its own 2 endpoints, arc -> Radius, node ->
+  // 2-click Distance).
+  m_smartDimensionToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_smart.svg"), "Smart Dimension");
+  m_smartDimensionToolAction->setToolTip("Smart Dimension (D) -- click a line for its length, an arc for its radius, or two nodes for the distance between them");
+  m_smartDimensionToolAction->setCheckable(true);
+  m_smartDimensionToolAction->setShortcut(QKeySequence(Qt::Key_D));
+  toolGroup->addAction(m_smartDimensionToolAction);
+  connect(m_smartDimensionToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::SmartDimension); });
+
   // toolsMenu (created earlier, alongside the Edit menu) populated here,
   // now that every tool QAction above actually exists -- same order as
   // the toolbar itself, so the menu reads as a straightforward list
@@ -466,6 +485,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolsMenu->addAction(m_addDimensionDistanceToolAction);
   toolsMenu->addAction(m_addDimensionRadiusToolAction);
   toolsMenu->addAction(m_addDimensionAngleToolAction);
+  toolsMenu->addAction(m_smartDimensionToolAction);
 
   HoverTooltip::installOn(toolBar);
 
@@ -1330,11 +1350,29 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
     if (indices.isEmpty() || indices.first() < 0 || indices.first() >= m_problem.dimensions.size())
       break;
     FemmDimension& dim = m_problem.dimensions[indices.first()];
-    QString label = dim.type == DimensionType::Distance ? "Distance:"
-        : dim.type == DimensionType::Radius                 ? "Radius:"
-                                                              : "Angle (deg):";
-    double minVal = dim.type == DimensionType::Angle ? -359.99 : 0.0;
-    double maxVal = dim.type == DimensionType::Angle ? 359.99 : 1.0e9;
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was a 2-way
+    // ternary chain that silently fell through to the Angle label/bounds
+    // for HorizontalDistance/VerticalDistance (added alongside the Smart
+    // Dimension tool's two-point H/V/Aligned inference) -- switched to an
+    // explicit switch so a new DimensionType can't silently inherit the
+    // wrong label/bounds again.
+    QString label;
+    double minVal = 0.0, maxVal = 1.0e9;
+    switch (dim.type) {
+    case DimensionType::Distance:
+    case DimensionType::HorizontalDistance:
+    case DimensionType::VerticalDistance:
+      label = "Distance:";
+      break;
+    case DimensionType::Radius:
+      label = "Radius:";
+      break;
+    case DimensionType::Angle:
+      label = "Angle (deg):";
+      minVal = -359.99;
+      maxVal = 359.99;
+      break;
+    }
     bool ok = false;
     double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, dim.value, minVal, maxVal, 6, &ok);
     if (ok && newValue != dim.value) {
@@ -1997,6 +2035,61 @@ void MainWindow::onHelpTopicsTriggered()
   QMessageBox::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+// request ("in the help menu make a list with the shortcuts") -- every
+// entry here is a REAL keyboard shortcut already wired up elsewhere
+// (QAction::setShortcut calls in this constructor, or a direct
+// keyPressEvent check in GeometryScene/GeometryView -- see each row's own
+// source for where), listed here purely for discoverability. This is a
+// plain description of existing behavior, not a new binding -- keep it in
+// sync by hand if a shortcut is ever added/changed/removed above.
+void MainWindow::onKeyboardShortcutsTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Keyboard Shortcuts");
+  dlg.resize(420, 520);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  QString html = "<table cellspacing=6>"
+                  "<tr><td colspan=2><b>File</b></td></tr>"
+                  "<tr><td><b>Ctrl+N</b></td><td>New</td></tr>"
+                  "<tr><td><b>Ctrl+O</b></td><td>Open...</td></tr>"
+                  "<tr><td><b>Ctrl+S</b></td><td>Save</td></tr>"
+                  "<tr><td><b>Ctrl+Shift+S</b></td><td>Save As...</td></tr>"
+                  "<tr><td><b>Ctrl+P</b></td><td>Print...</td></tr>"
+                  "<tr><td colspan=2><b>Edit</b></td></tr>"
+                  "<tr><td><b>Ctrl+Z</b></td><td>Undo</td></tr>"
+                  "<tr><td><b>Delete</b> / <b>Backspace</b></td><td>Delete selected</td></tr>"
+                  "<tr><td><b>Space</b></td><td>Open Selected (edit properties)</td></tr>"
+                  "<tr><td><b>Tab</b></td><td>Enter Point -- type an exact coordinate "
+                  "while Add Node/Add Block Label is active</td></tr>"
+                  "<tr><td colspan=2><b>Tools</b></td></tr>"
+                  "<tr><td><b>D</b></td><td>Smart Dimension -- click a line for its "
+                  "length, an arc for its radius, or two nodes for the distance "
+                  "between them</td></tr>"
+                  "<tr><td colspan=2><b>Mesh</b></td></tr>"
+                  "<tr><td><b>Ctrl+L</b></td><td>Solve</td></tr>"
+                  "<tr><td colspan=2><b>View</b></td></tr>"
+                  "<tr><td><b>Page Up</b> / <b>Page Down</b></td><td>Zoom In / Out</td></tr>"
+                  "<tr><td><b>Home</b></td><td>Natural (fit to view)</td></tr>"
+                  "<tr><td><b>Arrow keys</b></td><td>Scroll Left/Right/Up/Down</td></tr>"
+                  "</table>";
+  auto* label = new QLabel(html, &dlg);
+  label->setTextFormat(Qt::RichText);
+  label->setWordWrap(true);
+
+  auto* scroll = new QScrollArea(&dlg);
+  scroll->setWidget(label);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  layout->addWidget(scroll);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 void MainWindow::onLicenseTriggered()

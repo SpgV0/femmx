@@ -9,6 +9,11 @@
 
 struct FemmProblem;
 class MeshOverlayItem;
+// Forward-declarable as a bare scoped enum (defined in FemmProblem.h with
+// no explicit underlying type, so it defaults to int) -- avoids a full
+// FemmProblem.h include just to name this type in a member declaration
+// below.
+enum class DimensionType;
 
 enum class FemmItemKind {
   Node = 0,
@@ -43,6 +48,21 @@ enum class GeometryToolMode {
   AddDimensionDistance,
   AddDimensionRadius,
   AddDimensionAngle,
+  // Modified by Claude (Anthropic), noreply@anthropic.com: "Smart
+  // Dimension" -- per direct user request ("I want to be able to set
+  // dimension by pressing D and [click] the line or the nodes"), matching
+  // SolidWorks/Fusion 360's own "D" Smart Dimension shortcut. One click
+  // on a SEGMENT immediately creates a Distance dimension for that
+  // segment's own two endpoints (no need to click each endpoint
+  // separately, unlike AddDimensionDistance above); one click on an ARC
+  // immediately creates a Radius dimension; two NODE clicks create a
+  // Distance dimension between them (same 2-click accumulation as
+  // AddDimensionDistance, reusing m_pendingDimensionNodes). See
+  // handleToolClick()'s own case for the exact dispatch, and
+  // addDistanceDimensionForNodes()/addRadiusDimensionForArc() (shared
+  // with AddDimensionDistance/AddDimensionRadius, so both tools stay in
+  // sync by construction) for the actual creation+solve+rebuild.
+  SmartDimension,
   // Persistent (like the 4 Add* tools above, not one-shot) -- drag between
   // two diagonal corners to place an axis-aligned rectangle: 4 new nodes
   // plus 4 new segments forming a closed loop. No classic FEMM precedent
@@ -348,6 +368,47 @@ class GeometryScene : public QGraphicsScene {
 
   private:
   void handleToolClick(QGraphicsSceneMouseEvent* event);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: shared by
+  // AddDimensionDistance/AddDimensionRadius's own handleToolClick cases
+  // AND the new SmartDimension tool -- prompts for the value
+  // (QInputDialog::getDouble, prefilled with the live-measured value,
+  // matching the exact precedent both tools already established), then
+  // appends the dimension, solves, and rebuilds. Kept here (not inlined
+  // at each call site) so the two tools can never drift out of sync.
+  void addDistanceDimensionForNodes(int n0, int n1);
+  void addRadiusDimensionForArc(int arcIndex);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: Smart
+  // Dimension's own select -> move -> preview -> place -> value state
+  // machine -- per direct user request to implement femmqt's "D" tool
+  // "according to" a supplied Fusion 360 Sketch Dimension reference. That
+  // reference's central point (repeated across its own Sections 2-4,
+  // 25-29, 33-34) is that dimension creation is NOT one click: selecting
+  // geometry only determines what CAN be measured; the cursor position
+  // during a subsequent free MOVE (no button held) resolves which
+  // measurement is intended (most visibly for two points: Horizontal vs.
+  // Vertical vs. Aligned distance -- see updateSmartDimensionPreview's own
+  // comment for the exact heuristic); a second click places the preview
+  // and only THEN prompts for the value. This replaces SmartDimension's
+  // previous "click entity -> immediately prompt" behavior (which is
+  // still exactly how the OLD explicit AddDimensionDistance/Radius/Angle
+  // tools work, deliberately left unchanged -- see their own
+  // handleToolClick cases).
+  //
+  // m_smartDimAwaitingPlacement is the state flag: false = still
+  // selecting entities (handleToolClick's SmartDimension case owns this
+  // phase); true = a candidate exists and is following the mouse
+  // (mouseMoveEvent forwards to updateSmartDimensionPreview(), and the
+  // NEXT click either extends the candidate -- a second line sharing a
+  // vertex with the first, upgrading Length to Angle -- or commits it via
+  // commitSmartDimensionPlacement()).
+  void updateSmartDimensionPreview(QPointF scenePos);
+  void commitSmartDimensionPlacement(QPointF scenePos);
+  // Discards any in-progress candidate and its preview item -- called on
+  // every tool-mode switch (via setToolMode(), matching how
+  // m_pendingDimensionNodes is already unconditionally cleared there) and
+  // on Escape (matching the reference doc's own implicit "you can back
+  // out before the placement click" assumption).
+  void cancelSmartDimensionPreview();
   void addNodeItem(int index);
   void addSegmentItem(int index);
   void addArcItem(int index);
@@ -398,6 +459,28 @@ class GeometryScene : public QGraphicsScene {
   // dimension is committed or the tool mode changes.
   QVector<int> m_pendingDimensionNodes;
   int m_pendingDimensionArc = -1; // Radius tool's single arc click
+
+  // Smart Dimension's own state -- see updateSmartDimensionPreview()/
+  // commitSmartDimensionPlacement()/cancelSmartDimensionPreview()'s
+  // declarations above for the overall state machine. m_smartDimType/
+  // RefA/RefB/RefC mirror FemmDimension's own fields exactly (same
+  // meaning per type -- see FemmProblem.h's FemmDimension comment) since
+  // they become that struct's fields verbatim on commit. For a two-point
+  // candidate, m_smartDimType is live-updated on every mouse move (see
+  // updateSmartDimensionPreview()) to whichever of Distance/
+  // HorizontalDistance/VerticalDistance the current cursor position
+  // implies, then whatever it is AT the placement click is what commits.
+  bool m_smartDimAwaitingPlacement = false;
+  // true only for a candidate built from 2 separate node clicks -- gates
+  // updateSmartDimensionPreview()'s live Horizontal/Vertical/Aligned
+  // re-resolution; false for a line-length candidate (locked to the
+  // segment's own true Distance) or Radius/Angle, none of which change
+  // TYPE as the mouse moves, only their offset/direction.
+  bool m_smartDimTwoPointMode = false;
+  DimensionType m_smartDimType;
+  int m_smartDimRefA = -1, m_smartDimRefB = -1, m_smartDimRefC = -1;
+  QGraphicsItem* m_smartDimPreviewItem = nullptr;
+  QGraphicsItem* m_smartDimPreviewText = nullptr;
 
   // Per-node sketch-health classification from the last
   // ConstraintSolver::solve() -- see setConstraintStatus()'s own comment.

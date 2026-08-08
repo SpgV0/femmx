@@ -116,6 +116,7 @@ class MainWindow : public QMainWindow {
   void onSelectByGroupTriggered();
   void onSetGroupTriggered();
   void onHelpTopicsTriggered();
+  void onKeyboardShortcutsTriggered();
   void onLicenseTriggered();
   void onAboutTriggered();
   void onOpenRecentFile();
@@ -181,6 +182,7 @@ class MainWindow : public QMainWindow {
   QAction* m_addDimensionDistanceToolAction = nullptr;
   QAction* m_addDimensionRadiusToolAction = nullptr;
   QAction* m_addDimensionAngleToolAction = nullptr;
+  QAction* m_smartDimensionToolAction = nullptr;
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;

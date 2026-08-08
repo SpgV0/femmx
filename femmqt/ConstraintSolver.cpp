@@ -105,6 +105,8 @@ QVector<int> touchedNodesForDimension(const FemmProblem& p, const FemmDimension&
 {
   switch (d.type) {
   case DimensionType::Distance:
+  case DimensionType::HorizontalDistance:
+  case DimensionType::VerticalDistance:
     return {d.refA, d.refB};
   case DimensionType::Radius: {
     const FemmArcSegment& a = p.arcSegments[d.refA];
@@ -267,6 +269,29 @@ double residualDistance(const FemmProblem& p, const FemmDimension& d)
   return std::hypot(nx(p, d.refB) - nx(p, d.refA), ny(p, d.refB) - ny(p, d.refA)) - d.value;
 }
 
+// Modified by Claude (Anthropic), noreply@anthropic.com: genuinely
+// distinct from residualDistance above, per the Fusion 360 reference this
+// was implemented against -- "A horizontal dimension of 50 mm between two
+// points introduces |x2-x1| = 50 mm", NOT the Euclidean |P2-P1| = 50 mm.
+// Reusing residualDistance's hypot() with a horizontally-measured `value`
+// would silently mis-constrain any pair of points that isn't already
+// axis-aligned (it would try to force the wrong -- larger -- Euclidean
+// distance to equal the horizontal-only value). std::abs()'s derivative
+// has a kink exactly at dx==0 (a measure-zero point, and a genuinely
+// different, much milder case than the branch-pick non-smoothness
+// documented on residualTangent above -- this is the same |dx|=value
+// formulation real sketch solvers like SolveSpace/FreeCAD's use directly,
+// not a discrete pick between two different formulas).
+double residualHorizontalDistance(const FemmProblem& p, const FemmDimension& d)
+{
+  return std::abs(nx(p, d.refB) - nx(p, d.refA)) - d.value;
+}
+
+double residualVerticalDistance(const FemmProblem& p, const FemmDimension& d)
+{
+  return std::abs(ny(p, d.refB) - ny(p, d.refA)) - d.value;
+}
+
 double residualRadius(const FemmProblem& p, const FemmDimension& d)
 {
   Complex c;
@@ -311,6 +336,10 @@ double evaluateOne(const FemmProblem& p, const ResidualSource& src)
     switch (d.type) {
     case DimensionType::Distance:
       return residualDistance(p, d);
+    case DimensionType::HorizontalDistance:
+      return residualHorizontalDistance(p, d);
+    case DimensionType::VerticalDistance:
+      return residualVerticalDistance(p, d);
     case DimensionType::Radius:
       return residualRadius(p, d);
     case DimensionType::Angle:

@@ -563,6 +563,7 @@ class SolutionWindow : public QMainWindow {
   void onSwitchToClassicTriggered();
   void onOpenRecentFile();
   void onHelpTopicsTriggered();
+  void onKeyboardShortcutsTriggered();
   void onLicenseTriggered();
   void onAboutTriggered();
 

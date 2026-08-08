@@ -163,6 +163,54 @@ bool testDistanceDimension()
   return pass;
 }
 
+// Modified by Claude (Anthropic), noreply@anthropic.com: starting point is
+// deliberately NOT axis-aligned (dx=3, dy=4, i.e. the same 3-4-5 triangle
+// testDistanceDimension uses) -- this is what actually distinguishes these
+// from a plain Distance dimension test. If residualHorizontalDistance
+// wrongly reused hypot() (the Distance formula) instead of |dx|, this test
+// would still spuriously pass on an ALREADY-axis-aligned starting point
+// (dy=0), which is exactly the kind of false-positive coverage this test
+// is written to avoid.
+bool testHorizontalDistanceDimension()
+{
+  FemmProblem p;
+  int n0 = addNode(p, 0, 0);
+  int n1 = addNode(p, 3, 4);
+  FemmDimension dim;
+  dim.type = DimensionType::HorizontalDistance;
+  dim.refA = n0;
+  dim.refB = n1;
+  dim.value = 15.0;
+  p.dimensions.push_back(dim);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(p);
+  double dx = std::abs(p.nodes[n1].x - p.nodes[n0].x);
+  fprintf(stderr, "Horizontal distance dimension: converged=%d |dx|=%g (expect 15)\n", result.converged, dx);
+  bool pass = result.converged && std::abs(dx - 15.0) < 1e-6;
+  if (!pass)
+    fprintf(stderr, "  FAIL\n");
+  return pass;
+}
+
+bool testVerticalDistanceDimension()
+{
+  FemmProblem p;
+  int n0 = addNode(p, 0, 0);
+  int n1 = addNode(p, 3, 4);
+  FemmDimension dim;
+  dim.type = DimensionType::VerticalDistance;
+  dim.refA = n0;
+  dim.refB = n1;
+  dim.value = 15.0;
+  p.dimensions.push_back(dim);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(p);
+  double dy = std::abs(p.nodes[n1].y - p.nodes[n0].y);
+  fprintf(stderr, "Vertical distance dimension: converged=%d |dy|=%g (expect 15)\n", result.converged, dy);
+  bool pass = result.converged && std::abs(dy - 15.0) < 1e-6;
+  if (!pass)
+    fprintf(stderr, "  FAIL\n");
+  return pass;
+}
+
 bool testCoincident()
 {
   FemmProblem p;
@@ -453,6 +501,8 @@ int testConstraintsCli()
   const NamedTest tests[] = {
       {"Horizontal+Vertical", testRectangleRigid},
       {"Distance dimension", testDistanceDimension},
+      {"Horizontal distance dimension", testHorizontalDistanceDimension},
+      {"Vertical distance dimension", testVerticalDistanceDimension},
       {"Coincident", testCoincident},
       {"Parallel", testParallel},
       {"Perpendicular", testPerpendicular},

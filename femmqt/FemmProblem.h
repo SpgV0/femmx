@@ -172,14 +172,26 @@ struct FemmConstraint {
   bool firstIsArc = false; // Tangent only: refA is an arc, not a segment, index
 };
 
+// Modified by Claude (Anthropic), noreply@anthropic.com: HorizontalDistance/
+// VerticalDistance added per direct user request ("implement according to"
+// a supplied Fusion 360 Sketch Dimension reference) -- Fusion's own doc
+// treats these as genuinely distinct CONSTRAINTS from Distance ("A
+// horizontal dimension of 50 mm... introduces |x2-x1| = 50 mm", separate
+// from the Euclidean |P2-P1| = 50 mm a plain Distance dimension enforces),
+// not just a different label on the same equation -- see
+// ConstraintSolver.cpp's residualHorizontalDistance/residualVerticalDistance
+// for why reusing residualDistance's hypot() formula would have been
+// silently wrong for any non-axis-aligned pair of points.
 enum class DimensionType {
   Distance,
+  HorizontalDistance,
+  VerticalDistance,
   Radius,
   Angle,
 };
 
 // Meaning of refA/refB/refC depends on `type`:
-//   Distance: refA, refB = node indices
+//   Distance/HorizontalDistance/VerticalDistance: refA, refB = node indices
 //   Radius:   refA = arc index
 //   Angle:    refA = vertex node index, refB/refC = the two ray-endpoint
 //             node indices

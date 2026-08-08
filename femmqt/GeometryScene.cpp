@@ -410,6 +410,128 @@ void addArrowhead(QPainterPath& path, QPointF tip, QPointF backDirUnit, double l
 // updateArcItemGeometry's own arcTo() call, see the inline comment at
 // its call site below) with an arrowhead at each end, tangent to the
 // arc.
+// Modified by Claude (Anthropic), noreply@anthropic.com: extracted out of
+// DimensionItem::updateGeometry() so the Smart Dimension tool's live
+// placement preview (see updateSmartDimensionPreview()) can build the
+// exact same path a COMMITTED dimension would render, from a temporary,
+// not-yet-pushed-into-p.dimensions FemmDimension -- a plain mechanical
+// extraction, no behavior change. Distance/HorizontalDistance/
+// VerticalDistance render identically (extension lines + arrowed
+// dimension line) despite constraining different quantities -- only the
+// SOLVER'S residual differs between them (see ConstraintSolver.cpp).
+QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QPointF& textPos, QString& text)
+{
+  const QVector<FemmNode>& nodes = p.nodes;
+  QPainterPath path;
+
+  switch (d.type) {
+  case DimensionType::Distance:
+  case DimensionType::HorizontalDistance:
+  case DimensionType::VerticalDistance: {
+    if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size())
+      break;
+    QPointF a(nodes[d.refA].x, nodes[d.refA].y);
+    QPointF b(nodes[d.refB].x, nodes[d.refB].y);
+    QPointF offset(d.labelOffsetX, d.labelOffsetY);
+    double offLen = std::hypot(offset.x(), offset.y());
+    QPointF dimA = a + offset;
+    QPointF dimB = b + offset;
+    if (offLen > 1e-9) {
+      QPointF dir = offset / offLen;
+      double gap = offLen * 0.10;
+      double overshoot = offLen * 0.15;
+      path.moveTo(a + dir * gap);
+      path.lineTo(a + dir * (offLen + overshoot));
+      path.moveTo(b + dir * gap);
+      path.lineTo(b + dir * (offLen + overshoot));
+    }
+    path.moveTo(dimA);
+    path.lineTo(dimB);
+    double lineLen = std::hypot(dimB.x() - dimA.x(), dimB.y() - dimA.y());
+    if (lineLen > 1e-9) {
+      QPointF along = (dimB - dimA) / lineLen;
+      double arrowLen = lineLen * 0.05;
+      addArrowhead(path, dimA, along, arrowLen);
+      addArrowhead(path, dimB, -along, arrowLen);
+    }
+    textPos = (a + b) / 2.0 + offset;
+    text = QString::number(d.value, 'g', 6);
+    break;
+  }
+  case DimensionType::Radius: {
+    if (d.refA < 0 || d.refA >= p.arcSegments.size())
+      break;
+    std::complex<double> c;
+    double r = 0;
+    if (!FemmProblemEdit::circleFromArc(p, p.arcSegments[d.refA], c, r))
+      break;
+    QPointF center(c.real(), c.imag());
+    QPointF dir = (d.labelOffsetX != 0 || d.labelOffsetY != 0) ? QPointF(d.labelOffsetX, d.labelOffsetY) : QPointF(1, 0);
+    double dirLen = std::hypot(dir.x(), dir.y());
+    if (dirLen <= 0)
+      break;
+    dir /= dirLen;
+    QPointF edge = center + dir * r;
+    path.moveTo(center);
+    path.lineTo(edge);
+    if (r > 1e-9)
+      addArrowhead(path, edge, -dir, r * 0.08);
+    textPos = edge;
+    text = QString("R%1").arg(d.value, 0, 'g', 6);
+    break;
+  }
+  case DimensionType::Angle: {
+    if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size() || d.refC < 0 || d.refC >= nodes.size())
+      break;
+    QPointF v(nodes[d.refA].x, nodes[d.refA].y);
+    QPointF p1(nodes[d.refB].x, nodes[d.refB].y);
+    QPointF p2(nodes[d.refC].x, nodes[d.refC].y);
+    double r = std::min(std::hypot(p1.x() - v.x(), p1.y() - v.y()), std::hypot(p2.x() - v.x(), p2.y() - v.y())) * 0.5;
+    if (r <= 0)
+      break;
+    double a1 = std::atan2(p1.y() - v.y(), p1.x() - v.x());
+    double a2 = std::atan2(p2.y() - v.y(), p2.x() - v.x());
+    // Same signed-shorter-angle wrap as the AddDimensionAngle tool uses
+    // to measure the initial value (see handleToolClick) -- reusing the
+    // identical formula here means the rendered arc always sweeps the
+    // same direction/magnitude the value itself represents.
+    double diff = a2 - a1;
+    while (diff > M_PI)
+      diff -= 2 * M_PI;
+    while (diff <= -M_PI)
+      diff += 2 * M_PI;
+    QPointF e1 = v + r * QPointF(std::cos(a1), std::sin(a1));
+    QPointF e2 = v + r * QPointF(std::cos(a1 + diff), std::sin(a1 + diff));
+    // True arc, not a straight-line wedge -- same y-flip compensation as
+    // arcGeometry()/updateArcItemGeometry's own arcTo() call (see
+    // arcGeometry's comment for the full explanation): Qt's arcTo angle
+    // = atan2(-dy, dx), and its sweep direction is the negation of a
+    // plain-math CCW sweep.
+    double qtStartDeg = std::atan2(-(e1.y() - v.y()), e1.x() - v.x()) * 180.0 / M_PI;
+    double qtSweepDeg = -diff * 180.0 / M_PI;
+    path.moveTo(e1);
+    path.arcTo(v.x() - r, v.y() - r, 2 * r, 2 * r, qtStartDeg, qtSweepDeg);
+
+    // Arrowhead "back" direction at a point on the arc, tangent to it:
+    // the plain-math travel direction along the arc at angle t is
+    // sgn*(-sin t, cos t) (sgn = direction of travel, from diff's
+    // sign); the arrowhead's wings point backward from that, i.e. the
+    // negation, at both ends (same formula works for the start AND end
+    // point -- see addArrowhead's own comment on what "back" means).
+    double sgn = diff >= 0 ? 1.0 : -1.0;
+    double arrowLen = r * 0.08;
+    addArrowhead(path, e1, QPointF(sgn * std::sin(a1), -sgn * std::cos(a1)), arrowLen);
+    addArrowhead(path, e2, QPointF(sgn * std::sin(a1 + diff), -sgn * std::cos(a1 + diff)), arrowLen);
+
+    double midAngle = a1 + diff / 2.0;
+    textPos = v + r * 1.3 * QPointF(std::cos(midAngle), std::sin(midAngle));
+    text = QString("%1 deg").arg(d.value, 0, 'g', 6);
+    break;
+  }
+  }
+  return path;
+}
+
 class DimensionItem : public QGraphicsPathItem {
   public:
   DimensionItem(int dimIndex, FemmProblem* problem)
@@ -427,116 +549,9 @@ class DimensionItem : public QGraphicsPathItem {
   {
     if (m_dimIndex < 0 || m_dimIndex >= m_problem->dimensions.size())
       return;
-    const FemmDimension& d = m_problem->dimensions[m_dimIndex];
-    const QVector<FemmNode>& nodes = m_problem->nodes;
-    QPainterPath path;
     QPointF textPos;
     QString text;
-
-    switch (d.type) {
-    case DimensionType::Distance: {
-      if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size())
-        break;
-      QPointF a(nodes[d.refA].x, nodes[d.refA].y);
-      QPointF b(nodes[d.refB].x, nodes[d.refB].y);
-      QPointF offset(d.labelOffsetX, d.labelOffsetY);
-      double offLen = std::hypot(offset.x(), offset.y());
-      QPointF dimA = a + offset;
-      QPointF dimB = b + offset;
-      if (offLen > 1e-9) {
-        QPointF dir = offset / offLen;
-        double gap = offLen * 0.10;
-        double overshoot = offLen * 0.15;
-        path.moveTo(a + dir * gap);
-        path.lineTo(a + dir * (offLen + overshoot));
-        path.moveTo(b + dir * gap);
-        path.lineTo(b + dir * (offLen + overshoot));
-      }
-      path.moveTo(dimA);
-      path.lineTo(dimB);
-      double lineLen = std::hypot(dimB.x() - dimA.x(), dimB.y() - dimA.y());
-      if (lineLen > 1e-9) {
-        QPointF along = (dimB - dimA) / lineLen;
-        double arrowLen = lineLen * 0.05;
-        addArrowhead(path, dimA, along, arrowLen);
-        addArrowhead(path, dimB, -along, arrowLen);
-      }
-      textPos = (a + b) / 2.0 + offset;
-      text = QString::number(d.value, 'g', 6);
-      break;
-    }
-    case DimensionType::Radius: {
-      if (d.refA < 0 || d.refA >= m_problem->arcSegments.size())
-        break;
-      std::complex<double> c;
-      double r = 0;
-      if (!FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[d.refA], c, r))
-        break;
-      QPointF center(c.real(), c.imag());
-      QPointF dir = (d.labelOffsetX != 0 || d.labelOffsetY != 0) ? QPointF(d.labelOffsetX, d.labelOffsetY) : QPointF(1, 0);
-      double dirLen = std::hypot(dir.x(), dir.y());
-      if (dirLen <= 0)
-        break;
-      dir /= dirLen;
-      QPointF edge = center + dir * r;
-      path.moveTo(center);
-      path.lineTo(edge);
-      if (r > 1e-9)
-        addArrowhead(path, edge, -dir, r * 0.08);
-      textPos = edge;
-      text = QString("R%1").arg(d.value, 0, 'g', 6);
-      break;
-    }
-    case DimensionType::Angle: {
-      if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size() || d.refC < 0 || d.refC >= nodes.size())
-        break;
-      QPointF v(nodes[d.refA].x, nodes[d.refA].y);
-      QPointF p1(nodes[d.refB].x, nodes[d.refB].y);
-      QPointF p2(nodes[d.refC].x, nodes[d.refC].y);
-      double r = std::min(std::hypot(p1.x() - v.x(), p1.y() - v.y()), std::hypot(p2.x() - v.x(), p2.y() - v.y())) * 0.5;
-      if (r <= 0)
-        break;
-      double a1 = std::atan2(p1.y() - v.y(), p1.x() - v.x());
-      double a2 = std::atan2(p2.y() - v.y(), p2.x() - v.x());
-      // Same signed-shorter-angle wrap as the AddDimensionAngle tool uses
-      // to measure the initial value (see handleToolClick) -- reusing the
-      // identical formula here means the rendered arc always sweeps the
-      // same direction/magnitude the value itself represents.
-      double diff = a2 - a1;
-      while (diff > M_PI)
-        diff -= 2 * M_PI;
-      while (diff <= -M_PI)
-        diff += 2 * M_PI;
-      QPointF e1 = v + r * QPointF(std::cos(a1), std::sin(a1));
-      QPointF e2 = v + r * QPointF(std::cos(a1 + diff), std::sin(a1 + diff));
-      // True arc, not a straight-line wedge -- same y-flip compensation as
-      // arcGeometry()/updateArcItemGeometry's own arcTo() call (see
-      // arcGeometry's comment for the full explanation): Qt's arcTo angle
-      // = atan2(-dy, dx), and its sweep direction is the negation of a
-      // plain-math CCW sweep.
-      double qtStartDeg = std::atan2(-(e1.y() - v.y()), e1.x() - v.x()) * 180.0 / M_PI;
-      double qtSweepDeg = -diff * 180.0 / M_PI;
-      path.moveTo(e1);
-      path.arcTo(v.x() - r, v.y() - r, 2 * r, 2 * r, qtStartDeg, qtSweepDeg);
-
-      // Arrowhead "back" direction at a point on the arc, tangent to it:
-      // the plain-math travel direction along the arc at angle t is
-      // sgn*(-sin t, cos t) (sgn = direction of travel, from diff's
-      // sign); the arrowhead's wings point backward from that, i.e. the
-      // negation, at both ends (same formula works for the start AND end
-      // point -- see addArrowhead's own comment on what "back" means).
-      double sgn = diff >= 0 ? 1.0 : -1.0;
-      double arrowLen = r * 0.08;
-      addArrowhead(path, e1, QPointF(sgn * std::sin(a1), -sgn * std::cos(a1)), arrowLen);
-      addArrowhead(path, e2, QPointF(sgn * std::sin(a1 + diff), -sgn * std::cos(a1 + diff)), arrowLen);
-
-      double midAngle = a1 + diff / 2.0;
-      textPos = v + r * 1.3 * QPointF(std::cos(midAngle), std::sin(midAngle));
-      text = QString("%1 deg").arg(d.value, 0, 'g', 6);
-      break;
-    }
-    }
-
+    QPainterPath path = buildDimensionPath(*m_problem, m_problem->dimensions[m_dimIndex], textPos, text);
     setPath(path);
     if (m_text) {
       m_text->setText(text);
@@ -667,6 +682,9 @@ class ConstraintGlyphItem : public QGraphicsItem {
 GeometryScene::GeometryScene(QObject* parent)
     : QGraphicsScene(parent)
 {
+  // DimensionType is only forward-declared in the header, so this can't
+  // be a member-initializer default there.
+  m_smartDimType = DimensionType::Distance;
   // Fixed, generous scene rect -- without an explicit one, QGraphicsScene
   // computes it from the current items' bounding rect and grows/shifts it
   // as items are added, which silently pans/rescrolls the attached
@@ -794,6 +812,22 @@ void GeometryScene::rebuild()
   m_constraintItems.clear();
   m_constraintItemsByNode.clear();
   m_zoomWindowRectItem = nullptr;
+  // Modified by Claude (Anthropic), noreply@anthropic.com: same
+  // already-deleted-by-clear() reasoning as m_zoomWindowRectItem right
+  // above, but a REAL (not just theoretical) risk for this one
+  // specifically: unlike the drag-only rubber-band previews
+  // (m_selectCircleItem etc., only ever alive between a mousePress and
+  // its OWN mouseRelease, a window nothing else can interrupt since the
+  // OS holds mouse capture the whole time), a Smart Dimension preview
+  // stays alive across multiple discrete clicks while the mouse moves
+  // FREELY with no button held -- during which the user genuinely can
+  // trigger Undo (Ctrl+Z) or another rebuild()-causing action, which
+  // would otherwise leave these two pointers dangling after clear().
+  m_smartDimPreviewItem = nullptr;
+  m_smartDimPreviewText = nullptr;
+  m_smartDimAwaitingPlacement = false;
+  m_smartDimTwoPointMode = false;
+  m_smartDimRefA = m_smartDimRefB = m_smartDimRefC = -1;
   // clear() above already deleted this along with everything else -- an
   // edit invalidates any previous mesh anyway (matches classic FEMM's own
   // MeshUpToDate flag being cleared on any geometry change), so there's no
@@ -866,6 +900,7 @@ void GeometryScene::setToolMode(GeometryToolMode mode)
   m_pendingNode = -1;
   m_pendingDimensionNodes.clear();
   m_pendingDimensionArc = -1;
+  cancelSmartDimensionPreview();
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: DOF/sketch-
@@ -1049,6 +1084,24 @@ void GeometryScene::addDimensionItem(int index)
   auto* text = addSimpleText(QString());
   text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
   text->setBrush(AppTheme::segmentColor());
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was missing
+  // entirely -- a REAL, pre-existing bug found while implementing Smart
+  // Dimension's two-line-to-Angle upgrade (see handleToolClick's
+  // SmartDimension case): an item with no KindKey/IndexKey data set
+  // returns 0 for both from data(...).toInt() (QVariant's default int
+  // conversion), and 0 is ALSO FemmItemKind::Node's own enum value --
+  // so clicking a dimension's NUMBER LABEL (as opposed to its dashed
+  // line, which the parent DimensionItem itself already tags correctly)
+  // was silently misread as "clicked node index 0" everywhere: double-
+  // click-to-edit, Select-mode clicks, and (concretely, this is what
+  // surfaced it) Smart Dimension's angle-upgrade check, which need to
+  // tell a genuine node click apart from an accidental hit on unrelated
+  // label text sitting on top of it. Tagging the text the same as its
+  // parent (Dimension, same index) makes clicking either one behave
+  // identically, which is also the more intuitive behavior on its own
+  // merits -- a dimension's number IS the dimension, visually.
+  text->setData(KindKey, static_cast<int>(FemmItemKind::Dimension));
+  text->setData(IndexKey, index);
   item->setTextItem(text);
   item->updateGeometry();
   m_dimensionItems[index] = item;
@@ -1070,6 +1123,336 @@ void GeometryScene::addDimensionItem(int index)
   }
   for (int n : touched)
     m_dimensionItemsByNode.insert(n, item);
+}
+
+void GeometryScene::addDistanceDimensionForNodes(int n0, int n1)
+{
+  if (n0 < 0 || n0 >= m_problem->nodes.size() || n1 < 0 || n1 >= m_problem->nodes.size() || n0 == n1)
+    return;
+  double dx = m_problem->nodes[n1].x - m_problem->nodes[n0].x;
+  double dy = m_problem->nodes[n1].y - m_problem->nodes[n0].y;
+  double curLen = std::hypot(dx, dy);
+  bool ok = false;
+  double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+      "Distance Dimension", "Distance:", curLen, 0.0, 1.0e9, 6, &ok);
+  if (!ok)
+    return;
+  emit aboutToEdit();
+  FemmDimension dim;
+  dim.type = DimensionType::Distance;
+  dim.refA = n0;
+  dim.refB = n1;
+  dim.value = value;
+  // Default dimension-line offset: perpendicular to the measured segment,
+  // a modest fraction of its own length -- the user can reposition it
+  // later (not implemented this round -- see the module's own scope
+  // notes) by editing labelOffsetX/Y directly.
+  if (curLen > 0) {
+    dim.labelOffsetX = -dy / curLen * curLen * 0.15;
+    dim.labelOffsetY = dx / curLen * curLen * 0.15;
+  }
+  m_problem->dimensions.push_back(dim);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+  setConstraintStatus(result.nodeStatus);
+  rebuild();
+  emit problemEdited();
+}
+
+void GeometryScene::addRadiusDimensionForArc(int arcIndex)
+{
+  if (arcIndex < 0 || arcIndex >= m_problem->arcSegments.size())
+    return;
+  std::complex<double> c;
+  double r = 0;
+  if (!FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[arcIndex], c, r))
+    return;
+  bool ok = false;
+  double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+      "Radius Dimension", "Radius:", r, 0.0001, 1.0e9, 6, &ok);
+  if (!ok)
+    return;
+  emit aboutToEdit();
+  FemmDimension dim;
+  dim.type = DimensionType::Radius;
+  dim.refA = arcIndex;
+  dim.value = value;
+  m_problem->dimensions.push_back(dim);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+  setConstraintStatus(result.nodeStatus);
+  rebuild();
+  emit problemEdited();
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: recomputes the
+// live Smart Dimension candidate for the current cursor position and
+// refreshes its ghost preview item -- called from mouseMoveEvent() while
+// m_smartDimAwaitingPlacement is true, and once more (with the click's own
+// position) at the top of commitSmartDimensionPlacement() so the
+// committed dimension always matches exactly what was last previewed.
+//
+// The Horizontal/Vertical/Aligned heuristic (only applied when
+// m_smartDimTwoPointMode is true -- see that member's own comment): the
+// reference doc frames this as "the cursor resolves which geometric
+// interpretation you intend" without spelling out the exact geometry, so
+// this measures which of 3 candidate offset DIRECTIONS -- straight up/down
+// (0,1) for Horizontal, straight left/right (1,0) for Vertical, or
+// perpendicular to the P1-P2 line itself for Aligned -- the actual cursor
+// offset from the two points' midpoint is most closely aligned with
+// (largest |cos(angle)|, via a plain dot product since all vectors here
+// are 2D). This matches the visual form each dimension actually takes: a
+// Horizontal dimension's line sits directly above/below the two points
+// (offset mostly vertical), a Vertical one to their side (offset mostly
+// horizontal), and an Aligned one offset perpendicular to the segment
+// they define.
+void GeometryScene::updateSmartDimensionPreview(QPointF mousePos)
+{
+  if (!m_problem || !m_smartDimAwaitingPlacement)
+    return;
+  if (m_smartDimRefA < 0 || m_smartDimRefA >= m_problem->nodes.size())
+    return;
+
+  if (m_smartDimTwoPointMode) {
+    if (m_smartDimRefB < 0 || m_smartDimRefB >= m_problem->nodes.size())
+      return;
+    const FemmNode& na = m_problem->nodes[m_smartDimRefA];
+    const FemmNode& nb = m_problem->nodes[m_smartDimRefB];
+    QPointF a(na.x, na.y), b(nb.x, nb.y);
+    QPointF offsetVec = mousePos - (a + b) / 2.0;
+    double offsetLen = std::hypot(offsetVec.x(), offsetVec.y());
+    if (offsetLen > 1e-9) {
+      QPointF lineDir = b - a;
+      double lineLen = std::hypot(lineDir.x(), lineDir.y());
+      QPointF alignedNormal = lineLen > 1e-9 ? QPointF(-lineDir.y(), lineDir.x()) / lineLen : QPointF(0, 1);
+      double cosH = std::abs(offsetVec.y()) / offsetLen;
+      double cosV = std::abs(offsetVec.x()) / offsetLen;
+      double cosAligned = std::abs(offsetVec.x() * alignedNormal.x() + offsetVec.y() * alignedNormal.y()) / offsetLen;
+      if (cosH >= cosV && cosH >= cosAligned)
+        m_smartDimType = DimensionType::HorizontalDistance;
+      else if (cosV >= cosH && cosV >= cosAligned)
+        m_smartDimType = DimensionType::VerticalDistance;
+      else
+        m_smartDimType = DimensionType::Distance;
+    }
+  }
+
+  // Build a TEMPORARY, not-yet-committed FemmDimension representing the
+  // candidate as it stands right now, computing the same offset/direction
+  // and live-measured value commitSmartDimensionPlacement() will use if
+  // the user clicks this instant -- then hand it to buildDimensionPath(),
+  // the exact same renderer a committed DimensionItem uses, so the
+  // preview is pixel-identical to what actually gets created.
+  FemmDimension preview;
+  preview.type = m_smartDimType;
+  preview.refA = m_smartDimRefA;
+  preview.refB = m_smartDimRefB;
+  preview.refC = m_smartDimRefC;
+
+  switch (preview.type) {
+  case DimensionType::Distance:
+  case DimensionType::HorizontalDistance:
+  case DimensionType::VerticalDistance: {
+    if (preview.refB < 0 || preview.refB >= m_problem->nodes.size())
+      return;
+    const FemmNode& na = m_problem->nodes[preview.refA];
+    const FemmNode& nb = m_problem->nodes[preview.refB];
+    QPointF offset = mousePos - QPointF((na.x + nb.x) / 2.0, (na.y + nb.y) / 2.0);
+    preview.labelOffsetX = offset.x();
+    preview.labelOffsetY = offset.y();
+    double dx = nb.x - na.x, dy = nb.y - na.y;
+    preview.value = preview.type == DimensionType::HorizontalDistance ? std::abs(dx)
+        : preview.type == DimensionType::VerticalDistance             ? std::abs(dy)
+                                                                        : std::hypot(dx, dy);
+    break;
+  }
+  case DimensionType::Radius: {
+    if (preview.refA < 0 || preview.refA >= m_problem->arcSegments.size())
+      return;
+    std::complex<double> c;
+    double r = 0;
+    if (!FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[preview.refA], c, r))
+      return;
+    QPointF center(c.real(), c.imag());
+    QPointF dir = mousePos - center;
+    double dirLen = std::hypot(dir.x(), dir.y());
+    if (dirLen > 1e-9) {
+      preview.labelOffsetX = dir.x() / dirLen;
+      preview.labelOffsetY = dir.y() / dirLen;
+    }
+    preview.value = r;
+    break;
+  }
+  case DimensionType::Angle: {
+    if (preview.refB < 0 || preview.refB >= m_problem->nodes.size() || preview.refC < 0 || preview.refC >= m_problem->nodes.size())
+      return;
+    const FemmNode& v = m_problem->nodes[preview.refA];
+    const FemmNode& p1 = m_problem->nodes[preview.refB];
+    const FemmNode& p2 = m_problem->nodes[preview.refC];
+    double a1 = std::atan2(p1.y - v.y, p1.x - v.x);
+    double a2 = std::atan2(p2.y - v.y, p2.x - v.x);
+    double diff = a2 - a1;
+    while (diff > M_PI)
+      diff -= 2 * M_PI;
+    while (diff <= -M_PI)
+      diff += 2 * M_PI;
+    preview.value = diff * 180.0 / M_PI;
+    break;
+  }
+  }
+
+  if (!m_smartDimPreviewItem) {
+    auto* item = new QGraphicsPathItem();
+    QPen pen(AppTheme::selectedColor());
+    pen.setCosmetic(true);
+    pen.setWidth(0);
+    pen.setStyle(Qt::DashLine);
+    item->setPen(pen);
+    item->setOpacity(0.65); // "ghost" preview -- visually distinct from a committed dimension
+    item->setZValue(3.0); // above everything, including constraint glyphs (2.0)
+    // Modified by Claude (Anthropic), noreply@anthropic.com: makes this
+    // item (and its text label below) completely invisible to itemAt()/
+    // mouse hit-testing -- found while debugging why a second click meant
+    // to hit a real segment (for the Length -> Angle upgrade) could
+    // instead land on the PREVIEW ghost itself, since it's drawn on top
+    // (z=3.0) of everything and, being freshly created here with no
+    // KindKey/IndexKey ever set, would have been misread as "clicked node
+    // index 0" (see addDimensionItem's own text-item comment for the
+    // exact same QVariant-defaults-to-0 mechanism). Excluding it from hit-
+    // testing entirely is more robust than tagging it correctly would
+    // have been: a placement click should always see through the ghost
+    // to whatever REAL geometry (or empty canvas) is actually underneath.
+    item->setAcceptedMouseButtons(Qt::NoButton);
+    addItem(item);
+    m_smartDimPreviewItem = item;
+
+    auto* text = addSimpleText(QString());
+    text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+    text->setBrush(AppTheme::selectedColor());
+    text->setOpacity(0.85);
+    text->setZValue(3.0);
+    text->setAcceptedMouseButtons(Qt::NoButton);
+    m_smartDimPreviewText = text;
+  }
+  QPointF textPos;
+  QString text;
+  QPainterPath path = buildDimensionPath(*m_problem, preview, textPos, text);
+  static_cast<QGraphicsPathItem*>(m_smartDimPreviewItem)->setPath(path);
+  static_cast<QGraphicsSimpleTextItem*>(m_smartDimPreviewText)->setText(text);
+  static_cast<QGraphicsSimpleTextItem*>(m_smartDimPreviewText)->setPos(textPos);
+}
+
+void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
+{
+  if (!m_problem || !m_smartDimAwaitingPlacement) {
+    cancelSmartDimensionPreview();
+    return;
+  }
+  // Make sure the candidate reflects the FINAL mouse position (this click)
+  // before reading anything back out of it -- the last mouseMoveEvent may
+  // have fired for a slightly earlier position.
+  updateSmartDimensionPreview(mousePos);
+
+  DimensionType type = m_smartDimType;
+  int refA = m_smartDimRefA, refB = m_smartDimRefB, refC = m_smartDimRefC;
+  QPointF offsetOrDir;
+  QString label = "Distance:";
+  double curValue = 0, minVal = 0, maxVal = 1.0e9;
+
+  switch (type) {
+  case DimensionType::Distance:
+  case DimensionType::HorizontalDistance:
+  case DimensionType::VerticalDistance: {
+    if (refA < 0 || refA >= m_problem->nodes.size() || refB < 0 || refB >= m_problem->nodes.size()) {
+      cancelSmartDimensionPreview();
+      return;
+    }
+    const FemmNode& na = m_problem->nodes[refA];
+    const FemmNode& nb = m_problem->nodes[refB];
+    offsetOrDir = mousePos - QPointF((na.x + nb.x) / 2.0, (na.y + nb.y) / 2.0);
+    double dx = nb.x - na.x, dy = nb.y - na.y;
+    curValue = type == DimensionType::HorizontalDistance ? std::abs(dx)
+        : type == DimensionType::VerticalDistance         ? std::abs(dy)
+                                                            : std::hypot(dx, dy);
+    break;
+  }
+  case DimensionType::Radius: {
+    if (refA < 0 || refA >= m_problem->arcSegments.size()) {
+      cancelSmartDimensionPreview();
+      return;
+    }
+    std::complex<double> c;
+    double r = 0;
+    if (!FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[refA], c, r)) {
+      cancelSmartDimensionPreview();
+      return;
+    }
+    QPointF center(c.real(), c.imag());
+    QPointF dir = mousePos - center;
+    double dirLen = std::hypot(dir.x(), dir.y());
+    if (dirLen > 1e-9)
+      offsetOrDir = dir / dirLen;
+    curValue = r;
+    label = "Radius:";
+    break;
+  }
+  case DimensionType::Angle: {
+    if (refA < 0 || refA >= m_problem->nodes.size() || refB < 0 || refB >= m_problem->nodes.size() || refC < 0 || refC >= m_problem->nodes.size()) {
+      cancelSmartDimensionPreview();
+      return;
+    }
+    const FemmNode& v = m_problem->nodes[refA];
+    const FemmNode& p1 = m_problem->nodes[refB];
+    const FemmNode& p2 = m_problem->nodes[refC];
+    double a1 = std::atan2(p1.y - v.y, p1.x - v.x);
+    double a2 = std::atan2(p2.y - v.y, p2.x - v.x);
+    double diff = a2 - a1;
+    while (diff > M_PI)
+      diff -= 2 * M_PI;
+    while (diff <= -M_PI)
+      diff += 2 * M_PI;
+    curValue = diff * 180.0 / M_PI;
+    label = "Angle (deg):";
+    minVal = -359.99;
+    maxVal = 359.99;
+    break;
+  }
+  }
+
+  // Remove the ghost preview BEFORE showing a modal dialog, so it doesn't
+  // linger on screen behind it -- also resets all the smart-dim state,
+  // which is fine, since refA/refB/refC/type were already captured above.
+  cancelSmartDimensionPreview();
+
+  bool ok = false;
+  double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+      "Smart Dimension", label, curValue, minVal, maxVal, 6, &ok);
+  if (!ok)
+    return;
+
+  emit aboutToEdit();
+  FemmDimension dim;
+  dim.type = type;
+  dim.refA = refA;
+  dim.refB = refB;
+  dim.refC = refC;
+  dim.value = value;
+  dim.labelOffsetX = offsetOrDir.x();
+  dim.labelOffsetY = offsetOrDir.y();
+  m_problem->dimensions.push_back(dim);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+  setConstraintStatus(result.nodeStatus);
+  rebuild();
+  emit problemEdited();
+}
+
+void GeometryScene::cancelSmartDimensionPreview()
+{
+  delete m_smartDimPreviewItem; // QGraphicsItem's destructor detaches itself from the scene automatically
+  m_smartDimPreviewItem = nullptr;
+  delete m_smartDimPreviewText;
+  m_smartDimPreviewText = nullptr;
+  m_smartDimAwaitingPlacement = false;
+  m_smartDimTwoPointMode = false;
+  m_smartDimRefA = m_smartDimRefB = m_smartDimRefC = -1;
 }
 
 void GeometryScene::addConstraintItem(int index)
@@ -1253,6 +1636,15 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
   emit mousePositionChanged(snapPoint(event->scenePos()));
+
+  if (m_toolMode == GeometryToolMode::SmartDimension && m_smartDimAwaitingPlacement) {
+    // Deliberately the RAW (unsnapped) scene position -- dimension
+    // placement/offset isn't grid-snapped even when geometry is, matching
+    // every other dimension tool's own use of `pos` in handleToolClick.
+    updateSmartDimensionPreview(event->scenePos());
+    event->accept();
+    return;
+  }
 
   if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
     m_zoomWindowRectItem->setRect(QRectF(m_zoomWindowStartPos, event->scenePos()).normalized());
@@ -1494,35 +1886,7 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
       if (!m_pendingDimensionNodes.contains(clickedNode))
         m_pendingDimensionNodes.push_back(clickedNode);
       if (m_pendingDimensionNodes.size() == 2) {
-        int n0 = m_pendingDimensionNodes[0], n1 = m_pendingDimensionNodes[1];
-        double dx = m_problem->nodes[n1].x - m_problem->nodes[n0].x;
-        double dy = m_problem->nodes[n1].y - m_problem->nodes[n0].y;
-        double curLen = std::hypot(dx, dy);
-        bool ok = false;
-        double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
-            "Distance Dimension", "Distance:", curLen, 0.0, 1.0e9, 6, &ok);
-        if (ok) {
-          emit aboutToEdit();
-          FemmDimension dim;
-          dim.type = DimensionType::Distance;
-          dim.refA = n0;
-          dim.refB = n1;
-          dim.value = value;
-          // Default dimension-line offset: perpendicular to the measured
-          // segment, a modest fraction of its own length -- the user can
-          // reposition it later (not implemented this round -- see the
-          // module's own scope notes) by editing labelOffsetX/Y directly.
-          double len = std::hypot(dx, dy);
-          if (len > 0) {
-            dim.labelOffsetX = -dy / len * len * 0.15;
-            dim.labelOffsetY = dx / len * len * 0.15;
-          }
-          m_problem->dimensions.push_back(dim);
-          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-          setConstraintStatus(result.nodeStatus);
-          rebuild();
-          emit problemEdited();
-        }
+        addDistanceDimensionForNodes(m_pendingDimensionNodes[0], m_pendingDimensionNodes[1]);
         m_pendingDimensionNodes.clear();
       }
     }
@@ -1531,28 +1895,122 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
   case GeometryToolMode::AddDimensionRadius: {
     QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
     QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Arc)) {
-      int arcIdx = hit->data(IndexKey).toInt();
-      std::complex<double> c;
-      double r = 0;
-      if (FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[arcIdx], c, r)) {
-        bool ok = false;
-        double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
-            "Radius Dimension", "Radius:", r, 0.0001, 1.0e9, 6, &ok);
-        if (ok) {
-          emit aboutToEdit();
-          FemmDimension dim;
-          dim.type = DimensionType::Radius;
-          dim.refA = arcIdx;
-          dim.value = value;
-          m_problem->dimensions.push_back(dim);
-          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-          setConstraintStatus(result.nodeStatus);
-          rebuild();
-          emit problemEdited();
+    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Arc))
+      addRadiusDimensionForArc(hit->data(IndexKey).toInt());
+    break;
+  }
+  case GeometryToolMode::SmartDimension: {
+    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was
+    // itemAt(pos, deviceTransform) -- the preview ghost is drawn on top of
+    // everything (z=3.0) specifically so it's never visually hidden,
+    // which means it's frequently exactly what a placement click
+    // geometrically lands on. A plain itemAt() returns the TOPMOST item
+    // only, so when that's the ghost's own ITEM or its TEXT label,
+    // itemAt() alone has no way to report what's actually underneath --
+    // confirmed directly: an angle-upgrade click aimed at a second
+    // segment came back hitting the ghost's text label instead (both
+    // sharing screen space near the first candidate's measured value),
+    // and simply treating that as "no hit" (an earlier, insufficient fix)
+    // silently swallowed the click rather than seeing through to the
+    // segment beneath it -- exactly backwards from how a real placement
+    // click should be evaluated. items() (which itemAt() is itself
+    // documented as a value(0) shorthand for) returns every item under
+    // the cursor in top-to-bottom order, so skipping the ghost's own 2
+    // items and taking the next one finds the real geometry (or
+    // genuinely empty canvas) underneath, regardless of which of the two
+    // ghost pieces happened to be topmost.
+    QGraphicsItem* hit = nullptr;
+    const QList<QGraphicsItem*> hitList = items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform);
+    for (QGraphicsItem* candidate : hitList) {
+      if (candidate == m_smartDimPreviewItem || candidate == m_smartDimPreviewText)
+        continue;
+      hit = candidate;
+      break;
+    }
+    FemmItemKind kind = hit ? static_cast<FemmItemKind>(hit->data(KindKey).toInt()) : FemmItemKind::Node;
+
+    if (!m_smartDimAwaitingPlacement) {
+      // ---- Stage 1: entity selection -- what CAN be measured ----------
+      if (!hit)
+        break; // clicked empty space with nothing selected yet -- no-op
+      if (kind == FemmItemKind::Segment) {
+        // One click on a segment measures its own true length -- locked
+        // to Distance, never re-resolved to Horizontal/Vertical as the
+        // mouse moves (see the class-level comment on
+        // m_smartDimTwoPointMode for why: "click the line" and "click its
+        // two endpoints" are deliberately different selections per the
+        // reference doc's own Section 5).
+        const FemmSegment& s = m_problem->segments[hit->data(IndexKey).toInt()];
+        m_smartDimType = DimensionType::Distance;
+        m_smartDimRefA = s.n0;
+        m_smartDimRefB = s.n1;
+        m_smartDimTwoPointMode = false;
+        m_smartDimAwaitingPlacement = true;
+        updateSmartDimensionPreview(pos);
+      } else if (kind == FemmItemKind::Arc) {
+        m_smartDimType = DimensionType::Radius;
+        m_smartDimRefA = hit->data(IndexKey).toInt();
+        m_smartDimTwoPointMode = false;
+        m_smartDimAwaitingPlacement = true;
+        updateSmartDimensionPreview(pos);
+      } else if (kind == FemmItemKind::Node) {
+        int clickedNode = hit->data(IndexKey).toInt();
+        if (!m_pendingDimensionNodes.contains(clickedNode))
+          m_pendingDimensionNodes.push_back(clickedNode);
+        if (m_pendingDimensionNodes.size() == 2) {
+          // Type re-resolved live on every subsequent mouse move -- see
+          // updateSmartDimensionPreview()'s own comment for the
+          // Horizontal/Vertical/Aligned heuristic.
+          m_smartDimType = DimensionType::Distance;
+          m_smartDimRefA = m_pendingDimensionNodes[0];
+          m_smartDimRefB = m_pendingDimensionNodes[1];
+          m_smartDimTwoPointMode = true;
+          m_pendingDimensionNodes.clear();
+          m_smartDimAwaitingPlacement = true;
+          updateSmartDimensionPreview(pos);
         }
       }
+      break;
     }
+
+    // ---- Stage 2: awaiting placement -- extend to Angle, or commit ----
+    bool upgradedToAngle = false;
+    if (hit && kind == FemmItemKind::Segment && m_smartDimType == DimensionType::Distance && !m_smartDimTwoPointMode) {
+      // A second LINE click while the first line's length preview is
+      // showing upgrades the candidate to an Angle dimension -- per the
+      // reference doc's Section 9 ("select the first line... select the
+      // second line") -- but only if the two segments share a common
+      // endpoint node: FemmDimension's Angle type is defined as vertex +
+      // 2 ray endpoints (see FemmProblem.h's own comment), not a general
+      // angle between two arbitrary, possibly-disjoint lines -- a
+      // deliberate, documented scope cut (the vast majority of real
+      // sketch angle dimensions ARE between two lines meeting at a shared
+      // corner).
+      const FemmSegment& s2 = m_problem->segments[hit->data(IndexKey).toInt()];
+      int vertex = -1, ray1 = -1, ray2 = -1;
+      if (s2.n0 == m_smartDimRefA || s2.n0 == m_smartDimRefB) {
+        vertex = s2.n0;
+        ray1 = (m_smartDimRefA == vertex) ? m_smartDimRefB : m_smartDimRefA;
+        ray2 = s2.n1;
+      } else if (s2.n1 == m_smartDimRefA || s2.n1 == m_smartDimRefB) {
+        vertex = s2.n1;
+        ray1 = (m_smartDimRefA == vertex) ? m_smartDimRefB : m_smartDimRefA;
+        ray2 = s2.n0;
+      }
+      if (vertex >= 0) {
+        m_smartDimType = DimensionType::Angle;
+        m_smartDimRefA = vertex;
+        m_smartDimRefB = ray1;
+        m_smartDimRefC = ray2;
+        updateSmartDimensionPreview(pos);
+        upgradedToAngle = true;
+      }
+      // Two lines that don't share an endpoint: fall through and treat
+      // this click as an ordinary placement click instead.
+    }
+    if (!upgradedToAngle)
+      commitSmartDimensionPlacement(pos);
     break;
   }
   case GeometryToolMode::AddDimensionAngle: {
@@ -1608,6 +2066,16 @@ void GeometryScene::keyPressEvent(QKeyEvent* event)
   }
   if (event->key() == Qt::Key_Space) {
     emit openSelectedRequested();
+    event->accept();
+    return;
+  }
+  // Modified by Claude (Anthropic), noreply@anthropic.com: backs out of an
+  // in-progress Smart Dimension placement without committing it -- the
+  // reference doc's own workflow implicitly assumes you can back out
+  // before the placement click (e.g. "Do not click yet" while inspecting
+  // the preview, Section 26).
+  if (event->key() == Qt::Key_Escape && m_smartDimAwaitingPlacement) {
+    cancelSmartDimensionPreview();
     event->accept();
     return;
   }
