@@ -51,17 +51,17 @@ enum class GeometryToolMode {
   // Modified by Claude (Anthropic), noreply@anthropic.com: "Smart
   // Dimension" -- per direct user request ("I want to be able to set
   // dimension by pressing D and [click] the line or the nodes"), matching
-  // SolidWorks/Fusion 360's own "D" Smart Dimension shortcut. One click
-  // on a SEGMENT immediately creates a Distance dimension for that
-  // segment's own two endpoints (no need to click each endpoint
-  // separately, unlike AddDimensionDistance above); one click on an ARC
-  // immediately creates a Radius dimension; two NODE clicks create a
-  // Distance dimension between them (same 2-click accumulation as
-  // AddDimensionDistance, reusing m_pendingDimensionNodes). See
-  // handleToolClick()'s own case for the exact dispatch, and
-  // addDistanceDimensionForNodes()/addRadiusDimensionForArc() (shared
-  // with AddDimensionDistance/AddDimensionRadius, so both tools stay in
-  // sync by construction) for the actual creation+solve+rebuild.
+  // SolidWorks/Fusion 360's own "D" Smart Dimension shortcut, reworked to
+  // match that reference's actual select -> cursor-resolved live preview
+  // -> placement click -> type-value model (see
+  // updateSmartDimensionPreview()/commitSmartDimensionPlacement()'s own
+  // comments for the state machine). One click on a SEGMENT or two NODE
+  // clicks both start a live Horizontal/Vertical/Aligned distance
+  // candidate that follows the cursor; a click on an ARC starts a live
+  // Radius candidate; a second click on a segment sharing a vertex with an
+  // in-progress segment-length candidate upgrades it to an Angle
+  // candidate instead. The NEXT click places the candidate and prompts for
+  // its value. See handleToolClick()'s own case for the exact dispatch.
   SmartDimension,
   // Persistent (like the 4 Add* tools above, not one-shot) -- drag between
   // two diagonal corners to place an axis-aligned rectangle: 4 new nodes
@@ -471,12 +471,31 @@ class GeometryScene : public QGraphicsScene {
   // HorizontalDistance/VerticalDistance the current cursor position
   // implies, then whatever it is AT the placement click is what commits.
   bool m_smartDimAwaitingPlacement = false;
-  // true only for a candidate built from 2 separate node clicks -- gates
-  // updateSmartDimensionPreview()'s live Horizontal/Vertical/Aligned
-  // re-resolution; false for a line-length candidate (locked to the
-  // segment's own true Distance) or Radius/Angle, none of which change
-  // TYPE as the mouse moves, only their offset/direction.
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // request ("the linear dimensions, I want them either vertical,
+  // horizontal, or perpendicular to the line being dimensioned") -- true
+  // for any
+  // candidate whose refA/refB are a plain point pair eligible for live
+  // Horizontal/Vertical/Aligned re-resolution (see
+  // updateSmartDimensionPreview()'s own comment for the heuristic): both a
+  // 2-node-click candidate AND, now, a single-segment-length candidate
+  // (refA/refB = that segment's own two endpoints -- Aligned between them
+  // IS the segment's true length, so this is a strict superset of the old
+  // "locked to Distance" behavior, not a different computation). False for
+  // Radius/Angle, neither of which changes TYPE as the mouse moves, only
+  // their offset/direction. Deliberately independent of
+  // m_smartDimAngleEligible below -- a segment-length candidate can be
+  // live-resolved AND still upgrade to Angle on a second connected-segment
+  // click; whichever of Distance/Horizontal/Vertical the cursor happened to
+  // be showing at that moment is simply discarded in favor of Angle.
   bool m_smartDimTwoPointMode = false;
+  // true only for a candidate built from a single SEGMENT click (so its
+  // refA/refB endpoints unambiguously form a real line) -- gates whether a
+  // second click on a different segment sharing a vertex with it upgrades
+  // the candidate to an Angle dimension (handleToolClick's Stage 2). False
+  // for a 2-node-click candidate (no guarantee those two nodes are even
+  // connected by a real segment) or Radius/Angle.
+  bool m_smartDimAngleEligible = false;
   DimensionType m_smartDimType;
   int m_smartDimRefA = -1, m_smartDimRefB = -1, m_smartDimRefC = -1;
   QGraphicsItem* m_smartDimPreviewItem = nullptr;

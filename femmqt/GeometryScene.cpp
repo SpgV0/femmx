@@ -416,9 +416,12 @@ void addArrowhead(QPainterPath& path, QPointF tip, QPointF backDirUnit, double l
 // exact same path a COMMITTED dimension would render, from a temporary,
 // not-yet-pushed-into-p.dimensions FemmDimension -- a plain mechanical
 // extraction, no behavior change. Distance/HorizontalDistance/
-// VerticalDistance render identically (extension lines + arrowed
-// dimension line) despite constraining different quantities -- only the
-// SOLVER'S residual differs between them (see ConstraintSolver.cpp).
+// VerticalDistance share this case but do NOT render identically (see the
+// per-type dimA/dimB derivation inside it): Horizontal/Vertical lock the
+// dimension line to a single shared Y/X, Aligned (Distance) keeps it
+// parallel to the measured segment -- matching how the solver actually
+// constrains each of them (see ConstraintSolver.cpp), not just their
+// value.
 QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QPointF& textPos, QString& text)
 {
   const QVector<FemmNode>& nodes = p.nodes;
@@ -433,18 +436,73 @@ QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QP
     QPointF a(nodes[d.refA].x, nodes[d.refA].y);
     QPointF b(nodes[d.refB].x, nodes[d.refB].y);
     QPointF offset(d.labelOffsetX, d.labelOffsetY);
-    double offLen = std::hypot(offset.x(), offset.y());
-    QPointF dimA = a + offset;
-    QPointF dimB = b + offset;
-    if (offLen > 1e-9) {
-      QPointF dir = offset / offLen;
-      double gap = offLen * 0.10;
-      double overshoot = offLen * 0.15;
-      path.moveTo(a + dir * gap);
-      path.lineTo(a + dir * (offLen + overshoot));
-      path.moveTo(b + dir * gap);
-      path.lineTo(b + dir * (offLen + overshoot));
+    QPointF mid = (a + b) / 2.0;
+
+    // Modified by Claude (Anthropic), noreply@anthropic.com: REAL rendering
+    // bug found per direct user request/screenshot ("does not seem nice...
+    // same way as in fusion 360") -- dimA/dimB used to be a/b translated by
+    // the SAME raw offset vector, which makes dimB-dimA ALWAYS exactly
+    // b-a: the dimension line was silently parallel to whatever the
+    // measured segment's own angle happened to be, for EVERY type,
+    // Horizontal and Vertical included. That's only correct for Aligned.
+    // Confirmed against both a real Fusion 360 screenshot (solid axis-
+    // locked dimension lines) and this session's own Fusion 360 reference
+    // doc (Section 6: a Horizontal dimension spans purely horizontally
+    // under an inclined line, "does not require the points to lie on the
+    // same horizontal line"). Fixed by deriving dimA/dimB per type instead
+    // of applying one shared offset vector to both points: Horizontal
+    // locks the dimension line to a single Y (extension lines vertical,
+    // independently as long or short as each point needs); Vertical locks
+    // it to a single X (extension lines horizontal); Aligned keeps the
+    // dimension line parallel to the segment, using only the PERPENDICULAR
+    // component of the raw cursor offset -- any along-the-segment
+    // component would just slide both extension lines sideways together in
+    // lockstep, which changes nothing visually and isn't how Fusion 360's
+    // own aligned dimension behaves (cursor there controls offset
+    // DISTANCE, not free 2D placement).
+    QPointF dimA, dimB;       // where each extension line meets the dimension line
+    QPointF extDirA, extDirB; // unit direction FROM each point TOWARD the dimension line
+    if (d.type == DimensionType::HorizontalDistance) {
+      double dimY = mid.y() + offset.y();
+      dimA = QPointF(a.x(), dimY);
+      dimB = QPointF(b.x(), dimY);
+      extDirA = QPointF(0, dimY >= a.y() ? 1.0 : -1.0);
+      extDirB = QPointF(0, dimY >= b.y() ? 1.0 : -1.0);
+    } else if (d.type == DimensionType::VerticalDistance) {
+      double dimX = mid.x() + offset.x();
+      dimA = QPointF(dimX, a.y());
+      dimB = QPointF(dimX, b.y());
+      extDirA = QPointF(dimX >= a.x() ? 1.0 : -1.0, 0);
+      extDirB = QPointF(dimX >= b.x() ? 1.0 : -1.0, 0);
+    } else {
+      QPointF segDir = b - a;
+      double segLen = std::hypot(segDir.x(), segDir.y());
+      QPointF normal = segLen > 1e-9 ? QPointF(-segDir.y(), segDir.x()) / segLen : QPointF(0, 1);
+      double perp = offset.x() * normal.x() + offset.y() * normal.y();
+      dimA = a + normal * perp;
+      dimB = b + normal * perp;
+      extDirA = extDirB = (perp >= 0 ? normal : -normal);
     }
+
+    // Gap near the measured point + overshoot past the dimension line,
+    // each scaled off THAT point's own extension length (which, for
+    // Horizontal/Vertical, can now legitimately differ between the two
+    // points) rather than a single shared offset magnitude -- naturally
+    // degrades to "no visible extension line" if the dimension line
+    // happens to pass exactly through a point, which is correct: there's
+    // nothing to extend.
+    auto drawExtension = [&](QPointF from, QPointF to, QPointF dirUnit) {
+      double len = std::hypot(to.x() - from.x(), to.y() - from.y());
+      if (len < 1e-9)
+        return;
+      double gap = len * 0.10;
+      double overshoot = len * 0.15;
+      path.moveTo(from + dirUnit * gap);
+      path.lineTo(from + dirUnit * (len + overshoot));
+    };
+    drawExtension(a, dimA, extDirA);
+    drawExtension(b, dimB, extDirB);
+
     path.moveTo(dimA);
     path.lineTo(dimB);
     double lineLen = std::hypot(dimB.x() - dimA.x(), dimB.y() - dimA.y());
@@ -454,7 +512,7 @@ QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QP
       addArrowhead(path, dimA, along, arrowLen);
       addArrowhead(path, dimB, -along, arrowLen);
     }
-    textPos = (a + b) / 2.0 + offset;
+    textPos = (dimA + dimB) / 2.0;
     text = QString::number(d.value, 'g', 6);
     break;
   }
@@ -827,6 +885,7 @@ void GeometryScene::rebuild()
   m_smartDimPreviewText = nullptr;
   m_smartDimAwaitingPlacement = false;
   m_smartDimTwoPointMode = false;
+  m_smartDimAngleEligible = false;
   m_smartDimRefA = m_smartDimRefB = m_smartDimRefC = -1;
   // clear() above already deleted this along with everything else -- an
   // edit invalidates any previous mesh anyway (matches classic FEMM's own
@@ -1073,17 +1132,27 @@ void GeometryScene::addBlockLabelItem(int index)
 void GeometryScene::addDimensionItem(int index)
 {
   const FemmDimension& d = m_problem->dimensions[index];
-  QPen pen(AppTheme::segmentColor());
+  // Modified by Claude (Anthropic), noreply@anthropic.com: was
+  // segmentColor() + Qt::DashLine ("distinct from ordinary geometry at a
+  // glance, without a 5th color") -- per direct user request to match
+  // Fusion 360's own dimension style (confirmed against a real Fusion 360
+  // screenshot supplied as reference): committed dimensions there are
+  // solid lines, not dashed. Solid now, with dimensionColor() taking over
+  // the "distinct at a glance" job dashing used to do -- see that color's
+  // own comment. The Smart Dimension ghost preview stays dashed/
+  // selectedColor() on purpose (see updateSmartDimensionPreview) -- dashed
+  // now meaningfully means "not committed yet" instead of just "this is a
+  // dimension".
+  QPen pen(AppTheme::dimensionColor());
   pen.setCosmetic(true);
   pen.setWidth(0);
-  pen.setStyle(Qt::DashLine); // distinct from ordinary geometry at a glance, without a 5th color
   auto* item = new DimensionItem(index, m_problem); // sets KindKey/IndexKey itself, matching NodeItem's own constructor
   item->setPen(pen);
   addItem(item);
 
   auto* text = addSimpleText(QString());
   text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
-  text->setBrush(AppTheme::segmentColor());
+  text->setBrush(AppTheme::dimensionColor());
   // Modified by Claude (Anthropic), noreply@anthropic.com: was missing
   // entirely -- a REAL, pre-existing bug found while implementing Smart
   // Dimension's two-line-to-Angle upgrade (see handleToolClick's
@@ -1191,7 +1260,9 @@ void GeometryScene::addRadiusDimensionForArc(int arcIndex)
 // committed dimension always matches exactly what was last previewed.
 //
 // The Horizontal/Vertical/Aligned heuristic (only applied when
-// m_smartDimTwoPointMode is true -- see that member's own comment): the
+// m_smartDimTwoPointMode is true -- see that member's own comment; this
+// now covers BOTH a 2-node-click candidate and a single-segment-length
+// candidate, refA/refB being a plain point pair either way): the
 // reference doc frames this as "the cursor resolves which geometric
 // interpretation you intend" without spelling out the exact geometry, so
 // this measures which of 3 candidate offset DIRECTIONS -- straight up/down
@@ -1203,7 +1274,10 @@ void GeometryScene::addRadiusDimensionForArc(int arcIndex)
 // Horizontal dimension's line sits directly above/below the two points
 // (offset mostly vertical), a Vertical one to their side (offset mostly
 // horizontal), and an Aligned one offset perpendicular to the segment
-// they define.
+// they define -- for a single-segment candidate this Aligned case is
+// exactly the segment's own true length, its witness/extension lines
+// running perpendicular to it, same as any CAD tool's standard linear
+// dimension.
 void GeometryScene::updateSmartDimensionPreview(QPointF mousePos)
 {
   if (!m_problem || !m_smartDimAwaitingPlacement)
@@ -1452,6 +1526,7 @@ void GeometryScene::cancelSmartDimensionPreview()
   m_smartDimPreviewText = nullptr;
   m_smartDimAwaitingPlacement = false;
   m_smartDimTwoPointMode = false;
+  m_smartDimAngleEligible = false;
   m_smartDimRefA = m_smartDimRefB = m_smartDimRefC = -1;
 }
 
@@ -1935,23 +2010,32 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
       if (!hit)
         break; // clicked empty space with nothing selected yet -- no-op
       if (kind == FemmItemKind::Segment) {
-        // One click on a segment measures its own true length -- locked
-        // to Distance, never re-resolved to Horizontal/Vertical as the
-        // mouse moves (see the class-level comment on
-        // m_smartDimTwoPointMode for why: "click the line" and "click its
-        // two endpoints" are deliberately different selections per the
-        // reference doc's own Section 5).
+        // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+        // user request ("the linear dimensions, I want them either
+        // vertical, horizontal, or perpendicular to the line being
+        // dimensioned") -- a single-segment click now gets the SAME live
+        // Horizontal/Vertical/Aligned cursor resolution a 2-node click
+        // already had (previously locked to Distance/true-length only).
+        // "Aligned" here still IS the
+        // segment's own true length (refA/refB are literally its two
+        // endpoints), so this is a strict superset of the old behavior --
+        // nothing that used to work stops working. See
+        // m_smartDimTwoPointMode's own comment for why this is independent
+        // of Angle-upgrade eligibility (still segment-only, via
+        // m_smartDimAngleEligible below).
         const FemmSegment& s = m_problem->segments[hit->data(IndexKey).toInt()];
         m_smartDimType = DimensionType::Distance;
         m_smartDimRefA = s.n0;
         m_smartDimRefB = s.n1;
-        m_smartDimTwoPointMode = false;
+        m_smartDimTwoPointMode = true;
+        m_smartDimAngleEligible = true;
         m_smartDimAwaitingPlacement = true;
         updateSmartDimensionPreview(pos);
       } else if (kind == FemmItemKind::Arc) {
         m_smartDimType = DimensionType::Radius;
         m_smartDimRefA = hit->data(IndexKey).toInt();
         m_smartDimTwoPointMode = false;
+        m_smartDimAngleEligible = false;
         m_smartDimAwaitingPlacement = true;
         updateSmartDimensionPreview(pos);
       } else if (kind == FemmItemKind::Node) {
@@ -1961,11 +2045,13 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         if (m_pendingDimensionNodes.size() == 2) {
           // Type re-resolved live on every subsequent mouse move -- see
           // updateSmartDimensionPreview()'s own comment for the
-          // Horizontal/Vertical/Aligned heuristic.
+          // Horizontal/Vertical/Aligned heuristic. Not Angle-eligible: two
+          // freely-clicked nodes aren't guaranteed to share a real segment.
           m_smartDimType = DimensionType::Distance;
           m_smartDimRefA = m_pendingDimensionNodes[0];
           m_smartDimRefB = m_pendingDimensionNodes[1];
           m_smartDimTwoPointMode = true;
+          m_smartDimAngleEligible = false;
           m_pendingDimensionNodes.clear();
           m_smartDimAwaitingPlacement = true;
           updateSmartDimensionPreview(pos);
@@ -1976,17 +2062,21 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
 
     // ---- Stage 2: awaiting placement -- extend to Angle, or commit ----
     bool upgradedToAngle = false;
-    if (hit && kind == FemmItemKind::Segment && m_smartDimType == DimensionType::Distance && !m_smartDimTwoPointMode) {
-      // A second LINE click while the first line's length preview is
-      // showing upgrades the candidate to an Angle dimension -- per the
-      // reference doc's Section 9 ("select the first line... select the
-      // second line") -- but only if the two segments share a common
-      // endpoint node: FemmDimension's Angle type is defined as vertex +
-      // 2 ray endpoints (see FemmProblem.h's own comment), not a general
-      // angle between two arbitrary, possibly-disjoint lines -- a
+    if (hit && kind == FemmItemKind::Segment && m_smartDimAngleEligible) {
+      // A second LINE click while the first line's length/H/V/Aligned
+      // preview is showing upgrades the candidate to an Angle dimension --
+      // per the reference doc's Section 9 ("select the first line...
+      // select the second line") -- but only if the two segments share a
+      // common endpoint node: FemmDimension's Angle type is defined as
+      // vertex + 2 ray endpoints (see FemmProblem.h's own comment), not a
+      // general angle between two arbitrary, possibly-disjoint lines -- a
       // deliberate, documented scope cut (the vast majority of real
       // sketch angle dimensions ARE between two lines meeting at a shared
-      // corner).
+      // corner). Gated on m_smartDimAngleEligible alone (not on which of
+      // Distance/HorizontalDistance/VerticalDistance the cursor currently
+      // happens to be resolving to) -- a full click on a real, connected
+      // second segment is an unambiguous "I want an angle" regardless of
+      // what the live preview was showing a moment before.
       const FemmSegment& s2 = m_problem->segments[hit->data(IndexKey).toInt()];
       int vertex = -1, ray1 = -1, ray2 = -1;
       if (s2.n0 == m_smartDimRefA || s2.n0 == m_smartDimRefB) {
@@ -2003,6 +2093,21 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         m_smartDimRefA = vertex;
         m_smartDimRefB = ray1;
         m_smartDimRefC = ray2;
+        // Modified by Claude (Anthropic), noreply@anthropic.com: REAL bug
+        // found via live testing after broadening m_smartDimTwoPointMode to
+        // also cover segment-length candidates (see that member's own
+        // comment) -- a segment-length candidate upgrading to Angle here
+        // left m_smartDimTwoPointMode still true from before the upgrade,
+        // so updateSmartDimensionPreview()'s live Horizontal/Vertical/
+        // Aligned re-resolution block ran again right below, using refA/
+        // refB (now vertex/ray1 -- happens to still be 2 valid node
+        // indices) and silently clobbered the Angle type this line just
+        // set back to a distance type, discarding refC/ray2 entirely.
+        // Angle never re-resolves by cursor position the way a distance
+        // candidate does (only its offset/direction changes, see
+        // m_smartDimTwoPointMode's own comment), so this must be false
+        // from the moment of upgrade onward.
+        m_smartDimTwoPointMode = false;
         updateSmartDimensionPreview(pos);
         upgradedToAngle = true;
       }

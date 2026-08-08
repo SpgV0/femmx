@@ -33,6 +33,17 @@ QColor arcColor();
 // color-code this) so a boundary condition is visible without opening
 // each edge's properties dialog.
 QColor boundaryEdgeColor();
+// Modified by Claude (Anthropic), noreply@anthropic.com: committed CAD-
+// style dimension annotations (DimensionItem in GeometryScene.cpp) used to
+// borrow segmentColor() and rely on a dashed pen alone to read as distinct
+// from ordinary geometry at a glance. Reworked to draw solid (matching
+// Fusion 360's own dimension line style, per direct user request/reference
+// screenshot), which needs its own color to keep that at-a-glance
+// distinction now that dash style no longer provides it -- a violet/purple
+// accent, the one hue not already claimed by segmentColor() (blue),
+// arcColor() (teal), boundaryEdgeColor() (warm tan), selectedColor() (red),
+// or densityOverlayColor() (magenta/pink).
+QColor dimensionColor();
 QColor holeColor();
 QColor blockLabelNameColor();
 QColor selectedColor();
