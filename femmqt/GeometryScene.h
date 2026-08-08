@@ -4,6 +4,7 @@
 #include <QMultiHash>
 #include <QVector>
 
+#include "ConstraintSolver.h"
 #include "MeshOverlay.h"
 
 struct FemmProblem;
@@ -14,6 +15,17 @@ enum class FemmItemKind {
   Segment = 1,
   Arc = 2,
   BlockLabel = 3,
+  // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+  // dimension annotations -- see FemmProblem.h's FemmDimension comment.
+  Dimension = 4,
+  // Modified by Claude (Anthropic), noreply@anthropic.com: on-canvas
+  // constraint glyph -- a small clickable icon marking where a
+  // FemmConstraint applies (see FemmProblem.h's FemmConstraint comment),
+  // matching Fusion 360's own on-geometry relation markers per direct user
+  // request ("symbols indicating constraints than I can click and
+  // remove"). Selecting/deleting one goes through the exact same
+  // deleteSelectedItem() path as every other kind.
+  Constraint = 5,
 };
 
 enum class GeometryToolMode {
@@ -22,6 +34,15 @@ enum class GeometryToolMode {
   AddSegment,
   AddArc,
   AddBlockLabel,
+  // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+  // dimension placement tools -- click the entities the dimension
+  // references (2 nodes for Distance, 1 arc for Radius, 3 nodes --
+  // vertex then two ray endpoints -- for Angle), same click-pattern as
+  // AddSegment/AddArc, then a QInputDialog::getDouble prefilled with the
+  // live-measured value (matching AddArc's own angle-input precedent).
+  AddDimensionDistance,
+  AddDimensionRadius,
+  AddDimensionAngle,
   // Persistent (like the 4 Add* tools above, not one-shot) -- drag between
   // two diagonal corners to place an axis-aligned rectangle: 4 new nodes
   // plus 4 new segments forming a closed loop. No classic FEMM precedent
@@ -194,6 +215,32 @@ class GeometryScene : public QGraphicsScene {
   // encoding this scene uses internally out of MainWindow.
   bool selectedEntities(FemmItemKind& kind, QVector<int>& indices) const;
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com: generalization
+  // of selectedEntities() above that does NOT require a single kind --
+  // partitions the current selection into all 4 kinds at once. Used by
+  // MainWindow's Constraints menu handlers, several of which need a
+  // specific MIX of kinds (e.g. Symmetric needs 2 nodes + 1 segment),
+  // not just one homogeneous kind.
+  void selectedByKind(QVector<int>& nodes, QVector<int>& segments, QVector<int>& arcs, QVector<int>& blockLabels) const;
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: stores the
+  // per-node sketch-health classification from the last
+  // ConstraintSolver::solve() call (FullyConstrained/UnderConstrained/
+  // Redundant/Conflicting -- see ConstraintSolver.h), consulted by
+  // addNodeItem/addSegmentItem/addArcItem to color constrained geometry
+  // accordingly (matching SolidWorks/FreeCAD convention). Persisted as a
+  // member (not a one-off repaint) so it survives rebuild() (called
+  // after undo, file open, etc.) without the caller needing to re-apply
+  // it every time.
+  void setConstraintStatus(const QHash<int, ConstraintSolver::SketchStatus>& nodeStatus);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: selects
+  // constraint `index`'s on-canvas glyph (clearing any prior selection
+  // first) -- used by ConstraintListDialog's click-to-highlight, per
+  // direct user request ("a list... that you can select on the side").
+  // No-op if that index has no glyph (out of range).
+  void selectConstraintGlyph(int index);
+
   // Mesh > Create/Show/Purge Mesh overlay (femm.rc's Mesh menu split --
   // separate from Solve, which meshes internally via SolveRunner::solve
   // without ever touching this overlay).
@@ -305,6 +352,9 @@ class GeometryScene : public QGraphicsScene {
   void addSegmentItem(int index);
   void addArcItem(int index);
   void addBlockLabelItem(int index);
+  void addDimensionItem(int index);
+  void addConstraintItem(int index);
+  QColor constraintStatusColor(int nodeIndex) const;
   void updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex);
   void updateArcItemGeometry(QGraphicsItem* item, int arcIndex);
   void resetViewBackgroundCache();
@@ -325,7 +375,33 @@ class GeometryScene : public QGraphicsScene {
   // the same reason m_nodeItems exists.
   QHash<int, QGraphicsItem*> m_blockLabelItems;
 
+  // dimension index -> its item -- same "find every one to rebuild/
+  // resize" role as m_blockLabelItems above.
+  QHash<int, QGraphicsItem*> m_dimensionItems;
+  // node index -> {dimension items referencing it} -- same live-follow
+  // role as m_segmentItemsByNode/m_arcItemsByNode, consulted by
+  // onNodeMoved.
+  QMultiHash<int, QGraphicsItem*> m_dimensionItemsByNode;
+
+  // constraint index -> its glyph item, and node index -> {glyph items
+  // whose constraint touches it} -- same two-hash "find every one to
+  // rebuild/resize" + "find what follows a drag" roles as
+  // m_dimensionItems/m_dimensionItemsByNode above.
+  QHash<int, QGraphicsItem*> m_constraintItems;
+  QMultiHash<int, QGraphicsItem*> m_constraintItemsByNode;
+
   int m_pendingNode = -1; // first node clicked while in AddSegment/AddArc mode, -1 if none yet
+
+  // Nodes clicked so far while an AddDimensionXxx tool is active (2 for
+  // Distance, 1 for Radius -- actually an arc click, see handleToolClick
+  // -- 3 for Angle: vertex, then two ray endpoints), cleared once the
+  // dimension is committed or the tool mode changes.
+  QVector<int> m_pendingDimensionNodes;
+  int m_pendingDimensionArc = -1; // Radius tool's single arc click
+
+  // Per-node sketch-health classification from the last
+  // ConstraintSolver::solve() -- see setConstraintStatus()'s own comment.
+  QHash<int, ConstraintSolver::SketchStatus> m_constraintNodeStatus;
 
   // Last-used arc parameters, offered as the default the next time the Add
   // Arc tool prompts for them -- mirrors FemmeView.cpp's MaxSeg/ArcAngle

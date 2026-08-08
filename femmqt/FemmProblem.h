@@ -127,6 +127,71 @@ enum class FemmCoordinateType {
   Axisymmetric = 1,
 };
 
+// Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+// geometric constraints and dimensions -- per direct user request
+// ("add dimensions when drawings and constraints similar to modern
+// cad"), scoped to an IN-SESSION drawing aid only, not a persisted file
+// format extension ("I just want the drawing capability" -- explicit
+// correction ruling out extending .fem/.femx). These two lists follow
+// the exact precedent FemmNode/FemmSegment/FemmArcSegment/
+// FemmBlockLabel's own `isSelected` field already sets: a real
+// FemmProblem field that FemmFileIO.cpp/FemxFileIO.cpp's explicit,
+// non-reflective per-field tag parsers simply never read or write, so
+// adding them is safe by construction and needs no changes to either
+// file. The *result* of using a constraint/dimension (the node/segment/
+// arc coordinates it drove) is ordinary geometry and saves normally;
+// only the abstract relationship itself is session-transient, lost the
+// same way an unsaved selection is.
+enum class ConstraintType {
+  Coincident,
+  Horizontal,
+  Vertical,
+  Parallel,
+  Perpendicular,
+  Equal,
+  Tangent,
+  Concentric,
+  Symmetric,
+};
+
+// Meaning of refA/refB/refC depends on `type`:
+//   Coincident:    refA, refB = node indices
+//   Horizontal/Vertical: refA = segment index
+//   Parallel/Perpendicular: refA, refB = segment indices
+//   Equal:         refA, refB = segment indices, OR arc indices (both
+//                  same kind) -- disambiguated by isArcPair
+//   Tangent:       refA = segment OR arc index, refB = arc index,
+//                  disambiguated by firstIsArc
+//   Concentric:    refA, refB = arc indices
+//   Symmetric:     refA, refB = node indices, refC = segment index
+//                  (the mirror line)
+struct FemmConstraint {
+  ConstraintType type = ConstraintType::Coincident;
+  int refA = -1, refB = -1, refC = -1;
+  bool isArcPair = false; // Equal only: refA/refB are arc, not segment, indices
+  bool firstIsArc = false; // Tangent only: refA is an arc, not a segment, index
+};
+
+enum class DimensionType {
+  Distance,
+  Radius,
+  Angle,
+};
+
+// Meaning of refA/refB/refC depends on `type`:
+//   Distance: refA, refB = node indices
+//   Radius:   refA = arc index
+//   Angle:    refA = vertex node index, refB/refC = the two ray-endpoint
+//             node indices
+struct FemmDimension {
+  DimensionType type = DimensionType::Distance;
+  int refA = -1, refB = -1, refC = -1;
+  double value = 0; // target value (mm/deg per lengthUnits) -- editing
+                     // this drives the constraint solve
+  double labelOffsetX = 0, labelOffsetY = 0; // where the dimension
+                                              // line/text is drawn
+};
+
 struct FemmProblem {
   double frequency = 0;
   double precision = 1e-8;
@@ -164,4 +229,9 @@ struct FemmProblem {
   QVector<FemmSegment> segments;
   QVector<FemmArcSegment> arcSegments;
   QVector<FemmBlockLabel> blockLabels; // includes holes (blockTypeIndex < 0)
+
+  // In-session-only drawing aid -- see ConstraintType's own comment.
+  // Never read/written by FemmFileIO.cpp or FemxFileIO.cpp.
+  QVector<FemmConstraint> constraints;
+  QVector<FemmDimension> dimensions;
 };

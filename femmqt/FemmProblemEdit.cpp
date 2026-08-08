@@ -100,6 +100,20 @@ void FemmProblemEdit::deleteArcSegment(FemmProblem& p, int arcIndex)
   p.arcSegments.remove(arcIndex);
 }
 
+void FemmProblemEdit::deleteDimension(FemmProblem& p, int dimensionIndex)
+{
+  if (dimensionIndex < 0 || dimensionIndex >= p.dimensions.size())
+    return;
+  p.dimensions.remove(dimensionIndex);
+}
+
+void FemmProblemEdit::deleteConstraint(FemmProblem& p, int constraintIndex)
+{
+  if (constraintIndex < 0 || constraintIndex >= p.constraints.size())
+    return;
+  p.constraints.remove(constraintIndex);
+}
+
 void FemmProblemEdit::deleteBlockLabel(FemmProblem& p, int blockLabelIndex)
 {
   if (blockLabelIndex < 0 || blockLabelIndex >= p.blockLabels.size())
@@ -296,8 +310,11 @@ void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, 
   }
 }
 
-namespace {
-void reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy)
+// Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this
+// file's local anonymous namespace (into FemmProblemEdit's own, declared in
+// FemmProblemEdit.h) so ConstraintSolver.cpp's Symmetric constraint residual
+// can reuse this exact formula instead of re-deriving it.
+void FemmProblemEdit::reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy)
 {
   // ux,uy is the mirror line's unit direction vector; (x0,y0) is any point
   // on it. Standard reflect-across-a-line-through-a-point formula: subtract
@@ -308,7 +325,6 @@ void reflectPoint(double& x, double& y, double x0, double y0, double ux, double 
   double perpX = dx - proj * ux, perpY = dy - proj * uy;
   x -= 2 * perpX;
   y -= 2 * perpY;
-}
 }
 
 void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1)
@@ -429,14 +445,17 @@ void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy
     copySelected(p, dx * (nc + 1), dy * (nc + 1));
 }
 
-namespace {
-using Complex = std::complex<double>;
-
+// Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this
+// file's local anonymous namespace (into FemmProblemEdit's own, declared in
+// FemmProblemEdit.h) so ConstraintSolver.cpp's Tangent/Concentric/Equal-radius
+// residuals can reuse this exact arc-center/radius derivation instead of
+// re-deriving it. shortestDistanceFromArc below still uses it too.
+//
 // Mirrors CFemmeDoc::GetCircle (femm/FemmeDoc.cpp) -- same formula as
 // GeometryScene.cpp's own local arcGeometry(), just returning center+
 // radius as a Complex/double pair instead of also computing a start
 // angle (createRadius has no use for one).
-bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, Complex& c, double& R)
+bool FemmProblemEdit::circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R)
 {
   double x0 = p.nodes[arc.n0].x, y0 = p.nodes[arc.n0].y;
   double x1 = p.nodes[arc.n1].x, y1 = p.nodes[arc.n1].y;
@@ -451,9 +470,12 @@ bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, Complex& c, 
   R = d / (2.0 * s);
   double tx = dx / d, ty = dy / d;
   double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
-  c = Complex(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
+  c = std::complex<double>(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
   return true;
 }
+
+namespace {
+using Complex = std::complex<double>;
 
 // Mirrors CFemmeDoc::ShortestDistanceFromArc (femm/FemmeDoc.cpp:692) --
 // distance from `pt` to the nearest point actually on the arc (not the
@@ -464,7 +486,7 @@ double shortestDistanceFromArc(Complex pt, const FemmProblem& p, const FemmArcSe
   Complex a0(p.nodes[arc.n0].x, p.nodes[arc.n0].y);
   Complex c;
   double R;
-  if (!circleFromArc(p, arc, c, R))
+  if (!FemmProblemEdit::circleFromArc(p, arc, c, R))
     return std::abs(pt - a0);
 
   double d = std::abs(pt - c);

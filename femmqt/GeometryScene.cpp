@@ -5,6 +5,7 @@
 #include "AppTheme.h"
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
+#include "IconTheme.h"
 #include "MeshOverlay.h"
 #include "MeshOverlayItem.h"
 
@@ -22,9 +23,11 @@
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPen>
+#include <QPixmap>
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <functional>
 
 namespace {
@@ -355,6 +358,310 @@ class ArcItem : public QGraphicsPathItem {
   }
 };
 
+// Modified by Claude (Anthropic), noreply@anthropic.com: open two-stroke
+// "caret" arrowhead -- not a filled triangle, since DimensionItem paints
+// with a pen only (no brush is ever set on it; see its class comment for
+// why introducing one is riskier than it looks). Appends to `path` at
+// `tip`, with its two wings pointing back along `backDirUnit` (a UNIT
+// vector pointing away from the line/arc the arrowhead terminates -- from
+// the tip back toward the rest of the dimension). Shared by all 3
+// DimensionType cases in updateGeometry() below.
+void addArrowhead(QPainterPath& path, QPointF tip, QPointF backDirUnit, double len)
+{
+  constexpr double kHalfAngle = 8.0 * M_PI / 180.0; // ~16 degree included angle -- narrow/slender, per direct user request ("smaller arrows")
+  double c = std::cos(kHalfAngle), s = std::sin(kHalfAngle);
+  QPointF back = backDirUnit * len;
+  QPointF wing1(back.x() * c - back.y() * s, back.x() * s + back.y() * c);
+  QPointF wing2(back.x() * c + back.y() * s, -back.x() * s + back.y() * c);
+  path.moveTo(tip);
+  path.lineTo(tip + wing1);
+  path.moveTo(tip);
+  path.lineTo(tip + wing2);
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+// dimension annotation -- see FemmProblem.h's FemmDimension comment.
+// Same "own QGraphicsItem subclass, geometry recomputed on demand rather
+// than every paint" shape as SegmentItem/ArcItem above, via
+// updateGeometry() (called at creation and from GeometryScene::
+// onNodeMoved for every referenced node, mirroring
+// updateSegmentItemGeometry/updateArcItemGeometry's role exactly) rather
+// than a free function, since it also needs to reposition its own child
+// text label -- keeping both in one method avoids two places needing to
+// agree on the same math.
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com: rendering
+// reworked to match Fusion 360's own dimension style, per direct user
+// request (a Fusion 360 screenshot supplied as reference) -- was a bare
+// offset line with no arrowheads/gaps and, for Angle, a straight-line
+// wedge rather than a true arc (see the removed comment below for why
+// that was originally deferred). Distance now draws extension lines with
+// a small gap near the measured points and a small overshoot past the
+// dimension line (both scaled off the user's own placement offset, since
+// this item draws entirely in scene units -- see NodeItem::refreshFixedSize's
+// comment for the fixed-SCREEN-pixel technique used elsewhere in this
+// file for UI chrome like node handles, deliberately NOT used here: a
+// dimension line is drawing content, not UI chrome, so it should scale
+// with the model like any other geometry), plus open caret arrowheads at both
+// ends (addArrowhead() above). Radius adds one arrowhead where the
+// leader touches the arc. Angle now draws a true arc (solving the
+// QPainterPath::arcTo sign-convention question the removed comment
+// flagged -- same y-flip compensation as arcGeometry()/
+// updateArcItemGeometry's own arcTo() call, see the inline comment at
+// its call site below) with an arrowhead at each end, tangent to the
+// arc.
+class DimensionItem : public QGraphicsPathItem {
+  public:
+  DimensionItem(int dimIndex, FemmProblem* problem)
+      : m_dimIndex(dimIndex)
+      , m_problem(problem)
+  {
+    setFlag(QGraphicsItem::ItemIsSelectable);
+    setData(KindKey, static_cast<int>(FemmItemKind::Dimension));
+    setData(IndexKey, dimIndex);
+  }
+
+  void setTextItem(QGraphicsSimpleTextItem* text) { m_text = text; }
+
+  void updateGeometry()
+  {
+    if (m_dimIndex < 0 || m_dimIndex >= m_problem->dimensions.size())
+      return;
+    const FemmDimension& d = m_problem->dimensions[m_dimIndex];
+    const QVector<FemmNode>& nodes = m_problem->nodes;
+    QPainterPath path;
+    QPointF textPos;
+    QString text;
+
+    switch (d.type) {
+    case DimensionType::Distance: {
+      if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size())
+        break;
+      QPointF a(nodes[d.refA].x, nodes[d.refA].y);
+      QPointF b(nodes[d.refB].x, nodes[d.refB].y);
+      QPointF offset(d.labelOffsetX, d.labelOffsetY);
+      double offLen = std::hypot(offset.x(), offset.y());
+      QPointF dimA = a + offset;
+      QPointF dimB = b + offset;
+      if (offLen > 1e-9) {
+        QPointF dir = offset / offLen;
+        double gap = offLen * 0.10;
+        double overshoot = offLen * 0.15;
+        path.moveTo(a + dir * gap);
+        path.lineTo(a + dir * (offLen + overshoot));
+        path.moveTo(b + dir * gap);
+        path.lineTo(b + dir * (offLen + overshoot));
+      }
+      path.moveTo(dimA);
+      path.lineTo(dimB);
+      double lineLen = std::hypot(dimB.x() - dimA.x(), dimB.y() - dimA.y());
+      if (lineLen > 1e-9) {
+        QPointF along = (dimB - dimA) / lineLen;
+        double arrowLen = lineLen * 0.05;
+        addArrowhead(path, dimA, along, arrowLen);
+        addArrowhead(path, dimB, -along, arrowLen);
+      }
+      textPos = (a + b) / 2.0 + offset;
+      text = QString::number(d.value, 'g', 6);
+      break;
+    }
+    case DimensionType::Radius: {
+      if (d.refA < 0 || d.refA >= m_problem->arcSegments.size())
+        break;
+      std::complex<double> c;
+      double r = 0;
+      if (!FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[d.refA], c, r))
+        break;
+      QPointF center(c.real(), c.imag());
+      QPointF dir = (d.labelOffsetX != 0 || d.labelOffsetY != 0) ? QPointF(d.labelOffsetX, d.labelOffsetY) : QPointF(1, 0);
+      double dirLen = std::hypot(dir.x(), dir.y());
+      if (dirLen <= 0)
+        break;
+      dir /= dirLen;
+      QPointF edge = center + dir * r;
+      path.moveTo(center);
+      path.lineTo(edge);
+      if (r > 1e-9)
+        addArrowhead(path, edge, -dir, r * 0.08);
+      textPos = edge;
+      text = QString("R%1").arg(d.value, 0, 'g', 6);
+      break;
+    }
+    case DimensionType::Angle: {
+      if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size() || d.refC < 0 || d.refC >= nodes.size())
+        break;
+      QPointF v(nodes[d.refA].x, nodes[d.refA].y);
+      QPointF p1(nodes[d.refB].x, nodes[d.refB].y);
+      QPointF p2(nodes[d.refC].x, nodes[d.refC].y);
+      double r = std::min(std::hypot(p1.x() - v.x(), p1.y() - v.y()), std::hypot(p2.x() - v.x(), p2.y() - v.y())) * 0.5;
+      if (r <= 0)
+        break;
+      double a1 = std::atan2(p1.y() - v.y(), p1.x() - v.x());
+      double a2 = std::atan2(p2.y() - v.y(), p2.x() - v.x());
+      // Same signed-shorter-angle wrap as the AddDimensionAngle tool uses
+      // to measure the initial value (see handleToolClick) -- reusing the
+      // identical formula here means the rendered arc always sweeps the
+      // same direction/magnitude the value itself represents.
+      double diff = a2 - a1;
+      while (diff > M_PI)
+        diff -= 2 * M_PI;
+      while (diff <= -M_PI)
+        diff += 2 * M_PI;
+      QPointF e1 = v + r * QPointF(std::cos(a1), std::sin(a1));
+      QPointF e2 = v + r * QPointF(std::cos(a1 + diff), std::sin(a1 + diff));
+      // True arc, not a straight-line wedge -- same y-flip compensation as
+      // arcGeometry()/updateArcItemGeometry's own arcTo() call (see
+      // arcGeometry's comment for the full explanation): Qt's arcTo angle
+      // = atan2(-dy, dx), and its sweep direction is the negation of a
+      // plain-math CCW sweep.
+      double qtStartDeg = std::atan2(-(e1.y() - v.y()), e1.x() - v.x()) * 180.0 / M_PI;
+      double qtSweepDeg = -diff * 180.0 / M_PI;
+      path.moveTo(e1);
+      path.arcTo(v.x() - r, v.y() - r, 2 * r, 2 * r, qtStartDeg, qtSweepDeg);
+
+      // Arrowhead "back" direction at a point on the arc, tangent to it:
+      // the plain-math travel direction along the arc at angle t is
+      // sgn*(-sin t, cos t) (sgn = direction of travel, from diff's
+      // sign); the arrowhead's wings point backward from that, i.e. the
+      // negation, at both ends (same formula works for the start AND end
+      // point -- see addArrowhead's own comment on what "back" means).
+      double sgn = diff >= 0 ? 1.0 : -1.0;
+      double arrowLen = r * 0.08;
+      addArrowhead(path, e1, QPointF(sgn * std::sin(a1), -sgn * std::cos(a1)), arrowLen);
+      addArrowhead(path, e2, QPointF(sgn * std::sin(a1 + diff), -sgn * std::cos(a1 + diff)), arrowLen);
+
+      double midAngle = a1 + diff / 2.0;
+      textPos = v + r * 1.3 * QPointF(std::cos(midAngle), std::sin(midAngle));
+      text = QString("%1 deg").arg(d.value, 0, 'g', 6);
+      break;
+    }
+    }
+
+    setPath(path);
+    if (m_text) {
+      m_text->setText(text);
+      m_text->setPos(textPos);
+    }
+  }
+
+  QPainterPath shape() const override
+  {
+    return widenedHitShape(path(), this);
+  }
+
+  protected:
+  void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override
+  {
+    if (!isSelected()) {
+      QGraphicsPathItem::paint(painter, option, widget);
+      return;
+    }
+    QPen p = pen();
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was 3 (same
+    // as SegmentItem/ArcItem's own selected-state width) -- per direct
+    // user request ("make the dim lines thinner"), dimension lines now
+    // get a lighter selected-state emphasis than real geometry.
+    p.setWidth(2);
+    painter->setPen(p);
+    painter->drawPath(path());
+  }
+
+  private:
+  int m_dimIndex;
+  FemmProblem* m_problem;
+  QGraphicsSimpleTextItem* m_text = nullptr;
+};
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: same 9 SVGs
+// MainWindow's Constraints menu/toolbar already use (see icons.qrc) --
+// reused here rather than drawn again, so a glyph always matches its
+// menu/toolbar icon.
+QString constraintIconPath(ConstraintType type)
+{
+  switch (type) {
+  case ConstraintType::Coincident: return ":/icons/constraint_coincident.svg";
+  case ConstraintType::Horizontal: return ":/icons/constraint_horizontal.svg";
+  case ConstraintType::Vertical: return ":/icons/constraint_vertical.svg";
+  case ConstraintType::Parallel: return ":/icons/constraint_parallel.svg";
+  case ConstraintType::Perpendicular: return ":/icons/constraint_perpendicular.svg";
+  case ConstraintType::Equal: return ":/icons/constraint_equal.svg";
+  case ConstraintType::Tangent: return ":/icons/constraint_tangent.svg";
+  case ConstraintType::Concentric: return ":/icons/constraint_concentric.svg";
+  case ConstraintType::Symmetric: return ":/icons/constraint_symmetric.svg";
+  }
+  return QString();
+}
+
+constexpr double kConstraintGlyphPixelRadius = 9.0;
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: small on-canvas
+// icon marking a constraint's location, matching Fusion 360's own
+// on-geometry relation markers -- per direct user request ("symbols
+// indicating constraints than I can click and remove"). Positioned at
+// ConstraintSolver::anchorPoint() (the average of the constraint's touched
+// nodes, the same node set the solver itself uses -- see that function's
+// header comment), so it can never drift out of sync with what the
+// constraint actually references. Uses the same fixed-screen-pixel-size
+// technique as NodeItem/BlockLabelItem (a raster QPixmap stretched to fill
+// a boundingRect sized from the current view scale, refreshed by
+// refreshFixedSize()) rather than ItemIgnoresTransformations, for the same
+// dirty-rect-tracking reasons documented on NodeItem::refreshFixedSize().
+class ConstraintGlyphItem : public QGraphicsItem {
+  public:
+  ConstraintGlyphItem(int constraintIndex, FemmProblem* problem)
+      : m_constraintIndex(constraintIndex)
+      , m_problem(problem)
+  {
+    setFlag(QGraphicsItem::ItemIsSelectable);
+    setData(KindKey, static_cast<int>(FemmItemKind::Constraint));
+    setData(IndexKey, constraintIndex);
+    // Above segments/arcs/dimensions (z 0/0/0) so a glyph is always
+    // clickable even when it lands on top of the geometry it annotates --
+    // same reasoning as NodeItem's own z-value.
+    setZValue(2.0);
+    if (constraintIndex >= 0 && constraintIndex < problem->constraints.size()) {
+      QString path = constraintIconPath(problem->constraints[constraintIndex].type);
+      if (!path.isEmpty())
+        m_pixmap = IconTheme::themedToolIcon(path).pixmap(32, 32);
+    }
+  }
+
+  void refreshFixedSize()
+  {
+    prepareGeometryChange();
+    m_halfSize = kConstraintGlyphPixelRadius / viewScaleFor(this);
+  }
+
+  QRectF boundingRect() const override
+  {
+    return QRectF(-m_halfSize, -m_halfSize, 2 * m_halfSize, 2 * m_halfSize);
+  }
+
+  QPainterPath shape() const override
+  {
+    QPainterPath p;
+    p.addEllipse(boundingRect());
+    return p;
+  }
+
+  protected:
+  void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
+  {
+    QRectF r = boundingRect();
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(isSelected() ? AppTheme::selectedColor() : AppTheme::background());
+    painter->drawEllipse(r);
+    if (!m_pixmap.isNull())
+      painter->drawPixmap(r, m_pixmap, QRectF(m_pixmap.rect()));
+  }
+
+  private:
+  int m_constraintIndex;
+  FemmProblem* m_problem;
+  QPixmap m_pixmap;
+  double m_halfSize = kConstraintGlyphPixelRadius;
+};
+
 } // namespace
 
 GeometryScene::GeometryScene(QObject* parent)
@@ -482,6 +789,10 @@ void GeometryScene::rebuild()
   m_arcItemsByNode.clear();
   m_blockNameItems.clear();
   m_blockLabelItems.clear();
+  m_dimensionItems.clear();
+  m_dimensionItemsByNode.clear();
+  m_constraintItems.clear();
+  m_constraintItemsByNode.clear();
   m_zoomWindowRectItem = nullptr;
   // clear() above already deleted this along with everything else -- an
   // edit invalidates any previous mesh anyway (matches classic FEMM's own
@@ -502,6 +813,17 @@ void GeometryScene::rebuild()
       addNodeItem(i);
     for (int i = 0; i < m_problem->blockLabels.size(); i++)
       addBlockLabelItem(i);
+    // Added last so dimension annotations render (and hit-test) on top
+    // of the geometry they measure.
+    for (int i = 0; i < m_problem->dimensions.size(); i++)
+      addDimensionItem(i);
+    // Constraint glyphs added after dimensions too -- their z-value (2.0,
+    // vs a dimension's default 0.0) already puts them on top for hit-
+    // testing regardless of add order, but matching the same "most
+    // recently added, most clickable" convention keeps this loop
+    // consistent with the one above.
+    for (int i = 0; i < m_problem->constraints.size(); i++)
+      addConstraintItem(i);
   }
 
   // Cheap safety-net full-scene update() -- rebuild() only runs on
@@ -534,18 +856,62 @@ void GeometryScene::refreshFixedPixelItemSizes()
     static_cast<NodeItem*>(item)->refreshFixedSize();
   for (QGraphicsItem* item : std::as_const(m_blockLabelItems))
     static_cast<BlockLabelItem*>(item)->refreshFixedSize();
+  for (QGraphicsItem* item : std::as_const(m_constraintItems))
+    static_cast<ConstraintGlyphItem*>(item)->refreshFixedSize();
 }
 
 void GeometryScene::setToolMode(GeometryToolMode mode)
 {
   m_toolMode = mode;
   m_pendingNode = -1;
+  m_pendingDimensionNodes.clear();
+  m_pendingDimensionArc = -1;
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: DOF/sketch-
+// health color for node `nodeIndex`, from the last ConstraintSolver::
+// solve() (see setConstraintStatus()) -- an invalid QColor (isValid()
+// false) means this node isn't part of any constraint/dimension, so
+// callers should fall back to their normal color instead. FullyConstrained
+// reuses nodeColor() itself (the default "everything's fine" look, per
+// SolidWorks/FreeCAD's own convention of NOT specially highlighting
+// fully-constrained geometry) rather than a 5th distinct hue.
+QColor GeometryScene::constraintStatusColor(int nodeIndex) const
+{
+  auto it = m_constraintNodeStatus.constFind(nodeIndex);
+  if (it == m_constraintNodeStatus.constEnd())
+    return QColor();
+  switch (it.value()) {
+  case ConstraintSolver::SketchStatus::FullyConstrained:
+    return AppTheme::nodeColor();
+  case ConstraintSolver::SketchStatus::UnderConstrained:
+    return AppTheme::segmentColor();
+  case ConstraintSolver::SketchStatus::Redundant:
+    return AppTheme::boundaryEdgeColor();
+  case ConstraintSolver::SketchStatus::Conflicting:
+    return AppTheme::selectedColor();
+  }
+  return QColor();
+}
+
+void GeometryScene::setConstraintStatus(const QHash<int, ConstraintSolver::SketchStatus>& nodeStatus)
+{
+  m_constraintNodeStatus = nodeStatus;
+}
+
+void GeometryScene::selectConstraintGlyph(int index)
+{
+  clearSelection();
+  auto it = m_constraintItems.constFind(index);
+  if (it != m_constraintItems.constEnd())
+    it.value()->setSelected(true);
 }
 
 void GeometryScene::addNodeItem(int index)
 {
   const FemmNode& n = m_problem->nodes[index];
-  QPen pen(AppTheme::nodeColor());
+  QColor statusColor = constraintStatusColor(index);
+  QPen pen(statusColor.isValid() ? statusColor : AppTheme::nodeColor());
   pen.setCosmetic(true);
   // Width 0, not the QPen(color) constructor's default of 1 -- Qt treats
   // a cosmetic pen with width exactly 0 as a fast, robust "hairline" that
@@ -563,7 +929,7 @@ void GeometryScene::addNodeItem(int index)
   item->setPos(n.x, n.y);
   m_settingInitialItemPosition = false;
   item->setPen(pen);
-  item->setBrush(QBrush(AppTheme::nodeColor()));
+  item->setBrush(QBrush(statusColor.isValid() ? statusColor : AppTheme::nodeColor()));
   addItem(item);
   item->refreshFixedSize(); // needs item->scene() (just set by addItem() above) to resolve the view's current scale
   m_nodeItems[index] = item;
@@ -572,7 +938,13 @@ void GeometryScene::addNodeItem(int index)
 void GeometryScene::addSegmentItem(int index)
 {
   const FemmSegment& s = m_problem->segments[index];
-  QPen pen(s.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::segmentColor());
+  // A constraint/dimension DOF-status color, if either endpoint has one,
+  // takes priority over the boundary-condition color -- more urgent,
+  // actively-relevant feedback while the constraint solver is in use.
+  QColor statusColor = constraintStatusColor(s.n0);
+  if (!statusColor.isValid())
+    statusColor = constraintStatusColor(s.n1);
+  QPen pen(statusColor.isValid() ? statusColor : (s.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::segmentColor()));
   pen.setCosmetic(true);
   pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
   auto* item = new SegmentItem(QLineF());
@@ -590,7 +962,10 @@ void GeometryScene::addSegmentItem(int index)
 void GeometryScene::addArcItem(int index)
 {
   const FemmArcSegment& a = m_problem->arcSegments[index];
-  QPen pen(a.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::arcColor());
+  QColor statusColor = constraintStatusColor(a.n0);
+  if (!statusColor.isValid())
+    statusColor = constraintStatusColor(a.n1);
+  QPen pen(statusColor.isValid() ? statusColor : (a.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::arcColor()));
   pen.setCosmetic(true);
   pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
   auto* item = new ArcItem(QPainterPath());
@@ -660,6 +1035,60 @@ void GeometryScene::addBlockLabelItem(int index)
   m_blockNameItems[index] = text;
 }
 
+void GeometryScene::addDimensionItem(int index)
+{
+  const FemmDimension& d = m_problem->dimensions[index];
+  QPen pen(AppTheme::segmentColor());
+  pen.setCosmetic(true);
+  pen.setWidth(0);
+  pen.setStyle(Qt::DashLine); // distinct from ordinary geometry at a glance, without a 5th color
+  auto* item = new DimensionItem(index, m_problem); // sets KindKey/IndexKey itself, matching NodeItem's own constructor
+  item->setPen(pen);
+  addItem(item);
+
+  auto* text = addSimpleText(QString());
+  text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+  text->setBrush(AppTheme::segmentColor());
+  item->setTextItem(text);
+  item->updateGeometry();
+  m_dimensionItems[index] = item;
+
+  QVector<int> touched;
+  switch (d.type) {
+  case DimensionType::Distance:
+    touched = {d.refA, d.refB};
+    break;
+  case DimensionType::Radius:
+    if (d.refA >= 0 && d.refA < m_problem->arcSegments.size()) {
+      const FemmArcSegment& a = m_problem->arcSegments[d.refA];
+      touched = {a.n0, a.n1};
+    }
+    break;
+  case DimensionType::Angle:
+    touched = {d.refA, d.refB, d.refC};
+    break;
+  }
+  for (int n : touched)
+    m_dimensionItemsByNode.insert(n, item);
+}
+
+void GeometryScene::addConstraintItem(int index)
+{
+  const FemmConstraint& c = m_problem->constraints[index];
+  auto* item = new ConstraintGlyphItem(index, m_problem); // sets KindKey/IndexKey itself, matching DimensionItem's own constructor
+  addItem(item);
+  item->refreshFixedSize(); // needs item->scene() (just set by addItem() above) to resolve the view's current scale
+
+  double x = 0, y = 0;
+  ConstraintSolver::anchorPoint(*m_problem, c, x, y);
+  item->setPos(x, y); // plain QGraphicsItem, no itemChange override -- unlike NodeItem/BlockLabelItem, setPos() here has no side effects to guard against
+  m_constraintItems[index] = item;
+
+  const QVector<int> touched = ConstraintSolver::touchedNodes(*m_problem, c);
+  for (int n : touched)
+    m_constraintItemsByNode.insert(n, item);
+}
+
 void GeometryScene::updateSegmentItemGeometry(QGraphicsItem* item, int segmentIndex)
 {
   const FemmSegment& s = m_problem->segments[segmentIndex];
@@ -716,6 +1145,20 @@ void GeometryScene::onNodeMoved(int nodeIndex)
   const auto arcItems = m_arcItemsByNode.values(nodeIndex);
   for (QGraphicsItem* item : arcItems)
     updateArcItemGeometry(item, item->data(IndexKey).toInt());
+
+  const auto dimItems = m_dimensionItemsByNode.values(nodeIndex);
+  for (QGraphicsItem* item : dimItems)
+    static_cast<DimensionItem*>(item)->updateGeometry();
+
+  const auto constraintItems = m_constraintItemsByNode.values(nodeIndex);
+  for (QGraphicsItem* item : constraintItems) {
+    int constraintIndex = item->data(IndexKey).toInt();
+    if (constraintIndex < 0 || constraintIndex >= m_problem->constraints.size())
+      continue;
+    double x = 0, y = 0;
+    ConstraintSolver::anchorPoint(*m_problem, m_problem->constraints[constraintIndex], x, y);
+    item->setPos(x, y);
+  }
 
   emit problemEdited();
 }
@@ -838,9 +1281,28 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
 void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 {
+  // Modified by Claude (Anthropic), noreply@anthropic.com: re-solves once
+  // per drag GESTURE (not per mouse-move frame), same "only if something
+  // actually moved" gating snapshotOnceForDrag() already established --
+  // m_dragSnapshotTaken is only ever set true by NodeItem/BlockLabelItem::
+  // itemChange on a REAL position change, never by a plain click. A
+  // conservative first cut per the plan this was built from (live
+  // per-frame re-solving during the drag itself is a possible follow-up
+  // once real-world solver speed is known); dragging a node that isn't
+  // part of any constraint/dimension still re-solves (cheap -- the
+  // solver's unknown set is scoped to constrained nodes only, so an
+  // unrelated drag converges in 0 iterations) rather than tracking
+  // exactly which node moved.
+  bool dragEditOccurred = m_dragSnapshotTaken;
   // See snapshotOnceForDrag()'s comment -- whatever gesture this release
   // ends (a drag or just a plain click), the NEXT press starts a new one.
   m_dragSnapshotTaken = false;
+
+  if (dragEditOccurred && m_problem && (!m_problem->constraints.isEmpty() || !m_problem->dimensions.isEmpty())) {
+    ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+    setConstraintStatus(result.nodeStatus);
+    rebuild();
+  }
 
   if (m_toolMode == GeometryToolMode::ZoomWindow && m_zoomWindowRectItem && m_zoomWindowRectItem->isVisible()) {
     QRectF r = m_zoomWindowRectItem->rect();
@@ -1024,6 +1486,114 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     }
     break;
   }
+  case GeometryToolMode::AddDimensionDistance: {
+    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+    QGraphicsItem* hit = itemAt(pos, deviceTransform);
+    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
+      int clickedNode = hit->data(IndexKey).toInt();
+      if (!m_pendingDimensionNodes.contains(clickedNode))
+        m_pendingDimensionNodes.push_back(clickedNode);
+      if (m_pendingDimensionNodes.size() == 2) {
+        int n0 = m_pendingDimensionNodes[0], n1 = m_pendingDimensionNodes[1];
+        double dx = m_problem->nodes[n1].x - m_problem->nodes[n0].x;
+        double dy = m_problem->nodes[n1].y - m_problem->nodes[n0].y;
+        double curLen = std::hypot(dx, dy);
+        bool ok = false;
+        double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+            "Distance Dimension", "Distance:", curLen, 0.0, 1.0e9, 6, &ok);
+        if (ok) {
+          emit aboutToEdit();
+          FemmDimension dim;
+          dim.type = DimensionType::Distance;
+          dim.refA = n0;
+          dim.refB = n1;
+          dim.value = value;
+          // Default dimension-line offset: perpendicular to the measured
+          // segment, a modest fraction of its own length -- the user can
+          // reposition it later (not implemented this round -- see the
+          // module's own scope notes) by editing labelOffsetX/Y directly.
+          double len = std::hypot(dx, dy);
+          if (len > 0) {
+            dim.labelOffsetX = -dy / len * len * 0.15;
+            dim.labelOffsetY = dx / len * len * 0.15;
+          }
+          m_problem->dimensions.push_back(dim);
+          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+          setConstraintStatus(result.nodeStatus);
+          rebuild();
+          emit problemEdited();
+        }
+        m_pendingDimensionNodes.clear();
+      }
+    }
+    break;
+  }
+  case GeometryToolMode::AddDimensionRadius: {
+    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+    QGraphicsItem* hit = itemAt(pos, deviceTransform);
+    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Arc)) {
+      int arcIdx = hit->data(IndexKey).toInt();
+      std::complex<double> c;
+      double r = 0;
+      if (FemmProblemEdit::circleFromArc(*m_problem, m_problem->arcSegments[arcIdx], c, r)) {
+        bool ok = false;
+        double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+            "Radius Dimension", "Radius:", r, 0.0001, 1.0e9, 6, &ok);
+        if (ok) {
+          emit aboutToEdit();
+          FemmDimension dim;
+          dim.type = DimensionType::Radius;
+          dim.refA = arcIdx;
+          dim.value = value;
+          m_problem->dimensions.push_back(dim);
+          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+          setConstraintStatus(result.nodeStatus);
+          rebuild();
+          emit problemEdited();
+        }
+      }
+    }
+    break;
+  }
+  case GeometryToolMode::AddDimensionAngle: {
+    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+    QGraphicsItem* hit = itemAt(pos, deviceTransform);
+    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
+      int clickedNode = hit->data(IndexKey).toInt();
+      if (!m_pendingDimensionNodes.contains(clickedNode))
+        m_pendingDimensionNodes.push_back(clickedNode);
+      if (m_pendingDimensionNodes.size() == 3) {
+        int v = m_pendingDimensionNodes[0], p1 = m_pendingDimensionNodes[1], p2 = m_pendingDimensionNodes[2];
+        double a1 = std::atan2(m_problem->nodes[p1].y - m_problem->nodes[v].y, m_problem->nodes[p1].x - m_problem->nodes[v].x);
+        double a2 = std::atan2(m_problem->nodes[p2].y - m_problem->nodes[v].y, m_problem->nodes[p2].x - m_problem->nodes[v].x);
+        double diff = a2 - a1;
+        while (diff > M_PI)
+          diff -= 2 * M_PI;
+        while (diff <= -M_PI)
+          diff += 2 * M_PI;
+        double curDeg = diff * 180.0 / M_PI;
+        bool ok = false;
+        double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
+            "Angle Dimension", "Angle (deg, ray1 -> ray2):", curDeg, -359.99, 359.99, 2, &ok);
+        if (ok) {
+          emit aboutToEdit();
+          FemmDimension dim;
+          dim.type = DimensionType::Angle;
+          dim.refA = v;
+          dim.refB = p1;
+          dim.refC = p2;
+          dim.value = value;
+          m_problem->dimensions.push_back(dim);
+          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+          setConstraintStatus(result.nodeStatus);
+          rebuild();
+          emit problemEdited();
+        }
+        m_pendingDimensionNodes.clear();
+      }
+    }
+    break;
+  }
   default:
     break;
   }
@@ -1072,7 +1642,7 @@ void GeometryScene::deleteSelectedItem()
   // WITHIN each kind, descending index order keeps every not-yet-deleted
   // index in that same kind valid, since removing a higher index never
   // shifts a lower one.
-  QVector<int> nodeIdx, segIdx, arcIdx, blockIdx;
+  QVector<int> nodeIdx, segIdx, arcIdx, blockIdx, dimIdx, constraintIdx;
   for (QGraphicsItem* item : selected) {
     auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
     int index = item->data(IndexKey).toInt();
@@ -1081,14 +1651,24 @@ void GeometryScene::deleteSelectedItem()
     case FemmItemKind::Segment: segIdx.push_back(index); break;
     case FemmItemKind::Arc: arcIdx.push_back(index); break;
     case FemmItemKind::BlockLabel: blockIdx.push_back(index); break;
+    case FemmItemKind::Dimension: dimIdx.push_back(index); break;
+    case FemmItemKind::Constraint: constraintIdx.push_back(index); break;
     }
   }
   std::sort(nodeIdx.begin(), nodeIdx.end(), std::greater<int>());
   std::sort(segIdx.begin(), segIdx.end(), std::greater<int>());
   std::sort(arcIdx.begin(), arcIdx.end(), std::greater<int>());
   std::sort(blockIdx.begin(), blockIdx.end(), std::greater<int>());
+  std::sort(dimIdx.begin(), dimIdx.end(), std::greater<int>());
+  std::sort(constraintIdx.begin(), constraintIdx.end(), std::greater<int>());
 
   emit aboutToEdit();
+  for (int i : dimIdx)
+    FemmProblemEdit::deleteDimension(*m_problem, i);
+  // Like dimensions, nothing else ever references a constraint BY INDEX --
+  // safe to delete in any order relative to the other buckets.
+  for (int i : constraintIdx)
+    FemmProblemEdit::deleteConstraint(*m_problem, i);
   for (int i : blockIdx)
     FemmProblemEdit::deleteBlockLabel(*m_problem, i);
   for (int i : segIdx)
@@ -1097,6 +1677,18 @@ void GeometryScene::deleteSelectedItem()
     FemmProblemEdit::deleteArcSegment(*m_problem, i);
   for (int i : nodeIdx)
     FemmProblemEdit::deleteNode(*m_problem, i);
+
+  // A deleted constraint/dimension changes what the solver enforces even
+  // though nothing was moved -- re-solve (cheap no-op if none remain) so
+  // DOF-status coloring reflects the new, smaller constraint system
+  // rather than showing stale classifications for geometry that's no
+  // longer actually constrained the same way.
+  if (!m_problem->constraints.isEmpty() || !m_problem->dimensions.isEmpty()) {
+    ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
+    setConstraintStatus(result.nodeStatus);
+  } else {
+    setConstraintStatus({});
+  }
 
   rebuild();
   emit problemEdited();
@@ -1155,6 +1747,28 @@ bool GeometryScene::selectedEntities(FemmItemKind& kind, QVector<int>& indices) 
   }
   indices = out;
   return true;
+}
+
+void GeometryScene::selectedByKind(QVector<int>& nodes, QVector<int>& segments, QVector<int>& arcs, QVector<int>& blockLabels) const
+{
+  nodes.clear();
+  segments.clear();
+  arcs.clear();
+  blockLabels.clear();
+  const auto sel = selectedItems();
+  for (QGraphicsItem* item : sel) {
+    auto kind = static_cast<FemmItemKind>(item->data(KindKey).toInt());
+    int index = item->data(IndexKey).toInt();
+    switch (kind) {
+    case FemmItemKind::Node: nodes.push_back(index); break;
+    case FemmItemKind::Segment: segments.push_back(index); break;
+    case FemmItemKind::Arc: arcs.push_back(index); break;
+    case FemmItemKind::BlockLabel: blockLabels.push_back(index); break;
+    case FemmItemKind::Dimension: // not a valid constraint target
+    case FemmItemKind::Constraint: // ditto -- a glyph can't itself be an input to another constraint
+      break;
+    }
+  }
 }
 
 void GeometryScene::setShowGrid(bool show)

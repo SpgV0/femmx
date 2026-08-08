@@ -74,6 +74,42 @@ class MainWindow : public QMainWindow {
   void onCopySelectedTriggered();
   void onScaleSelectedTriggered();
   void onMirrorSelectedTriggered();
+  // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+  // geometric constraints -- per direct user request ("add dimensions
+  // when drawings and constraints similar to modern cad"). Each
+  // validates the current selection's shape (right count/kind of
+  // entities for that constraint type) via GeometryScene::selectedByKind,
+  // then routes through applyConstraint() -- the same snapshotForUndo->
+  // mutate->solve->rebuild->markEdited shape onMoveSelectedTriggered()
+  // etc. already use, just with an added solve step. See ConstraintSolver.h
+  // for the solver itself and FemmProblem.h's FemmConstraint comment for
+  // why these are in-session only, never saved to .fem/.femx.
+  void onCoincidentConstraintTriggered();
+  void onHorizontalConstraintTriggered();
+  void onVerticalConstraintTriggered();
+  void onParallelConstraintTriggered();
+  void onPerpendicularConstraintTriggered();
+  void onEqualConstraintTriggered();
+  void onTangentConstraintTriggered();
+  void onConcentricConstraintTriggered();
+  void onSymmetricConstraintTriggered();
+  // Forces a re-solve of every current constraint/dimension -- useful
+  // after a batch of edits, or just to double-check sketch health.
+  void onSolveConstraintsTriggered();
+  void onClearConstraintsTriggered();
+  void onClearDimensionsTriggered();
+  // Modified by Claude (Anthropic), noreply@anthropic.com: opens a
+  // relations-panel-style list of every current constraint (Fusion 360's
+  // own "Sketch Palette" list), selectable (highlights that constraint's
+  // on-canvas glyph -- see GeometryScene::selectConstraintGlyph) and
+  // individually deletable -- per direct user request ("make a list in a
+  // dialog with all constraints that you can select on the side"). Fills
+  // the gap the module's own scope notes previously flagged: "no
+  // on-canvas glyph to select one" is no longer true either, now that
+  // ConstraintGlyphItem exists (see GeometryScene.cpp), but this dialog
+  // is the more discoverable/bulk-friendly way to browse and prune a
+  // sketch with many constraints.
+  void onConstraintListTriggered();
   void onCreateMeshTriggered();
   void onPurgeMeshTriggered();
   void onShowOrphansTriggered();
@@ -103,6 +139,12 @@ class MainWindow : public QMainWindow {
   // and applies it. Matches femm.rc's ID_OPEN_SELECTED semantics -- see
   // GeometryScene::selectedEntities' comment.
   void openEntityProperties(FemmItemKind kind, const QVector<int>& indices);
+  // Shared tail for every onXxxConstraintTriggered() handler -- see their
+  // own comment. Appends `c` to m_problem.constraints, solves, and
+  // reflects the result (including a status-bar note if it couldn't
+  // fully converge -- a real, expected outcome for a conflicting
+  // constraint, not something to silently swallow).
+  void applyConstraint(const FemmConstraint& c);
   void addToRecentFiles(const QString& path);
   void updateRecentFilesMenu();
   void refreshToolbarIcons();
@@ -136,6 +178,9 @@ class MainWindow : public QMainWindow {
   QAction* m_addBlockLabelToolAction = nullptr;
   QAction* m_addRectangleToolAction = nullptr;
   QAction* m_addCircleToolAction = nullptr;
+  QAction* m_addDimensionDistanceToolAction = nullptr;
+  QAction* m_addDimensionRadiusToolAction = nullptr;
+  QAction* m_addDimensionAngleToolAction = nullptr;
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;
