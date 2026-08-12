@@ -68,3 +68,6 @@ test/results/**/*.poly
 test/results/**/junit.xml
 __pycache__/
 .pytest_cache/
+
+# Scratch produced by examples/parallel_sweep.py
+examples/sweep_work/
