@@ -188,6 +188,17 @@ enum class DimensionType {
   VerticalDistance,
   Radius,
   Angle,
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report that "the angle tool does not always work well", asking for
+  // Fusion 360's behaviour. Angle above is defined as vertex + two ray
+  // endpoints, so it can only describe two lines that MEET at a shared
+  // node -- angling two lines that do not touch had nowhere to put the
+  // vertex and silently did nothing. Fusion dimensions those against the
+  // lines' virtual intersection, which needs no vertex at all: the angle
+  // between two lines is a function of their DIRECTIONS alone. So this
+  // variant references the two segments directly, which also makes its
+  // solver residual simpler than the 3-node one rather than harder.
+  AngleLines,
 };
 
 // Meaning of refA/refB/refC depends on `type`:
@@ -195,6 +206,8 @@ enum class DimensionType {
 //   Radius:   refA = arc index
 //   Angle:    refA = vertex node index, refB/refC = the two ray-endpoint
 //             node indices
+//   AngleLines: refA, refB = segment indices; refC unused. Measured at the
+//             two lines' intersection, real or virtual.
 struct FemmDimension {
   DimensionType type = DimensionType::Distance;
   int refA = -1, refB = -1, refC = -1;

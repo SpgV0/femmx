@@ -114,6 +114,11 @@ QVector<int> touchedNodesForDimension(const FemmProblem& p, const FemmDimension&
   }
   case DimensionType::Angle:
     return {d.refA, d.refB, d.refC};
+  case DimensionType::AngleLines: {
+    const FemmSegment& s0 = p.segments[d.refA];
+    const FemmSegment& s1 = p.segments[d.refB];
+    return {s0.n0, s0.n1, s1.n0, s1.n1};
+  }
   }
   return {};
 }
@@ -317,6 +322,36 @@ double residualAngle(const FemmProblem& p, const FemmDimension& d)
   return diff - targetRad;
 }
 
+// Angle between two LINES, measured at their intersection (real or
+// virtual). Needs no vertex node: the angle is a function of the two
+// direction vectors alone, which is exactly why this variant exists --
+// see DimensionType::AngleLines in FemmProblem.h.
+//
+// Wrapped to (-pi/2, pi/2] rather than (-pi, pi] like residualAngle: a
+// LINE has no inherent direction (swapping a segment's n0/n1 is the same
+// line), so 30 degrees and 210 degrees describe the same relationship and
+// the residual must not distinguish them. Without this the solver would
+// chase a 180-degree phantom error whenever a segment happened to be
+// stored end-for-end.
+double residualAngleLines(const FemmProblem& p, const FemmDimension& d)
+{
+  const FemmSegment& s0 = p.segments[d.refA];
+  const FemmSegment& s1 = p.segments[d.refB];
+  double a1 = std::atan2(ny(p, s0.n1) - ny(p, s0.n0), nx(p, s0.n1) - nx(p, s0.n0));
+  double a2 = std::atan2(ny(p, s1.n1) - ny(p, s1.n0), nx(p, s1.n1) - nx(p, s1.n0));
+  double diff = a2 - a1;
+  while (diff > M_PI / 2)
+    diff -= M_PI;
+  while (diff <= -M_PI / 2)
+    diff += M_PI;
+  double target = d.value * M_PI / 180.0;
+  while (target > M_PI / 2)
+    target -= M_PI;
+  while (target <= -M_PI / 2)
+    target += M_PI;
+  return diff - target;
+}
+
 // One scalar residual slot -- a constraint contributes 1 or 2 (subIndex
 // distinguishes which), a dimension always exactly 1. `component` is the
 // union-find root of the node(s) this slot's constraint/dimension
@@ -344,6 +379,8 @@ double evaluateOne(const FemmProblem& p, const ResidualSource& src)
       return residualRadius(p, d);
     case DimensionType::Angle:
       return residualAngle(p, d);
+    case DimensionType::AngleLines:
+      return residualAngleLines(p, d);
     }
     return 0;
   }

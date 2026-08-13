@@ -498,6 +498,10 @@ class GeometryScene : public QGraphicsScene {
   bool m_smartDimAngleEligible = false;
   DimensionType m_smartDimType;
   int m_smartDimRefA = -1, m_smartDimRefB = -1, m_smartDimRefC = -1;
+  // Index of the segment clicked FIRST, when that click was on a
+  // segment. Only used to build an AngleLines dimension from a
+  // second click on a line that shares no endpoint with it.
+  int m_smartDimSegA = -1;
   QGraphicsItem* m_smartDimPreviewItem = nullptr;
   QGraphicsItem* m_smartDimPreviewText = nullptr;
 

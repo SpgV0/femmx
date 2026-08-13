@@ -492,6 +492,45 @@ bool testAngleDimension()
   return pass;
 }
 
+
+// The whole point of AngleLines is lines that never touch, so the test
+// uses two DISJOINT segments -- the case the old shared-vertex-only path
+// could not express at all.
+bool testAngleLinesDimension()
+{
+  FemmProblem p;
+  int a0 = addNode(p, 0, 0);
+  int a1 = addNode(p, 10, 0);      // horizontal
+  int b0 = addNode(p, 0, 5);
+  int b1 = addNode(p, 10, 15);     // ~45 deg, nowhere near the first line
+  int s0 = addSegment(p, a0, a1);
+  int s1 = addSegment(p, b0, b1);
+
+  FemmDimension dim;
+  dim.type = DimensionType::AngleLines;
+  dim.refA = s0;
+  dim.refB = s1;
+  dim.value = 30.0;
+  p.dimensions.push_back(dim);
+
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(p);
+
+  double t0 = std::atan2(p.nodes[a1].y - p.nodes[a0].y, p.nodes[a1].x - p.nodes[a0].x);
+  double t1 = std::atan2(p.nodes[b1].y - p.nodes[b0].y, p.nodes[b1].x - p.nodes[b0].x);
+  double diff = t1 - t0;
+  while (diff > M_PI / 2)
+    diff -= M_PI;
+  while (diff <= -M_PI / 2)
+    diff += M_PI;
+  double deg = std::abs(diff * 180.0 / M_PI);
+  fprintf(stderr, "AngleLines dimension: converged=%d angle=%g (expect 30)\n",
+      result.converged, deg);
+  bool pass = result.converged && std::abs(deg - 30.0) < 1e-4;
+  if (!pass)
+    fprintf(stderr, "  FAIL\n");
+  return pass;
+}
+
 int testConstraintsCli()
 {
   struct NamedTest {
@@ -514,6 +553,7 @@ int testConstraintsCli()
       {"Symmetric", testSymmetric},
       {"Radius dimension", testRadiusDimension},
       {"Angle dimension", testAngleDimension},
+      {"AngleLines dimension", testAngleLinesDimension},
   };
 
   const int testCount = sizeof(tests) / sizeof(tests[0]);

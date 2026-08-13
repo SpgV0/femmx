@@ -447,10 +447,29 @@ MainWindow::MainWindow(QWidget* parent)
   connect(m_addDimensionRadiusToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionRadius); });
 
   m_addDimensionAngleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_angle.svg"), "Angle Dimension");
-  m_addDimensionAngleToolAction->setToolTip("Angle Dimension -- click the vertex, then each ray's endpoint, then enter the angle");
+  m_addDimensionAngleToolAction->setToolTip("Angle Dimension -- click two lines, move to place, then type the angle. The lines need not touch.");
   m_addDimensionAngleToolAction->setCheckable(true);
   toolGroup->addAction(m_addDimensionAngleToolAction);
-  connect(m_addDimensionAngleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionAngle); });
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report that "the angle tool does not always work well", asking for
+  // Fusion 360's behaviour -- this button now arms Smart Dimension rather
+  // than the old AddDimensionAngle mode.
+  //
+  // The old mode responded ONLY to clicks on nodes, and needed three of
+  // them in a fixed order (vertex first, then each ray end) with no
+  // feedback about which stage you were in, then popped a modal dialog
+  // immediately instead of the place-then-type step every other dimension
+  // here uses. Clicking the lines you actually wanted to angle did
+  // nothing at all.
+  //
+  // Fusion has no separate angle tool: Smart Dimension infers the kind of
+  // dimension from what you pick, and two line picks mean an angle. That
+  // path already existed here and is now general enough to be the whole
+  // answer (see handleToolClick's SmartDimension case, which as of this
+  // change also handles lines that never touch). AddDimensionAngle is
+  // left in place for the 3-node form rather than deleted, since existing
+  // .fem-adjacent workflows and the Tools menu still reference it.
+  connect(m_addDimensionAngleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::SmartDimension); });
 
   // Modified by Claude (Anthropic), noreply@anthropic.com: "Smart
   // Dimension" -- per direct user request ("I want to be able to set
@@ -1371,6 +1390,13 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
       label = "Angle (deg):";
       minVal = -359.99;
       maxVal = 359.99;
+      break;
+    case DimensionType::AngleLines:
+      // Lines have no direction, so their angle only spans (0,180) -- see
+      // DimensionType::AngleLines in FemmProblem.h.
+      label = "Angle (deg):";
+      minVal = 0.01;
+      maxVal = 179.99;
       break;
     }
     bool ok = false;

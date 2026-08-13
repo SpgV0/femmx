@@ -32,6 +32,78 @@
 
 namespace {
 
+
+// Reduces an AngleLines dimension to the same (vertex, ray1, ray2) triple
+// the 3-node Angle form uses, so every place that already knows how to
+// draw or measure an angle can handle both with one extra branch instead
+// of a parallel implementation.
+//
+// The vertex is where the two INFINITE lines cross, which is the whole
+// point of this dimension type: Fusion dimensions non-touching lines
+// against exactly that virtual corner. Returns false for parallel lines,
+// where no such point exists and no angle dimension is meaningful.
+bool angleLinesFrame(const FemmProblem& p, const FemmDimension& d,
+    QPointF& vertex, QPointF& ray1, QPointF& ray2)
+{
+  if (d.refA < 0 || d.refA >= p.segments.size() || d.refB < 0
+      || d.refB >= p.segments.size() || d.refA == d.refB)
+    return false;
+  const FemmSegment& s0 = p.segments[d.refA];
+  const FemmSegment& s1 = p.segments[d.refB];
+  const int n = p.nodes.size();
+  if (s0.n0 < 0 || s0.n0 >= n || s0.n1 < 0 || s0.n1 >= n || s1.n0 < 0
+      || s1.n0 >= n || s1.n1 < 0 || s1.n1 >= n)
+    return false;
+
+  QPointF a(p.nodes[s0.n0].x, p.nodes[s0.n0].y);
+  QPointF b(p.nodes[s0.n1].x, p.nodes[s0.n1].y);
+  QPointF c(p.nodes[s1.n0].x, p.nodes[s1.n0].y);
+  QPointF e(p.nodes[s1.n1].x, p.nodes[s1.n1].y);
+
+  const double dx0 = b.x() - a.x(), dy0 = b.y() - a.y();
+  const double dx1 = e.x() - c.x(), dy1 = e.y() - c.y();
+  const double denom = dx0 * dy1 - dy0 * dx1;
+  const double scale = std::max(std::hypot(dx0, dy0), std::hypot(dx1, dy1));
+  if (scale <= 0 || std::abs(denom) < 1e-12 * scale * scale)
+    return false; // parallel (or a degenerate zero-length segment)
+
+  const double t = ((c.x() - a.x()) * dy1 - (c.y() - a.y()) * dx1) / denom;
+  vertex = QPointF(a.x() + t * dx0, a.y() + t * dy0);
+
+  // Point each ray at whichever end of its own segment is farther from
+  // the vertex, so the drawn rays lie along the real lines rather than
+  // doubling back through the intersection.
+  auto farther = [&vertex](QPointF p0, QPointF p1) {
+    return (std::hypot(p0.x() - vertex.x(), p0.y() - vertex.y())
+               >= std::hypot(p1.x() - vertex.x(), p1.y() - vertex.y()))
+        ? p0
+        : p1;
+  };
+  ray1 = farther(a, b);
+  ray2 = farther(c, e);
+  return true;
+}
+
+// The angle a user expects to read off two lines: the opening at the
+// corner, in [0,180). Signed direction is meaningless for lines (a
+// segment stored end-for-end is the same line), which is also why
+// residualAngleLines works modulo 180.
+double angleLinesDegrees(QPointF vertex, QPointF ray1, QPointF ray2)
+{
+  double a1 = std::atan2(ray1.y() - vertex.y(), ray1.x() - vertex.x());
+  double a2 = std::atan2(ray2.y() - vertex.y(), ray2.x() - vertex.x());
+  double diff = a2 - a1;
+  while (diff > M_PI)
+    diff -= 2 * M_PI;
+  while (diff <= -M_PI)
+    diff += 2 * M_PI;
+  double deg = diff * 180.0 / M_PI;
+  if (deg < 0)
+    deg += 180.0;
+  return deg;
+}
+
+
 constexpr int KindKey = 0;
 constexpr int IndexKey = 1;
 
@@ -538,12 +610,19 @@ QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QP
     text = QString("R%1").arg(d.value, 0, 'g', 6);
     break;
   }
+  case DimensionType::AngleLines:
   case DimensionType::Angle: {
-    if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size() || d.refC < 0 || d.refC >= nodes.size())
-      break;
-    QPointF v(nodes[d.refA].x, nodes[d.refA].y);
-    QPointF p1(nodes[d.refB].x, nodes[d.refB].y);
-    QPointF p2(nodes[d.refC].x, nodes[d.refC].y);
+    QPointF v, p1, p2;
+    if (d.type == DimensionType::AngleLines) {
+      if (!angleLinesFrame(p, d, v, p1, p2))
+        break;
+    } else {
+      if (d.refA < 0 || d.refA >= nodes.size() || d.refB < 0 || d.refB >= nodes.size() || d.refC < 0 || d.refC >= nodes.size())
+        break;
+      v = QPointF(nodes[d.refA].x, nodes[d.refA].y);
+      p1 = QPointF(nodes[d.refB].x, nodes[d.refB].y);
+      p2 = QPointF(nodes[d.refC].x, nodes[d.refC].y);
+    }
     double r = std::min(std::hypot(p1.x() - v.x(), p1.y() - v.y()), std::hypot(p2.x() - v.x(), p2.y() - v.y())) * 0.5;
     if (r <= 0)
       break;
@@ -1189,6 +1268,16 @@ void GeometryScene::addDimensionItem(int index)
   case DimensionType::Angle:
     touched = {d.refA, d.refB, d.refC};
     break;
+  case DimensionType::AngleLines:
+    // Both segments' endpoints: moving any of the four changes the angle,
+    // so all four must repaint this dimension.
+    if (d.refA >= 0 && d.refA < m_problem->segments.size() && d.refB >= 0
+        && d.refB < m_problem->segments.size()) {
+      const FemmSegment& sa = m_problem->segments[d.refA];
+      const FemmSegment& sb = m_problem->segments[d.refB];
+      touched = {sa.n0, sa.n1, sb.n0, sb.n1};
+    }
+    break;
   }
   for (int n : touched)
     m_dimensionItemsByNode.insert(n, item);
@@ -1355,6 +1444,13 @@ void GeometryScene::updateSmartDimensionPreview(QPointF mousePos)
     preview.value = r;
     break;
   }
+  case DimensionType::AngleLines: {
+    QPointF v, r1, r2;
+    if (!angleLinesFrame(*m_problem, preview, v, r1, r2))
+      return;
+    preview.value = angleLinesDegrees(v, r1, r2);
+    break;
+  }
   case DimensionType::Angle: {
     if (preview.refB < 0 || preview.refB >= m_problem->nodes.size() || preview.refC < 0 || preview.refC >= m_problem->nodes.size())
       return;
@@ -1466,6 +1562,23 @@ void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
       offsetOrDir = dir / dirLen;
     curValue = r;
     label = "Radius:";
+    break;
+  }
+  case DimensionType::AngleLines: {
+    FemmDimension probe;
+    probe.type = DimensionType::AngleLines;
+    probe.refA = refA;
+    probe.refB = refB;
+    QPointF v, r1, r2;
+    if (!angleLinesFrame(*m_problem, probe, v, r1, r2)) {
+      cancelSmartDimensionPreview();
+      return;
+    }
+    offsetOrDir = mousePos - v;
+    curValue = angleLinesDegrees(v, r1, r2);
+    label = "Angle (deg):";
+    minVal = 0.01;
+    maxVal = 179.99;
     break;
   }
   case DimensionType::Angle: {
@@ -2029,6 +2142,10 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         m_smartDimRefB = s.n1;
         m_smartDimTwoPointMode = true;
         m_smartDimAngleEligible = true;
+        // Kept so a second, NON-touching line click can build an
+        // AngleLines dimension, which references segments rather
+        // than the endpoint nodes recorded above.
+        m_smartDimSegA = hit->data(IndexKey).toInt();
         m_smartDimAwaitingPlacement = true;
         updateSmartDimensionPreview(pos);
       } else if (kind == FemmItemKind::Arc) {
@@ -2088,7 +2205,36 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         ray1 = (m_smartDimRefA == vertex) ? m_smartDimRefB : m_smartDimRefA;
         ray2 = s2.n0;
       }
-      if (vertex >= 0) {
+      // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
+      // user report that "the angle tool does not always work well",
+      // asking for Fusion 360's behaviour. Two lines that do NOT share an
+      // endpoint used to fall through and be swallowed as a placement
+      // click -- so angling a corner worked and angling anything else
+      // silently did nothing, which is exactly the "not always". Fusion
+      // dimensions non-touching lines against their VIRTUAL intersection;
+      // DimensionType::AngleLines does that (see FemmProblem.h), so the
+      // shared-vertex case is now just the special case rather than the
+      // only one.
+      if (vertex < 0) {
+        m_smartDimType = DimensionType::AngleLines;
+        m_smartDimRefA = m_smartDimSegA;
+        m_smartDimRefB = hit->data(IndexKey).toInt();
+        m_smartDimRefC = -1;
+        m_smartDimTwoPointMode = false;
+        // Parallel lines have no intersection and no meaningful angle;
+        // updateSmartDimensionPreview() leaves the candidate alone in that
+        // case, so treat it as an ordinary placement click instead of
+        // arming a dimension that can never resolve.
+        QPointF v0, r0, r2v;
+        FemmDimension probe;
+        probe.type = DimensionType::AngleLines;
+        probe.refA = m_smartDimRefA;
+        probe.refB = m_smartDimRefB;
+        if (angleLinesFrame(*m_problem, probe, v0, r0, r2v)) {
+          updateSmartDimensionPreview(pos);
+          upgradedToAngle = true;
+        }
+      } else {
         m_smartDimType = DimensionType::Angle;
         m_smartDimRefA = vertex;
         m_smartDimRefB = ray1;
@@ -2111,8 +2257,6 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         updateSmartDimensionPreview(pos);
         upgradedToAngle = true;
       }
-      // Two lines that don't share an endpoint: fall through and treat
-      // this click as an ordinary placement click instead.
     }
     if (!upgradedToAngle)
       commitSmartDimensionPlacement(pos);
