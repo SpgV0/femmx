@@ -1596,6 +1596,10 @@ void SolutionGraphicsView::startZoomWindow()
 
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 {
+  // Checked first: panning uses the middle/right buttons and must work
+  // regardless of which tool or mode is armed below. See ViewPanning.h.
+  if (m_pan.begin(this, event))
+    return;
   if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
     m_rubberBandOrigin = event->pos();
     if (!m_rubberBand)
@@ -1611,6 +1615,8 @@ void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 
 void SolutionGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 {
+  if (m_pan.end(this, event))
+    return;
   if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
     m_zoomWindowActive = false;
     viewport()->unsetCursor();
@@ -1628,6 +1634,8 @@ void SolutionGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 
 void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
 {
+  if (m_pan.update(this, event))
+    return;
   if (m_zoomWindowActive && m_rubberBand && m_rubberBand->isVisible()) {
     m_rubberBand->setGeometry(QRect(m_rubberBandOrigin, event->pos()).normalized());
     return;

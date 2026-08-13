@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ViewPanning.h"
+
 #include <QGraphicsView>
 
 // Thin QGraphicsView subclass adding mouse-wheel zoom -- a standard
@@ -63,6 +65,11 @@ class GeometryView : public QGraphicsView {
 
   protected:
   void wheelEvent(QWheelEvent* event) override;
+  // Middle/right-button drag pans the view -- see ViewPanning.h for why
+  // those buttons and not the left one.
+  void mousePressEvent(QMouseEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
   // Fusion 360-style multi-select: holding Shift while left-dragging on
   // empty canvas draws a rubber-band rectangle and selects everything it
   // encloses. Only armed in Select tool mode -- see the .cpp for why.
@@ -90,4 +97,6 @@ class GeometryView : public QGraphicsView {
   private:
   // See zoomBy()/resetZoomTransform()'s own comment.
   void refreshMarkerSizes();
+
+  DragPanState m_pan;
 };

@@ -105,6 +105,7 @@ qt_add_executable(femmqt WIN32
   IconTheme.cpp
   GeometryView.h
   GeometryView.cpp
+  ViewPanning.h
   MeshOverlay.h
   MeshOverlay.cpp
   MeshOverlayItem.h

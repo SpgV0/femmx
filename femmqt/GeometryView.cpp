@@ -95,6 +95,27 @@ void GeometryView::refreshMarkerSizes()
     gs->refreshFixedPixelItemSizes();
 }
 
+void GeometryView::mousePressEvent(QMouseEvent* event)
+{
+  if (m_pan.begin(this, event))
+    return;
+  QGraphicsView::mousePressEvent(event);
+}
+
+void GeometryView::mouseMoveEvent(QMouseEvent* event)
+{
+  if (m_pan.update(this, event))
+    return;
+  QGraphicsView::mouseMoveEvent(event);
+}
+
+void GeometryView::mouseReleaseEvent(QMouseEvent* event)
+{
+  if (m_pan.end(this, event))
+    return;
+  QGraphicsView::mouseReleaseEvent(event);
+}
+
 void GeometryView::wheelEvent(QWheelEvent* event)
 {
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;

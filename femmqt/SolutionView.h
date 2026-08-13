@@ -12,6 +12,7 @@
 
 #include "FemmProblem.h"
 #include "MeshSolution.h"
+#include "ViewPanning.h"
 
 #include <complex>
 
@@ -508,6 +509,7 @@ class SolutionGraphicsView : public QGraphicsView {
   class QRubberBand* m_rubberBand = nullptr;
   bool m_zoomWindowActive = false;
   QPoint m_rubberBandOrigin;
+  DragPanState m_pan;
 };
 
 enum class SolutionToolMode {
