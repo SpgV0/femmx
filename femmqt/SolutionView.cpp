@@ -1728,6 +1728,23 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   resize(1024, 768);
 
   m_scene = new SolutionGraphicsScene(this);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report -- "when zooming in, I cannot navigate outside the view of the
+  // object, unlike the old gui".
+  //
+  // Root cause: this scene never set a scene rect, so QGraphicsScene fell
+  // back to computing it from itemsBoundingRect() -- i.e. exactly the
+  // solved mesh's own extents. Both pan paths (the Scroll L/R/U/D actions
+  // and the scrollbars they drive) are clamped to the scene rect, so once
+  // zoomed in past fit, the view could not be moved beyond the edge of the
+  // mesh. The classic GUI has no such limit.
+  //
+  // The real rect is set from the loaded mesh in loadSolution() -- see
+  // kPanMarginFactor there for why it is sized to the CONTENT here rather
+  // than pinned to a huge constant the way GeometryScene does it. This is
+  // only the placeholder for the window's empty state, before any file is
+  // open and there is no content to size against.
+  m_scene->setSceneRect(-1.0e3, -1.0e3, 2.0e3, 2.0e3);
   m_scene->setBackgroundBrush(AppTheme::background());
   m_view = new SolutionGraphicsView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing, true); // see updateAntialiasingForScale()
@@ -2090,6 +2107,32 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_scene->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
   QRectF itemBounds = m_item->boundingRect();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report -- "when zooming in, I cannot navigate outside the view of the
+  // object, unlike the old gui".
+  //
+  // Root cause: nothing ever set a scene rect, so QGraphicsScene fell back
+  // to computing it from itemsBoundingRect() -- exactly the solved mesh's
+  // own extents. Both pan paths (the Scroll L/R/U/D actions and the
+  // scrollbars they drive) clamp to the scene rect, so the view could not
+  // be moved past the edge of the mesh. The classic GUI has no such limit.
+  //
+  // Sized to the content rather than pinned to a huge constant the way
+  // GeometryScene's constructor does it. That constant is right THERE,
+  // where items are added and removed as the user edits and a scene rect
+  // recomputed from them would silently rescroll the viewport mid-edit
+  // (see that comment). None of that applies to a viewer: the mesh is
+  // fixed once loaded, so the rect can be set once, here. It also avoids
+  // what the constant costs -- against a 1e6 range any real model pins the
+  // scrollbar thumb to Qt's minimum size, so dragging it jumps the view
+  // wildly. A margin of a few times the model keeps the thumb proportional
+  // while putting the pan limit far past anywhere worth looking.
+  constexpr double kPanMarginFactor = 3.0;
+  const double margin =
+      kPanMarginFactor * std::max(itemBounds.width(), itemBounds.height());
+  m_scene->setSceneRect(itemBounds.adjusted(-margin, -margin, margin, margin));
+
   m_view->fitInViewSafe(itemBounds);
   m_scene->setGridSize(niceIntegerGridSize(itemBounds));
   m_view->updateAntialiasingForScale();
