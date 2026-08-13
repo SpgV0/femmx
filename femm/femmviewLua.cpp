@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include <afx.h>
 #include <afxtempl.h>
 #include "problem.h"
@@ -70,6 +71,8 @@ void CFemmviewDoc::initalise_lua()
   lua_register(lua, "mo_shownames", lua_shownames);
   lua_register(lua, "mo_getprobleminfo", lua_getprobleminfo);
   lua_register(lua, "mo_savebitmap", lua_savebitmap);
+  lua_register(lua, "mo_savepng", lua_savepng);
+  lua_register(lua, "mo_save_png", lua_savepng);
   lua_register(lua, "mo_getcircuitproperties", lua_getcircuitprops);
   lua_register(lua, "mo_savemetafile", lua_saveWMF);
   lua_register(lua, "mo_refreshview", lua_refreshview);
@@ -1185,6 +1188,72 @@ int CFemmviewDoc::lua_getprobleminfo(lua_State* L)
   lua_pushnumber(L, thisDoc->LengthConv[thisDoc->LengthUnits]);
 
   return 4;
+}
+
+// mo_savepng("filename") -- like mo_savebitmap, but PNG, and routed
+// through whichever GUI setgui() selected (see ScriptGui.h). Under
+// "classic" the MFC view draws itself into a memory DC exactly as
+// mo_savebitmap does and GDI+ encodes the result; under "qt" the solved
+// file on disk is handed to femmqt.exe --render-png, which draws it with
+// femmqt's own antialiased density/contour/vector plotting.
+int CFemmviewDoc::lua_savepng(lua_State* L)
+{
+  CatchNullDocument();
+  CFemmviewDoc* thisDoc = (CFemmviewDoc*)pFemmviewdoc;
+  POSITION pos = thisDoc->GetFirstViewPosition();
+  CFemmviewView* theView = (CFemmviewView*)thisDoc->GetNextView(pos);
+
+  CString filename;
+  filename.Format("%s", lua_tostring(L, 1));
+
+  RECT r;
+  theView->GetClientRect(&r);
+  // Optional explicit size, only meaningful for the Qt path -- the
+  // classic path can only render at the size its window actually is.
+  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)r.right;
+  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)r.bottom;
+
+  if (GetScriptGui() == ScriptGui::Qt) {
+    CString pn = thisDoc->GetPathName();
+    if (pn.GetLength() == 0) {
+      CString msg = "mo_savepng: with setgui(\"qt\"), the solution must "
+                    "already be saved to disk for femmqt.exe to open.";
+      lua_error(L, msg.GetBuffer(1));
+      return 0;
+    }
+    CString err;
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &err)) {
+      CString msg;
+      msg.Format("mo_savepng: %s", (const char*)err);
+      lua_error(L, msg.GetBuffer(1));
+    }
+    return 0;
+  }
+
+  CDC tempDC;
+  CBitmap bitmap;
+  CBitmap* oldbitmap;
+  CDC* pDC = theView->GetDC();
+
+  tempDC.CreateCompatibleDC(pDC);
+  bitmap.CreateCompatibleBitmap(pDC, r.right, r.bottom);
+  oldbitmap = tempDC.SelectObject(&bitmap);
+  tempDC.Rectangle(0, 0, r.right, r.bottom);
+  theView->OnDraw(&tempDC);
+
+  BOOL ok = SaveHBitmapAsPng(HBITMAP(bitmap), filename.GetBuffer(1));
+
+  tempDC.SelectObject(oldbitmap);
+  theView->ReleaseDC(pDC);
+  tempDC.DeleteDC();
+  bitmap.DeleteObject();
+
+  if (!ok) {
+    CString msg;
+    msg.Format("mo_savepng: couldn't write \"%s\"", (const char*)filename);
+    lua_error(L, msg.GetBuffer(1));
+  }
+  return 0;
 }
 
 int CFemmviewDoc::lua_savebitmap(lua_State* L)

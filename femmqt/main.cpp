@@ -552,6 +552,53 @@ int main(int argc, char* argv[])
   if (args.size() >= 3 && args.at(1) == "--convert-ansx")
     return convertAnsxCli(args.at(2));
 
+  // `femmqt.exe --render-png <in> <out> [w h]` renders a .fem/.ans
+  // offscreen to a PNG. This is what the classic GUI's Lua
+  // mi_savepng/mo_savepng shell out to after a script calls
+  // setgui("qt") -- Lua only ever runs in the MFC app, so "render with
+  // the new GUI" has to mean handing the file to this executable. See
+  // femm/ScriptGui.h for the whole arrangement.
+  if (args.size() >= 4 && args.at(1) == "--render-png") {
+    const QString in = args.at(2);
+    const QString out = args.at(3);
+    const int w = (args.size() >= 6) ? args.at(4).toInt() : 1024;
+    const int h = (args.size() >= 6) ? args.at(5).toInt() : 768;
+    if (w <= 0 || h <= 0) {
+      fprintf(stderr, "--render-png: bad size %dx%d\n", w, h);
+      return 1;
+    }
+
+    const QString suffix = QFileInfo(in).suffix();
+    const bool isSolution = suffix.compare("ans", Qt::CaseInsensitive) == 0
+        || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
+
+    QImage image;
+    // The windows are constructed but never shown: renderToImage draws
+    // the scene directly, which is why this works without a desktop.
+    if (isSolution) {
+      SolutionWindow window;
+      window.resize(w, h);
+      window.openAnsFile(in);
+      image = window.renderToImage(QSize(w, h));
+    } else {
+      MainWindow window;
+      window.resize(w, h);
+      window.openFile(in);
+      image = window.renderToImage(QSize(w, h));
+    }
+
+    if (image.isNull()) {
+      fprintf(stderr, "--render-png: nothing to render from %s\n",
+          qPrintable(in));
+      return 1;
+    }
+    if (!image.save(out, "PNG")) {
+      fprintf(stderr, "--render-png: couldn't write %s\n", qPrintable(out));
+      return 1;
+    }
+    return 0;
+  }
+
   if (args.size() >= 2 && args.at(1) == "--test-constraints")
     return testConstraintsCli();
 

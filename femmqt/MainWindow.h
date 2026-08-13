@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QImage>
 #include <QMainWindow>
 #include <QPair>
 #include <QVector>
@@ -23,6 +24,15 @@ class MainWindow : public QMainWindow {
   // the femm.cfg-driven GUI switch (step 7) and for command-line-argument
   // opens, so both paths share one code path.
   void openFile(const QString& path);
+
+  // Renders the loaded geometry offscreen to an image, for the
+  // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng
+  // shell out to when a script has called setgui("qt"). Draws the SCENE
+  // rather than grabbing the view: the viewport is a QOpenGLWidget when
+  // built with OpenGL, and grabbing one that was never shown is not
+  // reliable. Returns a null image if nothing is loaded.
+  QImage renderToImage(QSize size);
+
 
   protected:
   void closeEvent(QCloseEvent* event) override;

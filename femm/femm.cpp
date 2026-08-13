@@ -2,6 +2,7 @@
 //
 
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include "femm.h"
 #include "FemmeDoc.h"
 #include "FemmeView.h"
@@ -244,6 +245,10 @@ BOOL CFemmApp::InitInstance()
 
   lua_register(lua, "flput", lua_to_filelink);
   lua_register(lua, "setcompatibilitymode", lua_compatibilitymode);
+  lua_register(lua, "setgui", lua_setgui);
+  lua_register(lua, "getgui", lua_getgui);
+  lua_register(lua, "set_gui", lua_setgui);
+  lua_register(lua, "get_gui", lua_getgui);
   lua_register(lua, "setcurrentdirectory", lua_setcurrentdirectory);
   lua_register(lua, "chdir", lua_setcurrentdirectory);
   lua_register(lua, "smartmesh", lua_smartmesh);
@@ -1339,6 +1344,40 @@ int CFemmApp::lua_compatibilitymode(lua_State* L)
     ((CFemmApp*)AfxGetApp())->CompatibilityMode = (int)lua_todouble(L, 1);
 
   return 0;
+}
+
+// setgui("classic") / setgui("qt") -- chooses which GUI renders for the
+// script commands that produce GUI-derived output (mi_savepng/mo_savepng
+// today). Session-scoped and seeded from femm.cfg's <PreferredGUI>; see
+// ScriptGui.h for why this deliberately does not write that key back.
+int CFemmApp::lua_setgui(lua_State* L)
+{
+  if (lua_gettop(L) == 0) {
+    CString msg = "setgui: expected \"classic\" or \"qt\"";
+    lua_error(L, msg.GetBuffer(1));
+    return 0;
+  }
+
+  // Accept setgui(1) as well as setgui("qt") -- ParseScriptGui takes the
+  // digits too, and lua_tostring renders a number argument for us.
+  const char* name = lua_tostring(L, 1);
+  ScriptGui g;
+  if (!ParseScriptGui(name, &g)) {
+    CString msg;
+    msg.Format("setgui: unknown GUI \"%s\" -- expected \"classic\" or \"qt\"",
+        name ? name : "");
+    lua_error(L, msg.GetBuffer(1));
+    return 0;
+  }
+
+  SetScriptGui(g);
+  return 0;
+}
+
+int CFemmApp::lua_getgui(lua_State* L)
+{
+  lua_pushstring(L, ScriptGuiName(GetScriptGui()));
+  return 1;
 }
 
 int CFemmApp::lua_setcurrentdirectory(lua_State* L)

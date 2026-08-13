@@ -1422,6 +1422,29 @@ void MainWindow::onZoomWindowTriggered()
   m_scene->setToolMode(GeometryToolMode::ZoomWindow);
 }
 
+QImage MainWindow::renderToImage(QSize size)
+{
+  if (m_scene == nullptr || size.isEmpty())
+    return QImage();
+
+  const QRectF bounds = m_scene->computeProblemBounds();
+  if (bounds.isEmpty())
+    return QImage();
+
+  QImage image(size, QImage::Format_ARGB32);
+  image.fill(AppTheme::background());
+
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  // y-up scene, same flip as SolutionWindow::renderToImage -- see there.
+  painter.translate(0, size.height());
+  painter.scale(1.0, -1.0);
+
+  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)), bounds,
+      Qt::KeepAspectRatio);
+  return image;
+}
+
 void MainWindow::onZoomWindowSelected(QRectF sceneRect)
 {
   m_view->fitInViewSafe(sceneRect);

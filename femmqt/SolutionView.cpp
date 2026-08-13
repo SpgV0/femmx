@@ -3302,6 +3302,27 @@ void SolutionWindow::onZoomWindowTriggered()
   m_view->startZoomWindow();
 }
 
+QImage SolutionWindow::renderToImage(QSize size)
+{
+  if (m_item == nullptr || size.isEmpty())
+    return QImage();
+
+  QImage image(size, QImage::Format_ARGB32);
+  image.fill(AppTheme::background());
+
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  // The scene is y-up (the view applies scale(1,-1) -- see this window's
+  // constructor), so without a matching flip the PNG would come out
+  // mirrored against what the window shows.
+  painter.translate(0, size.height());
+  painter.scale(1.0, -1.0);
+
+  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
+      m_item->boundingRect(), Qt::KeepAspectRatio);
+  return image;
+}
+
 void SolutionWindow::onZoomWindowSelected(QRectF sceneRect)
 {
   m_view->fitInViewSafe(sceneRect);

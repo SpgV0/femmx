@@ -9,6 +9,7 @@
 // into fkn.exe's optional CUDA-accelerated linear solve.
 
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include "femm.h"
 #include "femmeDoc.h"
 #include "femmeView.h"
@@ -91,6 +92,8 @@ void CFemmeDoc::initalise_lua()
   lua_register(lua, "mi_selectgroup", lua_selectgroup);
   lua_register(lua, "mi_newdocument", lua_newdocument);
   lua_register(lua, "mi_savebitmap", lua_savebitmap);
+  lua_register(lua, "mi_savepng", lua_savepng);
+  lua_register(lua, "mi_save_png", lua_savepng);
   lua_register(lua, "mi_savemetafile", lua_saveWMF);
   lua_register(lua, "mi_close", lua_exitpre);
   lua_register(lua, "mi_addbhpoint", lua_addbhpoint);
@@ -2217,6 +2220,66 @@ int CFemmeDoc::lua_setgpuaccel(lua_State* L)
 
   thisDoc->GPUAccel = enable ? 1 : 0;
 
+  return 0;
+}
+
+// mi_savepng("filename") -- the preprocessor twin of mo_savepng; see
+// that function in femmviewLua.cpp for the routing rationale.
+int CFemmeDoc::lua_savepng(lua_State* L)
+{
+  CatchNullDocument();
+  CFemmeDoc* thisDoc = (CFemmeDoc*)pFemmeDoc;
+  POSITION pos = thisDoc->GetFirstViewPosition();
+  CFemmeView* theView = (CFemmeView*)thisDoc->GetNextView(pos);
+
+  CString filename;
+  filename.Format("%s", lua_tostring(L, 1));
+
+  RECT r;
+  theView->GetClientRect(&r);
+  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)r.right;
+  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)r.bottom;
+
+  if (GetScriptGui() == ScriptGui::Qt) {
+    CString pn = thisDoc->GetPathName();
+    if (pn.GetLength() == 0) {
+      CString msg = "mi_savepng: with setgui(\"qt\"), the document must "
+                    "already be saved to disk for femmqt.exe to open.";
+      lua_error(L, msg.GetBuffer(1));
+      return 0;
+    }
+    CString err;
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &err)) {
+      CString msg;
+      msg.Format("mi_savepng: %s", (const char*)err);
+      lua_error(L, msg.GetBuffer(1));
+    }
+    return 0;
+  }
+
+  CDC tempDC;
+  CBitmap bitmap;
+  CBitmap* oldbitmap;
+  CDC* pDC = theView->GetDC();
+
+  tempDC.CreateCompatibleDC(pDC);
+  bitmap.CreateCompatibleBitmap(pDC, r.right, r.bottom);
+  oldbitmap = tempDC.SelectObject(&bitmap);
+  tempDC.Rectangle(0, 0, r.right, r.bottom);
+  theView->OnDraw(&tempDC);
+
+  BOOL ok = SaveHBitmapAsPng(HBITMAP(bitmap), filename.GetBuffer(1));
+
+  tempDC.SelectObject(oldbitmap);
+  theView->ReleaseDC(pDC);
+  tempDC.DeleteDC();
+  bitmap.DeleteObject();
+
+  if (!ok) {
+    CString msg;
+    msg.Format("mi_savepng: couldn't write \"%s\"", (const char*)filename);
+    lua_error(L, msg.GetBuffer(1));
+  }
   return 0;
 }
 

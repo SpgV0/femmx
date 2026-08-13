@@ -231,6 +231,7 @@ class CFemmeDoc : public CDocument {
   static int lua_zoom(lua_State* L);
   static int lua_newdocument(lua_State* L);
   static int lua_savebitmap(lua_State* L);
+  static int lua_savepng(lua_State* L);
   static int lua_modmatprop(lua_State* L);
   static int lua_modboundprop(lua_State* L);
   static int lua_modpointprop(lua_State* L);

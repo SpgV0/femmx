@@ -105,6 +105,7 @@ set(femm_SOURCES
   GapIntegral.h
   GapPlotDlg.h
   GeneralPrefs.h
+  ScriptGui.h
   GRIDDLG.H
   GridMod.h
   GroupNumber.h
@@ -290,6 +291,7 @@ set(femm_SOURCES
   GapIntegral.cpp
   GapPlotDlg.cpp
   GeneralPrefs.cpp
+  ScriptGui.cpp
   GRIDDLG.CPP
   GridMod.cpp
   GroupNumber.cpp

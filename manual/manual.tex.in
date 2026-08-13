@@ -69,7 +69,13 @@
 
 \vspace*{0.5in}
 \begin{center}
-{\LARGE FEMMX}
+% FEMMX logo -- the application icon (femm/res/idr_mainframe.ico, the same
+% one script.nsi uses for the installer and femmqt.rc embeds as the app
+% icon), rasterized to EPS because this manual builds through
+% latex -> dvips -> ps2pdf and dvips cannot consume PNG.
+\includegraphics[width=1.1in]{@CMAKE_CURRENT_SOURCE_DIR@/femmx_logo.eps}
+
+\vspace*{12pt} {\LARGE FEMMX}
 
 \vspace*{16pt} {\Large Finite Element Method Magnetics}
 
@@ -83,6 +89,9 @@
 
 \vspace*{32pt} Original FEMM by David Meeker \\
 \href{mailto:dmeeker@ieee.org}{\tt dmeeker@ieee.org}
+
+\vspace*{16pt} FEMMX fork by SpgV0 \\
+\href{mailto:spgr.eng.v0@gmail.com}{\tt spgr.eng.v0@gmail.com}
 
 \vspace*{16pt} FEMMX fork maintained at \\
 \href{https://github.com/SpgV0/femmx}{\tt github.com/SpgV0/femmx}

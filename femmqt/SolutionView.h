@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QImage>
 #include <QElapsedTimer>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
@@ -526,6 +527,15 @@ class SolutionWindow : public QMainWindow {
   explicit SolutionWindow(QWidget* parent = nullptr);
 
   void openAnsFile(const QString& path);
+
+  // Renders the loaded solution offscreen to an image, for the
+  // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng
+  // shell out to when a script has called setgui("qt"). Draws the SCENE
+  // rather than grabbing the view: the viewport is a QOpenGLWidget when
+  // built with OpenGL, and grabbing one that was never shown is not
+  // reliable. Returns a null image if nothing is loaded.
+  QImage renderToImage(QSize size);
+
 
   private slots:
   void onOpenTriggered();
