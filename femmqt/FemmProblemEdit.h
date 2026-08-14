@@ -14,6 +14,21 @@ namespace FemmProblemEdit {
 
 int addNode(FemmProblem& p, double x, double y);
 int addSegment(FemmProblem& p, int n0, int n1);
+
+// Splits every pair of segments that cross, inserting a node at each
+// crossing -- what classic FEMM does in FancyEnforcePSLG, and what
+// femmqt has never done (DxfIO.h documents the same gap for imports).
+// Without it two crossing lines stay logically disconnected: the mesher
+// sees no shared vertex there, so the regions they appear to bound are
+// not actually bounded.
+//
+// Only PROPER crossings are split. Segments that merely share an
+// endpoint, or that touch end-to-middle, are left alone: the first is
+// already connected, and the second would need the touching endpoint
+// merged rather than a new node invented on top of it.
+//
+// Returns the number of nodes inserted.
+int splitIntersectingSegments(FemmProblem& p);
 int addArcSegment(FemmProblem& p, int n0, int n1, double arcLengthDeg, double maxSideLengthDeg);
 int addBlockLabel(FemmProblem& p, double x, double y);
 

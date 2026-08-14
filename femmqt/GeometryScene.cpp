@@ -1922,6 +1922,10 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
       addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n1, n2));
       addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n2, n3));
       addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n3, n0));
+      // Same as the Add Segment tool: a rectangle dropped over existing
+      // geometry crosses it, and those crossings need nodes too.
+      if (FemmProblemEdit::splitIntersectingSegments(*m_problem) > 0)
+        rebuild();
       emit problemEdited();
     }
     event->accept();
@@ -2026,6 +2030,12 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         emit aboutToEdit();
         int idx = FemmProblemEdit::addSegment(*m_problem, m_pendingNode, clickedNode);
         addSegmentItem(idx);
+        // Split any crossing this new segment created, inserting a
+        // node at each -- see FemmProblemEdit::splitIntersectingSegments.
+        // A full rebuild(), not addSegmentItem(), because splitting
+        // renumbers and adds segments the scene has no items for.
+        if (FemmProblemEdit::splitIntersectingSegments(*m_problem) > 0)
+          rebuild();
         m_pendingNode = -1;
         emit problemEdited();
       }

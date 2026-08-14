@@ -531,6 +531,39 @@ bool testAngleLinesDimension()
   return pass;
 }
 
+
+// Two segments crossing in an X: expect one new node at the crossing and
+// four segments where there were two, with the node actually ON both.
+bool testSplitIntersecting()
+{
+  FemmProblem p;
+  int a0 = addNode(p, -10, -10), a1 = addNode(p, 10, 10);
+  int b0 = addNode(p, -10, 10), b1 = addNode(p, 10, -10);
+  addSegment(p, a0, a1);
+  addSegment(p, b0, b1);
+
+  int added = FemmProblemEdit::splitIntersectingSegments(p);
+  double x = p.nodes.size() > 4 ? p.nodes[4].x : 1e9;
+  double y = p.nodes.size() > 4 ? p.nodes[4].y : 1e9;
+  fprintf(stderr, "Split intersecting: added=%d segs=%d node=(%g,%g) (expect 1, 4, (0,0))\n",
+      added, (int)p.segments.size(), x, y);
+  bool pass = added == 1 && p.segments.size() == 4
+      && std::abs(x) < 1e-9 && std::abs(y) < 1e-9;
+
+  // Segments that only share an endpoint must NOT be split.
+  FemmProblem q;
+  int c0 = addNode(q, 0, 0), c1 = addNode(q, 10, 0), c2 = addNode(q, 10, 10);
+  addSegment(q, c0, c1);
+  addSegment(q, c1, c2);
+  int added2 = FemmProblemEdit::splitIntersectingSegments(q);
+  fprintf(stderr, "  shared-endpoint pair: added=%d (expect 0)\n", added2);
+  pass = pass && added2 == 0;
+
+  if (!pass)
+    fprintf(stderr, "  FAIL\n");
+  return pass;
+}
+
 int testConstraintsCli()
 {
   struct NamedTest {
@@ -554,6 +587,7 @@ int testConstraintsCli()
       {"Radius dimension", testRadiusDimension},
       {"Angle dimension", testAngleDimension},
       {"AngleLines dimension", testAngleLinesDimension},
+      {"Split intersecting segments", testSplitIntersecting},
   };
 
   const int testCount = sizeof(tests) / sizeof(tests[0]);

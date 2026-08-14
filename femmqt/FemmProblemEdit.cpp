@@ -28,6 +28,76 @@ int FemmProblemEdit::addSegment(FemmProblem& p, int n0, int n1)
   return p.segments.size() - 1;
 }
 
+
+int FemmProblemEdit::splitIntersectingSegments(FemmProblem& p)
+{
+  int inserted = 0;
+  // Re-scan after every split rather than collecting crossings up front:
+  // splitting changes the segment list, and a segment crossing several
+  // others has to be cut once per crossing. Bounded so a pathological
+  // case degrades into "stopped early" instead of hanging the editor.
+  const int kMaxSplits = 5000;
+  while (inserted < kMaxSplits) {
+    bool didSplit = false;
+    for (int i = 0; i < p.segments.size() && !didSplit; i++) {
+      for (int j = i + 1; j < p.segments.size() && !didSplit; j++) {
+        const FemmSegment& a = p.segments[i];
+        const FemmSegment& b = p.segments[j];
+        if (a.n0 == b.n0 || a.n0 == b.n1 || a.n1 == b.n0 || a.n1 == b.n1)
+          continue; // already share a vertex
+        const int nn = p.nodes.size();
+        if (a.n0 < 0 || a.n0 >= nn || a.n1 < 0 || a.n1 >= nn || b.n0 < 0
+            || b.n0 >= nn || b.n1 < 0 || b.n1 >= nn)
+          continue;
+
+        const double ax = p.nodes[a.n0].x, ay = p.nodes[a.n0].y;
+        const double bx = p.nodes[a.n1].x, by = p.nodes[a.n1].y;
+        const double cx = p.nodes[b.n0].x, cy = p.nodes[b.n0].y;
+        const double dx2 = p.nodes[b.n1].x, dy2 = p.nodes[b.n1].y;
+
+        const double r_x = bx - ax, r_y = by - ay;
+        const double s_x = dx2 - cx, s_y = dy2 - cy;
+        const double denom = r_x * s_y - r_y * s_x;
+        const double lenA = std::hypot(r_x, r_y), lenB = std::hypot(s_x, s_y);
+        if (lenA <= 0 || lenB <= 0)
+          continue;
+        if (std::abs(denom) < 1e-12 * lenA * lenB)
+          continue; // parallel or collinear -- no single crossing point
+
+        const double t = ((cx - ax) * s_y - (cy - ay) * s_x) / denom;
+        const double u = ((cx - ax) * r_y - (cy - ay) * r_x) / denom;
+        // Strictly interior to BOTH, with the tolerance scaled per segment
+        // so it means "a hair inside the ends" in real distance, not in
+        // parameter space where it would depend on the segment's length.
+        const double epsA = 1e-9 / lenA, epsB = 1e-9 / lenB;
+        if (t <= epsA || t >= 1.0 - epsA || u <= epsB || u >= 1.0 - epsB)
+          continue;
+
+        const int n = addNode(p, ax + t * r_x, ay + t * r_y);
+        // Copy each segment before touching the list: push_back below may
+        // reallocate, and these carry boundary/group/hide properties the
+        // two halves must both inherit.
+        FemmSegment a2 = p.segments[i];
+        FemmSegment b2 = p.segments[j];
+        const int aEnd = a2.n1, bEnd = b2.n1;
+        p.segments[i].n1 = n;
+        p.segments[j].n1 = n;
+        a2.n0 = n;
+        a2.n1 = aEnd;
+        b2.n0 = n;
+        b2.n1 = bEnd;
+        p.segments.push_back(a2);
+        p.segments.push_back(b2);
+        inserted++;
+        didSplit = true;
+      }
+    }
+    if (!didSplit)
+      break;
+  }
+  return inserted;
+}
+
 int FemmProblemEdit::addArcSegment(FemmProblem& p, int n0, int n1, double arcLengthDeg, double maxSideLengthDeg)
 {
   FemmArcSegment a;
