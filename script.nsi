@@ -104,6 +104,18 @@ Unicode True
 ; this file" chooser) instead of showing the readme. Force it through
 ; Notepad instead, which is always present and needs no association.
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION ShowReadme
+; Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+; request for "a tickbox to start the software in the end". Points at the
+; classic GUI, which is what the primary FEMMX.lnk Start Menu shortcut
+; launches too (see CreateShortcut below) -- the Qt GUI stays reachable
+; from its own shortcut and from View > Switch To.
+;
+; Launching directly rather than through a helper function is safe here
+; only because this installer declares RequestExecutionLevel user (see
+; below): it never elevates, so the app does not inherit administrator
+; rights the way it would from a typical elevated installer.
+!define MUI_FINISHPAGE_RUN "$INSTDIR\bin\femmx.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Run FEMMX"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "license.txt"

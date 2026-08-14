@@ -392,18 +392,36 @@ MainWindow::MainWindow(QWidget* parent)
   m_addNodeToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_node.svg"), "Add Node");
   m_addNodeToolAction->setToolTip("Add Node -- click to place a new node");
   m_addNodeToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addNodeToolAction->setShortcut(QKeySequence(Qt::Key_N));
   toolGroup->addAction(m_addNodeToolAction);
   connect(m_addNodeToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddNode); });
 
   m_addSegmentToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_segment.svg"), "Add Segment");
   m_addSegmentToolAction->setToolTip("Add Segment -- click two nodes to connect them with a straight line");
   m_addSegmentToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addSegmentToolAction->setShortcut(QKeySequence(Qt::Key_L));
   toolGroup->addAction(m_addSegmentToolAction);
   connect(m_addSegmentToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddSegment); });
 
   m_addArcToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_arc.svg"), "Add Arc");
   m_addArcToolAction->setToolTip("Add Arc -- click two nodes to connect them with a circular arc");
   m_addArcToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addArcToolAction->setShortcut(QKeySequence(Qt::Key_A));
   toolGroup->addAction(m_addArcToolAction);
   connect(m_addArcToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddArc); });
 
@@ -420,12 +438,24 @@ MainWindow::MainWindow(QWidget* parent)
   m_addRectangleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"), "Draw Rectangle");
   m_addRectangleToolAction->setToolTip("Draw Rectangle -- drag between two diagonal corners");
   m_addRectangleToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addRectangleToolAction->setShortcut(QKeySequence(Qt::Key_R));
   toolGroup->addAction(m_addRectangleToolAction);
   connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
 
   m_addCircleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_circle.svg"), "Draw Circle");
   m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
   m_addCircleToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addCircleToolAction->setShortcut(QKeySequence(Qt::Key_C));
   toolGroup->addAction(m_addCircleToolAction);
   connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
 

@@ -140,6 +140,30 @@ To set smart meshing on or off on a file-by-file basis, use  \verb+mi_smartmesh+
 \end{itemize}
 
 
+
+\section{Commands Added Since FEMM 4.2}
+
+Every command below is specific to FEMMX and is not present in FEMM
+4.2. They are documented in full alongside their peers in the sections
+that follow; this list exists so that a script written for FEMM 4.2 can
+be told apart from one that requires FEMMX.
+
+\begin{itemize}
+\item {\tt get\_solve\_stats()} --- returns the last solve's duration
+and CPU/GPU/RAM usage, for benchmarking scripts.
+\item {\tt setgui("name")} / {\tt getgui()} --- choose which GUI renders
+for the commands that produce GUI-derived output.
+\item {\tt mi\_setgpuaccel(flag)} and {\tt ei\_setgpuaccel(flag)} ---
+opt the magnetics and electrostatics solvers into CUDA-accelerated
+solving.
+\item {\tt mi\_setredraw(flag)} and {\tt ei\_setredraw(flag)} ---
+suppress redraws during a scripted sequence of edits.
+\item {\tt mi\_savepng("filename")} and {\tt mo\_savepng("filename")}
+--- save a PNG screenshot; FEMM 4.2 could only write bitmaps and
+metafiles.
+\end{itemize}
+
+
 \section{Magnetics Preprocessor Lua Command Set}
 
 A number of different commands are available in the preprocessor.
