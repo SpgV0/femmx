@@ -374,24 +374,101 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     }
   }
 
-  // Precompute each node's average value (across every element touching
-  // it -- see QuantityData's header comment for why) plus the min/max
-  // range, for every DensityQuantity at once. Done once here rather than
-  // per-paint or per-quantity-switch, since paint() can run many times
-  // (every pan/zoom) but the mesh itself never changes -- the whole
-  // point of this precompute pass, same as the original |B|-only version.
+  // Modified by Claude (Anthropic), noreply@anthropic.com: builds the
+  // per-(element,corner) smoothing groups QuantityData::cornerAvg's own
+  // comment describes -- material-restricted, inverse-distance weighted,
+  // porting femm/FemmviewDoc.cpp's GetNodalB. Independent of
+  // DensityQuantity (it's pure mesh geometry + material), so built ONCE
+  // here rather than inside the qi loop below, the same reasoning that
+  // already justified precomputing at all instead of per-paint.
+  //
+  // magdir/H_c aren't tracked per element here (permanent-magnet/custom-
+  // magnetization materials are a separate, already-documented gap --
+  // see MeshSolutionElement::bhMaterialIndex's comment), so the material
+  // match below is (muX,muY) equality -- exact, not approximate, since
+  // these are copied verbatim from the resolved material record at load
+  // time (AnsFileIO::readAns) rather than computed, so two elements of
+  // the same material compare bit-identical.
+  const int numNodes = solution->nodes.size();
+  const int numElements = solution->elements.size();
+
+  QVector<QVector<int>> nodeElements(numNodes);
+  for (int ei = 0; ei < numElements; ei++) {
+    const MeshSolutionElement& e = solution->elements[ei];
+    for (int p : { e.p0, e.p1, e.p2 })
+      if (p >= 0 && p < numNodes)
+        nodeElements[p].push_back(ei);
+  }
+
+  struct SmoothGroup {
+    QVector<int> elems; // element indices in this group
+    QVector<int> corner; // each elems[m]'s corner-local-index (0-2) at this node
+    QVector<double> weight; // 1/distance to elems[m]'s centroid, same order
+    double weightSum = 0;
+  };
+  QVector<SmoothGroup> groups;
+  // cornerGroup[3*ei+c] = index into groups for element ei's corner c
+  // (touching FemmSolutionElement::p{c}) -- -1 for a corner with no
+  // group, which should not happen for a real mesh but is guarded below.
+  QVector<int> cornerGroup(3 * numElements, -1);
+
+  for (int k = 0; k < numNodes; k++) {
+    const QVector<int>& touching = nodeElements[k];
+    if (touching.isEmpty())
+      continue;
+    const MeshSolutionNode& node = solution->nodes[k];
+    QMap<QPair<double, double>, QVector<int>> buckets;
+    for (int ei : touching)
+      buckets[{ solution->elements[ei].muX, solution->elements[ei].muY }].push_back(ei);
+
+    for (auto it = buckets.constBegin(); it != buckets.constEnd(); ++it) {
+      SmoothGroup g;
+      for (int ei : it.value()) {
+        const MeshSolutionElement& e = solution->elements[ei];
+        double dist = std::hypot(e.ctrX - node.x, e.ctrY - node.y);
+        // Guards a centroid coincident with the node -- geometrically
+        // shouldn't happen for a real (non-degenerate) triangle, but a
+        // guaranteed-huge weight is the correct limit if it ever did
+        // (that element's own value should dominate), not a crash.
+        double w = (dist > 1e-12) ? 1.0 / dist : 1.0e12;
+        int corner = (e.p0 == k) ? 0 : (e.p1 == k) ? 1 : 2;
+        g.elems.push_back(ei);
+        g.corner.push_back(corner);
+        g.weight.push_back(w);
+        g.weightSum += w;
+      }
+      int groupIdx = groups.size();
+      groups.push_back(g);
+      for (int m = 0; m < g.elems.size(); m++)
+        cornerGroup[3 * g.elems[m] + g.corner[m]] = groupIdx;
+    }
+  }
+
+  // Precompute each (element,corner)'s smoothed value via the groups
+  // above, plus the min/max range, for every DensityQuantity at once.
+  // Done once here rather than per-paint or per-quantity-switch, since
+  // paint() can run many times (every pan/zoom) but the mesh itself
+  // never changes -- the whole point of this precompute pass, same as
+  // the original |B|-only version.
   for (int qi = 0; qi < kDensityQuantityCount; qi++) {
     auto q = static_cast<DensityQuantity>(qi);
     QuantityData& qd = m_quantityData[qi];
-    qd.nodeAvg.fill(0.0, solution->nodes.size());
-    QVector<int> touchCount(solution->nodes.size(), 0);
+    qd.cornerAvg.assign(3 * numElements, 0.0);
     bool first = true;
     // Size-weighted candidate score for vMax -- see MeshSolutionElement::
     // rsqr's comment. -1 so even a genuine 0-valued mesh still picks a
     // candidate on the first eligible element (weight is always >= 0).
     double bestWeight = -1.0;
-    for (const MeshSolutionElement& e : solution->elements) {
-      double v = elementQuantity(e, q);
+
+    // Computed once per element (not per group-membership, which would
+    // call elementQuantity() on the same element up to 3x) and reused
+    // both for vMin/vMax below and to feed the group averages after.
+    QVector<double> v(numElements);
+    for (int ei = 0; ei < numElements; ei++)
+      v[ei] = elementQuantity(solution->elements[ei], q);
+
+    for (int ei = 0; ei < numElements; ei++) {
+      const MeshSolutionElement& e = solution->elements[ei];
       // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
       // user report ("compare the flux density in the old and new gui
       // from .ansx they do not look similar") -- root-caused to exactly
@@ -401,15 +478,15 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
       // huge B (confirmed matching classic's own GetElementB/mo_getb
       // exactly at the same point -- not a wrong-formula bug), which
       // isn't a real physical flux density and shouldn't stretch the
-      // whole density plot's color range the way it was. Still
-      // contributes to nodeAvg below (still drawn, just not searched for
-      // the range), matching PlotFluxDensity's own behavior.
+      // whole density plot's color range the way it was. Still feeds
+      // cornerAvg below (still drawn, just not searched for the range),
+      // matching PlotFluxDensity's own behavior.
       if (!(anyNonExternal && e.isExternal)) {
         if (first) {
-          qd.vMin = v;
+          qd.vMin = v[ei];
           first = false;
         } else {
-          qd.vMin = std::min(qd.vMin, v);
+          qd.vMin = std::min(qd.vMin, v[ei]);
         }
         // Modified by Claude (Anthropic), noreply@anthropic.com: per the
         // same user report -- excluding isExternal alone wasn't enough. A
@@ -427,22 +504,22 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
         // flux density, which sometimes happens in corners") -- adapted
         // here to femmqt's one-value-per-element model (classic's version
         // uses nodal, not per-element, B).
-        double weight = std::sqrt(e.rsqr) * v * v;
+        double weight = std::sqrt(e.rsqr) * v[ei] * v[ei];
         if (weight > bestWeight) {
           bestWeight = weight;
-          qd.vMax = v;
-        }
-      }
-      for (int p : { e.p0, e.p1, e.p2 }) {
-        if (p >= 0 && p < qd.nodeAvg.size()) {
-          qd.nodeAvg[p] += v;
-          touchCount[p]++;
+          qd.vMax = v[ei];
         }
       }
     }
-    for (int i = 0; i < qd.nodeAvg.size(); i++)
-      if (touchCount[i] > 0)
-        qd.nodeAvg[i] /= touchCount[i];
+
+    for (const SmoothGroup& g : groups) {
+      double sum = 0;
+      for (int m = 0; m < g.elems.size(); m++)
+        sum += g.weight[m] * v[g.elems[m]];
+      double avg = (g.weightSum > 0) ? sum / g.weightSum : 0.0;
+      for (int m = 0; m < g.elems.size(); m++)
+        qd.cornerAvg[3 * g.elems[m] + g.corner[m]] = avg;
+    }
   }
   m_lastDensityLo = m_quantityData[static_cast<int>(m_densityQuantity)].vMin;
   m_lastDensityHi = m_quantityData[static_cast<int>(m_densityQuantity)].vMax;
@@ -882,7 +959,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
         continue;
       double v = m_smooth
-          ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
+          ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0
           : elementQuantity(e, m_densityQuantity);
       double weight = std::sqrt(e.rsqr) * v * v;
       if (firstIncl) {
@@ -950,17 +1027,17 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
 
     if (m_smooth && span > 0) {
       // Marching-triangle band slicing on the 3 corners' individual
-      // node-averaged values -- see sliceTriangleIntoBands' comment. This
-      // is what actually produces the smooth-gradient look (continuity
-      // across shared nodes via nodeAvg, fine intra-element banding via
+      // smoothed values -- see sliceTriangleIntoBands' comment. This is
+      // what actually produces the smooth-gradient look (continuity
+      // across shared nodes via cornerAvg, fine intra-element banding via
       // the slicing itself), not just averaging the 3 corners into one
       // flat color the way this branch used to.
-      double bv0 = (qd.nodeAvg[e.p0] - bMin) / span * kNumBands;
-      double bv1 = (qd.nodeAvg[e.p1] - bMin) / span * kNumBands;
-      double bv2 = (qd.nodeAvg[e.p2] - bMin) / span * kNumBands;
+      double bv0 = (qd.cornerAvg[3 * ei + 0] - bMin) / span * kNumBands;
+      double bv1 = (qd.cornerAvg[3 * ei + 1] - bMin) / span * kNumBands;
+      double bv2 = (qd.cornerAvg[3 * ei + 2] - bMin) / span * kNumBands;
       sliceTriangleIntoBands(QPointF(n0.x, n0.y), bv0, QPointF(n1.x, n1.y), bv1, QPointF(n2.x, n2.y), bv2, bandPaths);
     } else {
-      double bMag = m_smooth ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0 : elementQuantity(e, m_densityQuantity);
+      double bMag = m_smooth ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0 : elementQuantity(e, m_densityQuantity);
       int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
       band = std::clamp(band, 0, kNumBands - 1);
 

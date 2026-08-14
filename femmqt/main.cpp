@@ -665,6 +665,16 @@ int main(int argc, char* argv[])
       SolutionWindow window;
       window.resize(w, h);
       window.openAnsFile(in);
+      // Modified by Claude (Anthropic), noreply@anthropic.com: found while
+      // trying to visually verify an unrelated density-plot fix -- this
+      // call was never here. selectDensityPlot() existed and --density
+      // was documented in the commit that added it, but nothing in main()
+      // actually checked args for it, so EVERY --density render since
+      // that commit silently stayed in the viewer's default Contour mode
+      // instead. Every "density" screenshot taken via this CLI path
+      // before this fix was actually a contour plot.
+      if (args.contains("--density"))
+        window.selectDensityPlot();
       image = window.renderToImage(QSize(w, h), source);
     } else {
       MainWindow window;

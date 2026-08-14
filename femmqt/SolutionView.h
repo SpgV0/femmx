@@ -303,7 +303,28 @@ class MeshSolutionItem : public QGraphicsItem {
   // as the original |B|-only version) rather than rescanning the mesh
   // every time the user switches which quantity is plotted.
   struct QuantityData {
-    QVector<double> nodeAvg; // per-node average of touching elements' value -- see below for why
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was a flat
+    // per-NODE average (nodeAvg) of every touching element's value,
+    // regardless of material or distance. Per direct user report ("the
+    // density view... renders a bit rough" compared to the classic GUI,
+    // with a side-by-side screenshot showing the serration concentrated
+    // exactly along material boundaries -- the core edge, the halo
+    // around each winding) -- root-caused to that: a flat average blurs
+    // a real physical discontinuity in B across a material boundary,
+    // which reads as noise. femm/FemmviewDoc.cpp's own smoothing
+    // (GetNodalB) never does this -- it excludes neighbors whose
+    // material differs, and weights the rest by 1/distance to their
+    // centroid, not equally.
+    //
+    // This is that, adapted to this app's one-value-per-element (not
+    // per-node) model: one value per (element, corner) instead of per
+    // node -- classic's own b1[i]/b2[i] concept -- so two elements
+    // sharing a node but belonging to different materials each keep
+    // their own, locally-correct smoothed value there instead of
+    // averaging into one that is physically wrong for both. Element
+    // ei's corner touching FemmSolutionElement::p{c} is at index
+    // 3*ei+c. See MeshSolutionItem's constructor for how this is built.
+    QVector<double> cornerAvg;
     double vMin = 0, vMax = 0;
   };
   // Indexed by DensityQuantity's underlying int value -- sized via
