@@ -1448,7 +1448,7 @@ void MainWindow::onZoomWindowTriggered()
   m_scene->setToolMode(GeometryToolMode::ZoomWindow);
 }
 
-QImage MainWindow::renderToImage(QSize size)
+QImage MainWindow::renderToImage(QSize size, QRectF source)
 {
   if (m_scene == nullptr || size.isEmpty())
     return QImage();
@@ -1466,8 +1466,8 @@ QImage MainWindow::renderToImage(QSize size)
   painter.translate(0, size.height());
   painter.scale(1.0, -1.0);
 
-  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)), bounds,
-      Qt::KeepAspectRatio);
+  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
+      source.isEmpty() ? bounds : source, Qt::KeepAspectRatio);
   return image;
 }
 

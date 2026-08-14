@@ -3302,7 +3302,13 @@ void SolutionWindow::onZoomWindowTriggered()
   m_view->startZoomWindow();
 }
 
-QImage SolutionWindow::renderToImage(QSize size)
+void SolutionWindow::selectDensityPlot()
+{
+  if (m_item)
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+}
+
+QImage SolutionWindow::renderToImage(QSize size, QRectF source)
 {
   if (m_item == nullptr || size.isEmpty())
     return QImage();
@@ -3319,7 +3325,8 @@ QImage SolutionWindow::renderToImage(QSize size)
   painter.scale(1.0, -1.0);
 
   m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
-      m_item->boundingRect(), Qt::KeepAspectRatio);
+      source.isEmpty() ? m_item->boundingRect() : source,
+      Qt::KeepAspectRatio);
   return image;
 }
 

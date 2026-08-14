@@ -612,6 +612,18 @@ int main(int argc, char* argv[])
     const bool isSolution = suffix.compare("ans", Qt::CaseInsensitive) == 0
         || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
 
+    // Optional scene-space crop: --render-png in out w h x0 y0 x1 y1.
+    // Renders a zoomed-in region without a GUI, which matters because the
+    // density plot's color banding is scaled to whatever is VISIBLE (see
+    // MeshSolutionItem::paintDensity) -- so a full-model render cannot
+    // reproduce, or regress-test, how a zoomed-in view actually looks.
+    QRectF source;
+    if (args.size() >= 10) {
+      const double x0 = args.at(6).toDouble(), y0 = args.at(7).toDouble();
+      const double x1 = args.at(8).toDouble(), y1 = args.at(9).toDouble();
+      source = QRectF(QPointF(x0, y0), QPointF(x1, y1)).normalized();
+    }
+
     QImage image;
     // The windows are constructed but never shown: renderToImage draws
     // the scene directly, which is why this works without a desktop.
@@ -619,12 +631,12 @@ int main(int argc, char* argv[])
       SolutionWindow window;
       window.resize(w, h);
       window.openAnsFile(in);
-      image = window.renderToImage(QSize(w, h));
+      image = window.renderToImage(QSize(w, h), source);
     } else {
       MainWindow window;
       window.resize(w, h);
       window.openFile(in);
-      image = window.renderToImage(QSize(w, h));
+      image = window.renderToImage(QSize(w, h), source);
     }
 
     if (image.isNull()) {

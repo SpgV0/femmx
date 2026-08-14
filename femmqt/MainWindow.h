@@ -31,7 +31,7 @@ class MainWindow : public QMainWindow {
   // rather than grabbing the view: the viewport is a QOpenGLWidget when
   // built with OpenGL, and grabbing one that was never shown is not
   // reliable. Returns a null image if nothing is loaded.
-  QImage renderToImage(QSize size);
+  QImage renderToImage(QSize size, QRectF source = QRectF());
 
 
   protected:
