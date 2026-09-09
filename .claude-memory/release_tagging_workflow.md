@@ -1,6 +1,6 @@
 ---
 name: release-tagging-workflow
-description: "The step-by-step versioning/tag/release process for femmx, used 3x this session (v1.1.0, v1.1.1, v1.2.0) — what files to bump, in what order, and how to merge/push"
+description: "The step-by-step versioning/tag/release process for femmx — what files to bump, in what order, and how to tag/push (main-only since 2026-09-09)"
 metadata: 
   node_type: memory
   type: project
@@ -44,25 +44,23 @@ repeated across v1.1.0, v1.1.1, and v1.2.0):
    compiles clean before committing. The installer filename
    (`FEMMX_v<version>_installer.exe`) is a quick visual confirmation the
    bump actually took.
-4. **Commit** the version bump + CHANGELOG together on `new_features`.
+4. **Commit** the version bump + CHANGELOG together on `main`.
 5. **Tag**: `git tag -a vX.Y.Z -m "..."` (annotated, with a short bullet
-   summary in the message body) at the tip of `new_features`.
-6. **Merge `--no-ff` into both `rc` and `main`**, in that order:
-   `git checkout rc && git merge --no-ff new_features -m "Merge
-   new_features (vX.Y.Z) into rc"`, then the same for `main`. These have
-   been clean fast merges every time so far (no conflicts) since `rc`/
-   `main` only ever receive fully-formed release merges, never direct
-   commits.
-7. **Switch back to `new_features`** (`git checkout new_features`) —
-   this repo's convention is to leave the working branch as
-   `new_features` between sessions, never sitting on `rc`/`main`.
-8. **Push everything**: `new_features`, `rc`, `main`, and the tag
-   (4 separate `git push` invocations, or `git push origin
-   new_features rc main vX.Y.Z`). Do NOT push to `master` — that branch
-   was deleted from the remote (2026-07-17); `main` is now the default,
-   `origin/HEAD` already points there.
+   summary in the message body) at the tip of `main`.
+6. **Push `main` and the tag**: `git push origin main vX.Y.Z`. Do NOT
+   push to `master` — that branch was deleted from the remote
+   (2026-07-17); `main` is the default and `origin/HEAD` points there.
+
+**Changed 2026-09-09: no more `rc`/`new_features` merge steps.** Through
+v2.1.2 this sequence had two extra steps between the tag and the push —
+`git merge --no-ff new_features` into `rc`, then the same into `main`,
+followed by `git checkout new_features` to leave the working branch off
+`main`. Both branches were merged into `main` and deleted (locally and on
+`origin`) on 2026-09-09, and the user's instruction is now "only pushing
+to main". Commit, tag, and push all happen on `main` directly; there is
+no branch to switch back to afterwards. See [[push_branch_policy]].
 
 This whole sequence only runs on an **explicit** request naming a
 version/tag/release — per [[push_branch_policy]], regular bug-fix
-commits during a session stay on `new_features` and get pushed there
-alone, without a version bump, until the user asks for a release.
+commits during a session stay local and get pushed to `main` alone,
+without a version bump, until the user asks for a release.

@@ -1,9 +1,9 @@
-- [Push branch policy](push_branch_policy.md) — push to new_features, not main, in femmx (formerly femm_mods, then femm_plus, now SpgV0/femmx) for review
+- [Push branch policy](push_branch_policy.md) — main is the only branch in femmx (SpgV0/femmx); commit and push directly to main, the new_features/rc flow is retired
 - [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA solve opt-in via mi_setgpuaccel; AC/harmonic reliably faster, but DC/real-valued speedup is unconfirmed/conflicting as of 2026-07-20 — verify before citing either number
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
 - [FEMMX rebrand](femmx_rebrand.md) — femm_plus renamed to FEMMX (femmx.exe, SpgV0/femmx); COM ProgID femm.ActiveFEMM and solver exe names unchanged
-- [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, merge --no-ff to rc+main, push all
+- [Release tagging workflow](release_tagging_workflow.md) — exact steps to version/tag/release femmx: bump script.nsi + femm.rc macros, CHANGELOG, tag, push main + tag (no rc/new_features merges since 2026-09-09)
 - [Build and COM registration gotchas](build_and_com_registration_gotchas.md) — bare build.ps1 hangs; COM uses bin\plain\/bin\cuda\; git clean -fdx bin/ after a killed build; missing DLL can silently hang, not error
 - [Disk hygiene](disk_hygiene.md) — standing instruction: don't leave temp/build/debug garbage on disk over time, raised twice, clean up proactively
 - [FEMMX Qt GUI (femmqt)](femmqt_qt_gui.md) — magnetics-only; classic GUI is the default again as of 2026-07-21 (Qt-default was reverted)
