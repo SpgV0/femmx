@@ -81,8 +81,6 @@ KNOWN_ISSUES = {
                       "unmeshed input view raises a 'possible page fault' error",
     "ci_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
                       "unmeshed input view raises a 'possible page fault' error",
-    "ci_refreshview": "pre-existing FEMM gap: ci_refreshview is not registered as "
-                       "a Lua command (unlike mi_/ei_/hi__refreshview)",
     "ei_analyze": "electrostatics probdef/property argument conventions in this "
                   "sweep are not yet fully verified against the real Lua API; "
                   "solver rejects the saved file",

@@ -87,7 +87,16 @@ void CcdrawDoc::initalise_lua()
   lua_register(lua, "ci_savebitmap", lua_savebitmap);
   lua_register(lua, "ci_savemetafile", lua_saveWMF);
   lua_register(lua, "ci_close", lua_exitpre);
-  lua_register(lua, "ci_refrescview", lua_updatewindow);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-09:
+  // this was registered as "ci_refrescview" -- a typo for "refresh" that
+  // sat in the exact slot where the magnetics, electrostatics and heat-flow
+  // editors all register "*i_refreshview" (femmeLua.cpp, beladrawLua.cpp,
+  // hdrawLua.cpp), so ci_refreshview simply did not exist and calling it
+  // raised "attempt to call global (a nil value)". pyfemm has wrapped it all
+  // along. The misspelling stays registered as a deprecated alias so any
+  // script that discovered and used it keeps working.
+  lua_register(lua, "ci_refreshview", lua_updatewindow);
+  lua_register(lua, "ci_refrescview", lua_updatewindow);  // deprecated alias
   lua_register(lua, "ci_shownames", lua_shownames);
   lua_register(lua, "ci_showgrid", lua_showgrid);
   lua_register(lua, "ci_hidegrid", lua_hidegrid);

@@ -170,7 +170,7 @@ class CcviewDoc : public CDocument {
   void CreateBMPFile(HWND hwnd, LPTSTR pszFile, PBITMAPINFO pbi, HBITMAP hBMP, HDC hDC);
   static int lua_getcircuitprops(lua_State* L);
   static int lua_saveWMF(lua_State* L);
-  static int lua_refrescview(lua_State* L);
+  static int lua_refreshview(lua_State* L);
   static int lua_selectline(lua_State* L);
   static int lua_seteditmode(lua_State* L);
   static int lua_bendcontour(lua_State* L);

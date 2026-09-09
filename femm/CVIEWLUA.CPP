@@ -72,7 +72,14 @@ void CcviewDoc::initalise_lua()
   lua_register(lua, "co_savebitmap", lua_savebitmap);
   lua_register(lua, "co_getconductorproperties", lua_getcircuitprops);
   lua_register(lua, "co_savemetafile", lua_saveWMF);
-  lua_register(lua, "co_refrescview", lua_refrescview);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-09:
+  // "refresc" is a typo for "refresh", and it ran all the way through:
+  // the Lua name AND the C++ method, so co_refreshview did not exist while
+  // mo_/eo_/ho_refreshview all did. Found by diffing the four command
+  // tables against each other while fixing the identical ci_ typo (#5).
+  // The misspelling stays as a deprecated alias.
+  lua_register(lua, "co_refreshview", lua_refreshview);
+  lua_register(lua, "co_refrescview", lua_refreshview);  // deprecated alias
   lua_register(lua, "co_selectpoint", lua_selectline);
   lua_register(lua, "co_seteditmode", lua_seteditmode);
   lua_register(lua, "co_bendcontour", lua_bendcontour);
@@ -116,7 +123,7 @@ void CcviewDoc::initalise_lua()
   lua_register(lua, "co_save_bitmap", lua_savebitmap);
   lua_register(lua, "co_get_conductor_properties", lua_getcircuitprops);
   lua_register(lua, "co_save_metafile", lua_saveWMF);
-  lua_register(lua, "co_refresh_view", lua_refrescview);
+  lua_register(lua, "co_refresh_view", lua_refreshview);
   lua_register(lua, "co_select_point", lua_selectline);
   lua_register(lua, "co_set_edit_mode", lua_seteditmode);
   lua_register(lua, "co_bend_contour", lua_bendcontour);
@@ -1330,7 +1337,7 @@ int CcviewDoc::lua_saveWMF(lua_State* L)
   return 0;
 }
 
-int CcviewDoc::lua_refrescview(lua_State* L)
+int CcviewDoc::lua_refreshview(lua_State* L)
 {
   CatchNullDocument();
   CcviewDoc* thisDoc;
