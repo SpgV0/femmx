@@ -1,4 +1,130 @@
-﻿04Aug2026 (v2.1.2)
+﻿09Sep2026 (v2.2.0)
+
+* `femmqt` gains a CAD-style sketch layer: 9 geometric constraint types
+  (Coincident, Horizontal, Vertical, Parallel, Perpendicular, Equal,
+  Tangent, Concentric, Symmetric) and 3 dimension types (Distance,
+  Radius, Angle), solved by a hand-rolled Levenberg-Marquardt solver
+  (`ConstraintSolver.h/.cpp`, `DenseMatrix.h`) with per-component
+  DOF/sketch-health classification and color coding. Constraints render
+  as small clickable on-canvas glyphs, individually selectable and
+  deletable or manageable through a new Constraint List dialog. The
+  sketch layer is session-only and is never persisted to `.fem`/`.femx`.
+  A new Tools menu exposes the drawing tools that previously existed
+  only as toolbar buttons.
+
+* The Smart Dimension tool was reworked to Fusion 360's
+  select -> preview -> place -> type model, replacing the old
+  click-then-immediately-prompt flow. Two selected nodes live-resolve to
+  Horizontal, Vertical or Aligned distance from cursor position, each
+  backed by its own solver residual (`HorizontalDistance`/
+  `VerticalDistance` use |dx|/|dy|) so the constraint matches what is
+  displayed rather than relabeling one formula; a second line sharing a
+  vertex upgrades the pending dimension to an Angle. Fixed along the
+  way: dimension number-labels never set their hit-test Kind/Index, so
+  clicking a label read as "clicked node 0" (an unset QVariant defaults
+  to 0, aliasing `FemmItemKind::Node`); the preview ghost sat topmost in
+  `itemAt()` and could swallow a placement click; and
+  `buildDimensionPath()` rendered Horizontal/Vertical dimension lines
+  parallel to the segment they measure, since translating both endpoints
+  by one offset vector keeps them parallel by construction -- only
+  Aligned should do that.
+
+* Angle dimensions now work between two lines that never touch. The
+  line -> line angle previously fired only when both segments shared an
+  endpoint node, because `DimensionType::Angle` is defined as vertex
+  node plus two ray-endpoint nodes and disjoint lines have nowhere to
+  put the vertex -- so angling a corner worked and angling anything else
+  silently did nothing. Adds `DimensionType::AngleLines`, referencing
+  the two segments directly and dimensioning against their virtual
+  intersection, with a residual that wraps modulo 180 rather than 360
+  (a line has no direction, so a segment stored end-for-end is the same
+  line). The Angle Dimension toolbar button now arms Smart Dimension.
+
+* `femmqt` can insert a node where two segments cross, which classic
+  FEMM does in `FancyEnforcePSLG` but `femmqt` never has. Without it,
+  two crossing lines stay logically disconnected: the mesher sees no
+  shared vertex at the crossing, so the regions they appear to bound
+  are not actually bounded. Only proper crossings split -- shared
+  endpoints and parallel/collinear pairs are skipped -- and the interior
+  tolerance is scaled per segment so it means "a hair inside the ends"
+  in real distance rather than in parameter space. Wired into the Add
+  Segment tool and Draw Rectangle.
+
+* Density plot smoothing is now material-aware and inverse-distance
+  weighted, matching `femm/FemmviewDoc.cpp`'s own `GetNodalB`. The old
+  "Smoothing" option averaged every element touching a node equally,
+  regardless of material, which blurs a real physical discontinuity in
+  B into noise -- visible as serration concentrated exactly along
+  material boundaries (a core edge, the halo around each winding) where
+  classic's edges stayed smooth.
+
+* Click-drag panning in both the editor and the Solution Viewer, via
+  MIDDLE or RIGHT button. Middle is the CAD convention (Fusion 360,
+  SolidWorks, FreeCAD, KiCad); right is a fallback for mice and
+  trackpads without one. Left is deliberately untouched -- it belongs to
+  the drawing tools, selection, Shift+rubber-band and the zoom-window
+  rubber band, which is also why `QGraphicsView`'s built-in
+  `ScrollHandDrag` is not used. New header-only `ViewPanning.h` rather
+  than duplicating the handler across two views.
+
+* The Solution Viewer can pan beyond the edge of the model.
+  `SolutionGraphicsScene` never set a scene rect, so Qt computed one
+  from `itemsBoundingRect()` -- the solved mesh's own extents -- and
+  both pan paths clamp to it, leaving the scrollbars with zero range at
+  fit zoom. The rect is now set from the loaded mesh, inflated by three
+  times its larger dimension per side.
+
+* New Lua commands `setgui("classic"|"qt")`, `getgui()`,
+  `mi_savepng(file[,w,h])` and `mo_savepng(file[,w,h])`. Lua only ever
+  runs inside the classic MFC app, so `setgui` selects which GUI renders
+  for commands producing GUI-derived output rather than switching
+  processes. The classic path draws into a memory DC and encodes with
+  GDI+ (PNG output classic could not produce before, and no new
+  dependency); the Qt path hands off to `femmqt.exe --render-png`. The
+  setting is session-scoped and seeded from `femm.cfg`'s
+  `<PreferredGUI>`, but `setgui()` does not write that key back.
+
+* `femmqt.exe --render-png <in> <out> [w h [x0 y0 x1 y1]] [--density]`
+  can crop to a region and select the density plot. The crop matters
+  because density-plot color banding is scaled to what is visible (see
+  `MeshSolutionItem::paintDensity`), so a full-model render cannot
+  reproduce or regression-test how a zoomed-in view actually looks.
+
+* Single-key tool shortcuts in `femmqt`, bound as `setShortcut` so the
+  bare key works whenever the canvas has focus: N node, L line,
+  C circle, R rectangle, A arc (joining the existing D for Smart
+  Dimension). These had been listed as queued without ever being
+  implemented.
+
+* The manual gains a Revision History chapter -- the FEMM 4.2 baseline
+  plus every FEMMX release from 1.0.0 -- and a "Commands Added Since
+  FEMM 4.2" section listing exactly the Lua commands this fork adds, so
+  a script written for stock FEMM can be told apart from one that needs
+  FEMMX. The list was taken from the actual `lua_register` calls, which
+  is why it credits `setgpuaccel`/`setredraw` to the magnetics and
+  electrostatics documents only: despite all four solvers having the
+  CUDA port, the `hi_`/`ci_` variants are not registered. The FEMMX logo
+  now appears on the title page.
+
+* The installer gained a "Run FEMMX" tick box on its finish page
+  (`MUI_FINISHPAGE_RUN`), pointing at the classic GUI like the primary
+  Start Menu shortcut. Launching directly is safe only because this
+  installer declares `RequestExecutionLevel user`, so it never elevates
+  and the app cannot inherit administrator rights.
+
+* `examples/parallel_sweep.py` documents and demonstrates running
+  concurrent FEMMX instances for parameter sweeps -- already supported,
+  but nothing in the repo said so. Two `Dispatch('femm.ActiveFEMM')`
+  calls give two separate `femmx.exe` processes (the automation server
+  is registered per-process), there is no single-instance mutex, and
+  parallel results are bit-identical to sequential. Instances collide
+  only if two workers share a document basename, which silently
+  overwrites another worker's mesh and solution and completes with no
+  error -- the whole reason the example exists. Backed by new
+  regression tests covering process separation, parallel-vs-sequential
+  equality, and solver determinism.
+
+04Aug2026 (v2.1.2)
 
 * `femmqt`'s Solution Viewer Density Plot and Point Properties dialog
   computed `|H|` (magnetic field intensity) wrong by 5-6 orders of

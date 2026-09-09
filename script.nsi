@@ -61,7 +61,9 @@ Unicode True
 ; Single source of truth for the installer's own display/file version --
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
-!define PROJECT_VERSION "2.1.2"
+; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-09:
+; bumped to v2.2.0 (see CHANGELOG.md).
+!define PROJECT_VERSION "2.2.0"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
