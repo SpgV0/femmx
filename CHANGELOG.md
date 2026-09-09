@@ -1,4 +1,11 @@
-﻿09Sep2026 (v2.2.0)
+﻿09Sep2026 (v2.2.1)
+
+* Released as v2.2.1 rather than v2.2.0. The v2.2.0 release was
+  published and then deleted by hand minutes later; this repository has
+  GitHub's immutable releases enabled, which permanently reserves a
+  published tag even after the release is deleted, so v2.2.0 can never
+  be re-published. The content below is unchanged from what v2.2.0
+  carried.
 
 * `femmqt` gains a CAD-style sketch layer: 9 geometric constraint types
   (Coincident, Horizontal, Vertical, Parallel, Perpendicular, Equal,

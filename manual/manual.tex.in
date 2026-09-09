@@ -131,14 +131,19 @@ electrostatics and current-flow solvers. \\
 2.0.0 & 19 Jul 2026 & {\tt femmqt}, a second, Qt-based GUI, alongside
 the classic interface. \\
 \hline
-2.1.0 & 1 Aug 2026 & CAD-style dimensions and a geometric constraint
-solver in {\tt femmqt}. \\
+2.1.0 & 1 Aug 2026 & Density Plot auto-range and outline-overlay fixes
+for open-boundary (ABC) and nonlinear-material models. \\
 \hline
 2.1.1 & 2 Aug 2026 & Fixed a Density Plot crash on the {\tt |J|},
 Re(J), Im(J) and log$_{10}$({\tt |B|}) quantities. \\
 \hline
 2.1.2 & 4 Aug 2026 & Fixed {\tt |H|} computed wrongly for
 BH-curve (nonlinear) materials. \\
+\hline
+2.2.1 & 9 Sep 2026 & CAD-style dimensions and a geometric constraint
+solver in {\tt femmqt}; click-drag panning; node insertion where two
+segments cross; material-aware density smoothing; new {\tt setgui}/
+{\tt getgui} and {\tt mi\_savepng}/{\tt mo\_savepng} Lua commands. \\
 \hline
 \end{tabular}
 \end{center}

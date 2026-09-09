@@ -62,8 +62,9 @@ Unicode True
 ; keep in sync with femm/femm.rc's VERSIONINFO block and the git tag
 ; created for each release (see CHANGELOG.md).
 ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-09:
-; bumped to v2.2.0 (see CHANGELOG.md).
-!define PROJECT_VERSION "2.2.0"
+; bumped to v2.2.1 (see CHANGELOG.md; v2.2.0 was burned by a deleted
+; immutable release and can never be re-published).
+!define PROJECT_VERSION "2.2.1"
 !define PROJECT_REG_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PROJECT_NAME}"
 !define PROJECT_UNINSTALL_EXE "uninstall.exe"
 
