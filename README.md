@@ -1,5 +1,7 @@
 # FEMMX
 
+![FEMMX -- Finite Element Method Magnetics](doc/femmx-banner.png)
+
 FEMMX is a fork of [FEMM 4.2](https://www.femm.info/) (Finite Element Method
 Magnetics), a Windows application for solving 2D planar and axisymmetric
 problems in:
