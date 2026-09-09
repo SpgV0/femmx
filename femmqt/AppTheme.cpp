@@ -185,6 +185,11 @@ QColor AppTheme::boundaryEdgeColor()
   return kWarmAccent;
 }
 
+QColor AppTheme::dimensionColor()
+{
+  return g_dark ? QColor(0xC7, 0x9C, 0xF0) : QColor(0x7B, 0x3F, 0xA0);
+}
+
 QColor AppTheme::holeColor()
 {
   return g_dark ? QColor(140, 140, 140) : QColor(150, 150, 150);

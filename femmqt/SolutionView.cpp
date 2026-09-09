@@ -56,6 +56,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QRubberBand>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStatusBar>
@@ -373,24 +374,101 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
     }
   }
 
-  // Precompute each node's average value (across every element touching
-  // it -- see QuantityData's header comment for why) plus the min/max
-  // range, for every DensityQuantity at once. Done once here rather than
-  // per-paint or per-quantity-switch, since paint() can run many times
-  // (every pan/zoom) but the mesh itself never changes -- the whole
-  // point of this precompute pass, same as the original |B|-only version.
+  // Modified by Claude (Anthropic), noreply@anthropic.com: builds the
+  // per-(element,corner) smoothing groups QuantityData::cornerAvg's own
+  // comment describes -- material-restricted, inverse-distance weighted,
+  // porting femm/FemmviewDoc.cpp's GetNodalB. Independent of
+  // DensityQuantity (it's pure mesh geometry + material), so built ONCE
+  // here rather than inside the qi loop below, the same reasoning that
+  // already justified precomputing at all instead of per-paint.
+  //
+  // magdir/H_c aren't tracked per element here (permanent-magnet/custom-
+  // magnetization materials are a separate, already-documented gap --
+  // see MeshSolutionElement::bhMaterialIndex's comment), so the material
+  // match below is (muX,muY) equality -- exact, not approximate, since
+  // these are copied verbatim from the resolved material record at load
+  // time (AnsFileIO::readAns) rather than computed, so two elements of
+  // the same material compare bit-identical.
+  const int numNodes = solution->nodes.size();
+  const int numElements = solution->elements.size();
+
+  QVector<QVector<int>> nodeElements(numNodes);
+  for (int ei = 0; ei < numElements; ei++) {
+    const MeshSolutionElement& e = solution->elements[ei];
+    for (int p : { e.p0, e.p1, e.p2 })
+      if (p >= 0 && p < numNodes)
+        nodeElements[p].push_back(ei);
+  }
+
+  struct SmoothGroup {
+    QVector<int> elems; // element indices in this group
+    QVector<int> corner; // each elems[m]'s corner-local-index (0-2) at this node
+    QVector<double> weight; // 1/distance to elems[m]'s centroid, same order
+    double weightSum = 0;
+  };
+  QVector<SmoothGroup> groups;
+  // cornerGroup[3*ei+c] = index into groups for element ei's corner c
+  // (touching FemmSolutionElement::p{c}) -- -1 for a corner with no
+  // group, which should not happen for a real mesh but is guarded below.
+  QVector<int> cornerGroup(3 * numElements, -1);
+
+  for (int k = 0; k < numNodes; k++) {
+    const QVector<int>& touching = nodeElements[k];
+    if (touching.isEmpty())
+      continue;
+    const MeshSolutionNode& node = solution->nodes[k];
+    QMap<QPair<double, double>, QVector<int>> buckets;
+    for (int ei : touching)
+      buckets[{ solution->elements[ei].muX, solution->elements[ei].muY }].push_back(ei);
+
+    for (auto it = buckets.constBegin(); it != buckets.constEnd(); ++it) {
+      SmoothGroup g;
+      for (int ei : it.value()) {
+        const MeshSolutionElement& e = solution->elements[ei];
+        double dist = std::hypot(e.ctrX - node.x, e.ctrY - node.y);
+        // Guards a centroid coincident with the node -- geometrically
+        // shouldn't happen for a real (non-degenerate) triangle, but a
+        // guaranteed-huge weight is the correct limit if it ever did
+        // (that element's own value should dominate), not a crash.
+        double w = (dist > 1e-12) ? 1.0 / dist : 1.0e12;
+        int corner = (e.p0 == k) ? 0 : (e.p1 == k) ? 1 : 2;
+        g.elems.push_back(ei);
+        g.corner.push_back(corner);
+        g.weight.push_back(w);
+        g.weightSum += w;
+      }
+      int groupIdx = groups.size();
+      groups.push_back(g);
+      for (int m = 0; m < g.elems.size(); m++)
+        cornerGroup[3 * g.elems[m] + g.corner[m]] = groupIdx;
+    }
+  }
+
+  // Precompute each (element,corner)'s smoothed value via the groups
+  // above, plus the min/max range, for every DensityQuantity at once.
+  // Done once here rather than per-paint or per-quantity-switch, since
+  // paint() can run many times (every pan/zoom) but the mesh itself
+  // never changes -- the whole point of this precompute pass, same as
+  // the original |B|-only version.
   for (int qi = 0; qi < kDensityQuantityCount; qi++) {
     auto q = static_cast<DensityQuantity>(qi);
     QuantityData& qd = m_quantityData[qi];
-    qd.nodeAvg.fill(0.0, solution->nodes.size());
-    QVector<int> touchCount(solution->nodes.size(), 0);
+    qd.cornerAvg.assign(3 * numElements, 0.0);
     bool first = true;
     // Size-weighted candidate score for vMax -- see MeshSolutionElement::
     // rsqr's comment. -1 so even a genuine 0-valued mesh still picks a
     // candidate on the first eligible element (weight is always >= 0).
     double bestWeight = -1.0;
-    for (const MeshSolutionElement& e : solution->elements) {
-      double v = elementQuantity(e, q);
+
+    // Computed once per element (not per group-membership, which would
+    // call elementQuantity() on the same element up to 3x) and reused
+    // both for vMin/vMax below and to feed the group averages after.
+    QVector<double> v(numElements);
+    for (int ei = 0; ei < numElements; ei++)
+      v[ei] = elementQuantity(solution->elements[ei], q);
+
+    for (int ei = 0; ei < numElements; ei++) {
+      const MeshSolutionElement& e = solution->elements[ei];
       // Modified by Claude (Anthropic), noreply@anthropic.com: per direct
       // user report ("compare the flux density in the old and new gui
       // from .ansx they do not look similar") -- root-caused to exactly
@@ -400,15 +478,15 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
       // huge B (confirmed matching classic's own GetElementB/mo_getb
       // exactly at the same point -- not a wrong-formula bug), which
       // isn't a real physical flux density and shouldn't stretch the
-      // whole density plot's color range the way it was. Still
-      // contributes to nodeAvg below (still drawn, just not searched for
-      // the range), matching PlotFluxDensity's own behavior.
+      // whole density plot's color range the way it was. Still feeds
+      // cornerAvg below (still drawn, just not searched for the range),
+      // matching PlotFluxDensity's own behavior.
       if (!(anyNonExternal && e.isExternal)) {
         if (first) {
-          qd.vMin = v;
+          qd.vMin = v[ei];
           first = false;
         } else {
-          qd.vMin = std::min(qd.vMin, v);
+          qd.vMin = std::min(qd.vMin, v[ei]);
         }
         // Modified by Claude (Anthropic), noreply@anthropic.com: per the
         // same user report -- excluding isExternal alone wasn't enough. A
@@ -426,22 +504,22 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
         // flux density, which sometimes happens in corners") -- adapted
         // here to femmqt's one-value-per-element model (classic's version
         // uses nodal, not per-element, B).
-        double weight = std::sqrt(e.rsqr) * v * v;
+        double weight = std::sqrt(e.rsqr) * v[ei] * v[ei];
         if (weight > bestWeight) {
           bestWeight = weight;
-          qd.vMax = v;
-        }
-      }
-      for (int p : { e.p0, e.p1, e.p2 }) {
-        if (p >= 0 && p < qd.nodeAvg.size()) {
-          qd.nodeAvg[p] += v;
-          touchCount[p]++;
+          qd.vMax = v[ei];
         }
       }
     }
-    for (int i = 0; i < qd.nodeAvg.size(); i++)
-      if (touchCount[i] > 0)
-        qd.nodeAvg[i] /= touchCount[i];
+
+    for (const SmoothGroup& g : groups) {
+      double sum = 0;
+      for (int m = 0; m < g.elems.size(); m++)
+        sum += g.weight[m] * v[g.elems[m]];
+      double avg = (g.weightSum > 0) ? sum / g.weightSum : 0.0;
+      for (int m = 0; m < g.elems.size(); m++)
+        qd.cornerAvg[3 * g.elems[m] + g.corner[m]] = avg;
+    }
   }
   m_lastDensityLo = m_quantityData[static_cast<int>(m_densityQuantity)].vMin;
   m_lastDensityHi = m_quantityData[static_cast<int>(m_densityQuantity)].vMax;
@@ -881,7 +959,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
         continue;
       double v = m_smooth
-          ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0
+          ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0
           : elementQuantity(e, m_densityQuantity);
       double weight = std::sqrt(e.rsqr) * v * v;
       if (firstIncl) {
@@ -949,17 +1027,17 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
 
     if (m_smooth && span > 0) {
       // Marching-triangle band slicing on the 3 corners' individual
-      // node-averaged values -- see sliceTriangleIntoBands' comment. This
-      // is what actually produces the smooth-gradient look (continuity
-      // across shared nodes via nodeAvg, fine intra-element banding via
+      // smoothed values -- see sliceTriangleIntoBands' comment. This is
+      // what actually produces the smooth-gradient look (continuity
+      // across shared nodes via cornerAvg, fine intra-element banding via
       // the slicing itself), not just averaging the 3 corners into one
       // flat color the way this branch used to.
-      double bv0 = (qd.nodeAvg[e.p0] - bMin) / span * kNumBands;
-      double bv1 = (qd.nodeAvg[e.p1] - bMin) / span * kNumBands;
-      double bv2 = (qd.nodeAvg[e.p2] - bMin) / span * kNumBands;
+      double bv0 = (qd.cornerAvg[3 * ei + 0] - bMin) / span * kNumBands;
+      double bv1 = (qd.cornerAvg[3 * ei + 1] - bMin) / span * kNumBands;
+      double bv2 = (qd.cornerAvg[3 * ei + 2] - bMin) / span * kNumBands;
       sliceTriangleIntoBands(QPointF(n0.x, n0.y), bv0, QPointF(n1.x, n1.y), bv1, QPointF(n2.x, n2.y), bv2, bandPaths);
     } else {
-      double bMag = m_smooth ? (qd.nodeAvg[e.p0] + qd.nodeAvg[e.p1] + qd.nodeAvg[e.p2]) / 3.0 : elementQuantity(e, m_densityQuantity);
+      double bMag = m_smooth ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0 : elementQuantity(e, m_densityQuantity);
       int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
       band = std::clamp(band, 0, kNumBands - 1);
 
@@ -1595,6 +1673,10 @@ void SolutionGraphicsView::startZoomWindow()
 
 void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 {
+  // Checked first: panning uses the middle/right buttons and must work
+  // regardless of which tool or mode is armed below. See ViewPanning.h.
+  if (m_pan.begin(this, event))
+    return;
   if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
     m_rubberBandOrigin = event->pos();
     if (!m_rubberBand)
@@ -1610,6 +1692,8 @@ void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 
 void SolutionGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 {
+  if (m_pan.end(this, event))
+    return;
   if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
     m_zoomWindowActive = false;
     viewport()->unsetCursor();
@@ -1627,6 +1711,8 @@ void SolutionGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 
 void SolutionGraphicsView::mouseMoveEvent(QMouseEvent* event)
 {
+  if (m_pan.update(this, event))
+    return;
   if (m_zoomWindowActive && m_rubberBand && m_rubberBand->isVisible()) {
     m_rubberBand->setGeometry(QRect(m_rubberBandOrigin, event->pos()).normalized());
     return;
@@ -1727,6 +1813,23 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   resize(1024, 768);
 
   m_scene = new SolutionGraphicsScene(this);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report -- "when zooming in, I cannot navigate outside the view of the
+  // object, unlike the old gui".
+  //
+  // Root cause: this scene never set a scene rect, so QGraphicsScene fell
+  // back to computing it from itemsBoundingRect() -- i.e. exactly the
+  // solved mesh's own extents. Both pan paths (the Scroll L/R/U/D actions
+  // and the scrollbars they drive) are clamped to the scene rect, so once
+  // zoomed in past fit, the view could not be moved beyond the edge of the
+  // mesh. The classic GUI has no such limit.
+  //
+  // The real rect is set from the loaded mesh in loadSolution() -- see
+  // kPanMarginFactor there for why it is sized to the CONTENT here rather
+  // than pinned to a huge constant the way GeometryScene does it. This is
+  // only the placeholder for the window's empty state, before any file is
+  // open and there is no content to size against.
+  m_scene->setSceneRect(-1.0e3, -1.0e3, 2.0e3, 2.0e3);
   m_scene->setBackgroundBrush(AppTheme::background());
   m_view = new SolutionGraphicsView(m_scene, this);
   m_view->setRenderHint(QPainter::Antialiasing, true); // see updateAntialiasingForScale()
@@ -1983,6 +2086,7 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &SolutionWindow::onHelpTopicsTriggered);
+  helpMenu->addAction("&Keyboard Shortcuts...", this, &SolutionWindow::onKeyboardShortcutsTriggered);
   helpMenu->addSeparator();
   helpMenu->addAction("&License", this, &SolutionWindow::onLicenseTriggered);
   helpMenu->addAction("&About FEMMX...", this, &SolutionWindow::onAboutTriggered);
@@ -2088,6 +2192,32 @@ void SolutionWindow::openAnsFile(const QString& path)
   m_scene->setProblemGeometry(&m_problemGeometry);
   m_scene->addItem(m_item);
   QRectF itemBounds = m_item->boundingRect();
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report -- "when zooming in, I cannot navigate outside the view of the
+  // object, unlike the old gui".
+  //
+  // Root cause: nothing ever set a scene rect, so QGraphicsScene fell back
+  // to computing it from itemsBoundingRect() -- exactly the solved mesh's
+  // own extents. Both pan paths (the Scroll L/R/U/D actions and the
+  // scrollbars they drive) clamp to the scene rect, so the view could not
+  // be moved past the edge of the mesh. The classic GUI has no such limit.
+  //
+  // Sized to the content rather than pinned to a huge constant the way
+  // GeometryScene's constructor does it. That constant is right THERE,
+  // where items are added and removed as the user edits and a scene rect
+  // recomputed from them would silently rescroll the viewport mid-edit
+  // (see that comment). None of that applies to a viewer: the mesh is
+  // fixed once loaded, so the rect can be set once, here. It also avoids
+  // what the constant costs -- against a 1e6 range any real model pins the
+  // scrollbar thumb to Qt's minimum size, so dragging it jumps the view
+  // wildly. A margin of a few times the model keeps the thumb proportional
+  // while putting the pan limit far past anywhere worth looking.
+  constexpr double kPanMarginFactor = 3.0;
+  const double margin =
+      kPanMarginFactor * std::max(itemBounds.width(), itemBounds.height());
+  m_scene->setSceneRect(itemBounds.adjusted(-margin, -margin, margin, margin));
+
   m_view->fitInViewSafe(itemBounds);
   m_scene->setGridSize(niceIntegerGridSize(itemBounds));
   m_view->updateAntialiasingForScale();
@@ -3249,6 +3379,34 @@ void SolutionWindow::onZoomWindowTriggered()
   m_view->startZoomWindow();
 }
 
+void SolutionWindow::selectDensityPlot()
+{
+  if (m_item)
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+}
+
+QImage SolutionWindow::renderToImage(QSize size, QRectF source)
+{
+  if (m_item == nullptr || size.isEmpty())
+    return QImage();
+
+  QImage image(size, QImage::Format_ARGB32);
+  image.fill(AppTheme::background());
+
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  // The scene is y-up (the view applies scale(1,-1) -- see this window's
+  // constructor), so without a matching flip the PNG would come out
+  // mirrored against what the window shows.
+  painter.translate(0, size.height());
+  painter.scale(1.0, -1.0);
+
+  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
+      source.isEmpty() ? m_item->boundingRect() : source,
+      Qt::KeepAspectRatio);
+  return image;
+}
+
 void SolutionWindow::onZoomWindowSelected(QRectF sceneRect)
 {
   m_view->fitInViewSafe(sceneRect);
@@ -3486,6 +3644,47 @@ void SolutionWindow::onHelpTopicsTriggered()
   QMessageBox::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: see
+// MainWindow::onKeyboardShortcutsTriggered's identical reasoning -- this
+// window has its own separate Help menu and its own distinct set of
+// shortcuts (SolutionGraphicsView::keyPressEvent for Delete/Escape, this
+// window's own Zoom menu for the rest), so it gets its own list rather
+// than pointing at the geometry editor's.
+void SolutionWindow::onKeyboardShortcutsTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Keyboard Shortcuts");
+  dlg.resize(420, 420);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  QString html = "<table cellspacing=6>"
+                  "<tr><td colspan=2><b>File</b></td></tr>"
+                  "<tr><td><b>Ctrl+O</b></td><td>Open Solution...</td></tr>"
+                  "<tr><td><b>Ctrl+P</b></td><td>Print...</td></tr>"
+                  "<tr><td colspan=2><b>View</b></td></tr>"
+                  "<tr><td><b>Page Up</b> / <b>Page Down</b></td><td>Zoom In / Out</td></tr>"
+                  "<tr><td><b>Home</b></td><td>Natural (fit to view)</td></tr>"
+                  "<tr><td><b>Arrow keys</b></td><td>Scroll Left/Right/Up/Down</td></tr>"
+                  "<tr><td colspan=2><b>Contours tool</b></td></tr>"
+                  "<tr><td><b>Delete</b></td><td>Remove the last-placed contour point</td></tr>"
+                  "<tr><td><b>Escape</b></td><td>Clear the current contour</td></tr>"
+                  "</table>";
+  auto* label = new QLabel(html, &dlg);
+  label->setTextFormat(Qt::RichText);
+  label->setWordWrap(true);
+
+  auto* scroll = new QScrollArea(&dlg);
+  scroll->setWidget(label);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  layout->addWidget(scroll);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 void SolutionWindow::onLicenseTriggered()

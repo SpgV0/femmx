@@ -57,6 +57,11 @@ qt_add_executable(femmqt WIN32
   FemmFileIO.cpp
   FemmProblemEdit.h
   FemmProblemEdit.cpp
+  ConstraintSolver.h
+  ConstraintSolver.cpp
+  ConstraintListDialog.h
+  ConstraintListDialog.cpp
+  DenseMatrix.h
   GeometryScene.h
   GeometryScene.cpp
   MeshBuilder.h
@@ -100,6 +105,7 @@ qt_add_executable(femmqt WIN32
   IconTheme.cpp
   GeometryView.h
   GeometryView.cpp
+  ViewPanning.h
   MeshOverlay.h
   MeshOverlay.cpp
   MeshOverlayItem.h

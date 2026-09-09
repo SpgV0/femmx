@@ -28,6 +28,76 @@ int FemmProblemEdit::addSegment(FemmProblem& p, int n0, int n1)
   return p.segments.size() - 1;
 }
 
+
+int FemmProblemEdit::splitIntersectingSegments(FemmProblem& p)
+{
+  int inserted = 0;
+  // Re-scan after every split rather than collecting crossings up front:
+  // splitting changes the segment list, and a segment crossing several
+  // others has to be cut once per crossing. Bounded so a pathological
+  // case degrades into "stopped early" instead of hanging the editor.
+  const int kMaxSplits = 5000;
+  while (inserted < kMaxSplits) {
+    bool didSplit = false;
+    for (int i = 0; i < p.segments.size() && !didSplit; i++) {
+      for (int j = i + 1; j < p.segments.size() && !didSplit; j++) {
+        const FemmSegment& a = p.segments[i];
+        const FemmSegment& b = p.segments[j];
+        if (a.n0 == b.n0 || a.n0 == b.n1 || a.n1 == b.n0 || a.n1 == b.n1)
+          continue; // already share a vertex
+        const int nn = p.nodes.size();
+        if (a.n0 < 0 || a.n0 >= nn || a.n1 < 0 || a.n1 >= nn || b.n0 < 0
+            || b.n0 >= nn || b.n1 < 0 || b.n1 >= nn)
+          continue;
+
+        const double ax = p.nodes[a.n0].x, ay = p.nodes[a.n0].y;
+        const double bx = p.nodes[a.n1].x, by = p.nodes[a.n1].y;
+        const double cx = p.nodes[b.n0].x, cy = p.nodes[b.n0].y;
+        const double dx2 = p.nodes[b.n1].x, dy2 = p.nodes[b.n1].y;
+
+        const double r_x = bx - ax, r_y = by - ay;
+        const double s_x = dx2 - cx, s_y = dy2 - cy;
+        const double denom = r_x * s_y - r_y * s_x;
+        const double lenA = std::hypot(r_x, r_y), lenB = std::hypot(s_x, s_y);
+        if (lenA <= 0 || lenB <= 0)
+          continue;
+        if (std::abs(denom) < 1e-12 * lenA * lenB)
+          continue; // parallel or collinear -- no single crossing point
+
+        const double t = ((cx - ax) * s_y - (cy - ay) * s_x) / denom;
+        const double u = ((cx - ax) * r_y - (cy - ay) * r_x) / denom;
+        // Strictly interior to BOTH, with the tolerance scaled per segment
+        // so it means "a hair inside the ends" in real distance, not in
+        // parameter space where it would depend on the segment's length.
+        const double epsA = 1e-9 / lenA, epsB = 1e-9 / lenB;
+        if (t <= epsA || t >= 1.0 - epsA || u <= epsB || u >= 1.0 - epsB)
+          continue;
+
+        const int n = addNode(p, ax + t * r_x, ay + t * r_y);
+        // Copy each segment before touching the list: push_back below may
+        // reallocate, and these carry boundary/group/hide properties the
+        // two halves must both inherit.
+        FemmSegment a2 = p.segments[i];
+        FemmSegment b2 = p.segments[j];
+        const int aEnd = a2.n1, bEnd = b2.n1;
+        p.segments[i].n1 = n;
+        p.segments[j].n1 = n;
+        a2.n0 = n;
+        a2.n1 = aEnd;
+        b2.n0 = n;
+        b2.n1 = bEnd;
+        p.segments.push_back(a2);
+        p.segments.push_back(b2);
+        inserted++;
+        didSplit = true;
+      }
+    }
+    if (!didSplit)
+      break;
+  }
+  return inserted;
+}
+
 int FemmProblemEdit::addArcSegment(FemmProblem& p, int n0, int n1, double arcLengthDeg, double maxSideLengthDeg)
 {
   FemmArcSegment a;
@@ -98,6 +168,20 @@ void FemmProblemEdit::deleteArcSegment(FemmProblem& p, int arcIndex)
   if (arcIndex < 0 || arcIndex >= p.arcSegments.size())
     return;
   p.arcSegments.remove(arcIndex);
+}
+
+void FemmProblemEdit::deleteDimension(FemmProblem& p, int dimensionIndex)
+{
+  if (dimensionIndex < 0 || dimensionIndex >= p.dimensions.size())
+    return;
+  p.dimensions.remove(dimensionIndex);
+}
+
+void FemmProblemEdit::deleteConstraint(FemmProblem& p, int constraintIndex)
+{
+  if (constraintIndex < 0 || constraintIndex >= p.constraints.size())
+    return;
+  p.constraints.remove(constraintIndex);
 }
 
 void FemmProblemEdit::deleteBlockLabel(FemmProblem& p, int blockLabelIndex)
@@ -296,8 +380,11 @@ void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, 
   }
 }
 
-namespace {
-void reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy)
+// Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this
+// file's local anonymous namespace (into FemmProblemEdit's own, declared in
+// FemmProblemEdit.h) so ConstraintSolver.cpp's Symmetric constraint residual
+// can reuse this exact formula instead of re-deriving it.
+void FemmProblemEdit::reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy)
 {
   // ux,uy is the mirror line's unit direction vector; (x0,y0) is any point
   // on it. Standard reflect-across-a-line-through-a-point formula: subtract
@@ -308,7 +395,6 @@ void reflectPoint(double& x, double& y, double x0, double y0, double ux, double 
   double perpX = dx - proj * ux, perpY = dy - proj * uy;
   x -= 2 * perpX;
   y -= 2 * perpY;
-}
 }
 
 void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1)
@@ -429,14 +515,17 @@ void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy
     copySelected(p, dx * (nc + 1), dy * (nc + 1));
 }
 
-namespace {
-using Complex = std::complex<double>;
-
+// Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this
+// file's local anonymous namespace (into FemmProblemEdit's own, declared in
+// FemmProblemEdit.h) so ConstraintSolver.cpp's Tangent/Concentric/Equal-radius
+// residuals can reuse this exact arc-center/radius derivation instead of
+// re-deriving it. shortestDistanceFromArc below still uses it too.
+//
 // Mirrors CFemmeDoc::GetCircle (femm/FemmeDoc.cpp) -- same formula as
 // GeometryScene.cpp's own local arcGeometry(), just returning center+
 // radius as a Complex/double pair instead of also computing a start
 // angle (createRadius has no use for one).
-bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, Complex& c, double& R)
+bool FemmProblemEdit::circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R)
 {
   double x0 = p.nodes[arc.n0].x, y0 = p.nodes[arc.n0].y;
   double x1 = p.nodes[arc.n1].x, y1 = p.nodes[arc.n1].y;
@@ -451,9 +540,12 @@ bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, Complex& c, 
   R = d / (2.0 * s);
   double tx = dx / d, ty = dy / d;
   double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
-  c = Complex(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
+  c = std::complex<double>(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
   return true;
 }
+
+namespace {
+using Complex = std::complex<double>;
 
 // Mirrors CFemmeDoc::ShortestDistanceFromArc (femm/FemmeDoc.cpp:692) --
 // distance from `pt` to the nearest point actually on the arc (not the
@@ -464,7 +556,7 @@ double shortestDistanceFromArc(Complex pt, const FemmProblem& p, const FemmArcSe
   Complex a0(p.nodes[arc.n0].x, p.nodes[arc.n0].y);
   Complex c;
   double R;
-  if (!circleFromArc(p, arc, c, R))
+  if (!FemmProblemEdit::circleFromArc(p, arc, c, R))
     return std::abs(pt - a0);
 
   double d = std::abs(pt - c);

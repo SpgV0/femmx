@@ -110,6 +110,26 @@ set to {\tt 0}, the FEMM 4.2 definitions are used.  The default mode is compatib
 \item {\tt mo\_getcircuitproperties}
 \end{itemize}
 
+\item {\tt setgui("name")} Chooses which GUI renders for the script
+commands that produce GUI-derived output --- at present {\tt mi\_savepng}
+and {\tt mo\_savepng}. Accepts {\tt "classic"} (equivalently {\tt "old"},
+{\tt "femm"}, {\tt "mfc"} or {\tt 0}) for the traditional MFC interface,
+and {\tt "qt"} ({\tt "new"}, {\tt "femmqt"} or {\tt 1}) for the newer Qt
+interface. Lua itself always runs inside the classic application, so this
+does not move the script; under {\tt "qt"} the commands above hand the
+saved file to {\tt femmqt.exe}, which draws it with its own antialiased
+density/contour plotting.
+
+The setting lasts for the current session only. It starts out matching the
+{\tt <PreferredGUI>} entry in {\tt femm.cfg}, so a script that never calls
+{\tt setgui} renders with whichever GUI is preferred, but {\tt setgui}
+deliberately does not write that entry back --- a script asking for one
+image in a particular style should not change which GUI opens by default
+afterwards. Use the {\tt View} menu's {\tt Switch To\ldots} item for that.
+
+\item {\tt getgui()} Returns the current setting as a string, either
+{\tt "classic"} or {\tt "qt"}.
+
 \item{\tt showconsole()} Displays the floating Lua console window.
 
 \item{\tt showpointprops()} Displays the floating FEMM Properties
@@ -117,6 +137,30 @@ display window.
 
 \item{\tt smartmesh(state)} Calling with a state of 0 turns off ``smart mesh'' functionality for the present session; calling with a state of 1 turns ``smarth meshing'' on. The {\tt smartmesh} function applies across all problem types. 
 To set smart meshing on or off on a file-by-file basis, use  \verb+mi_smartmesh+,\verb+ei_smartmesh+, \verb+hi_smartmesh+, and \verb+ci_smartmesh+, depending on problem type.  Note that calling the global \verb+smartmesh+ with a value of -1 sets the program to defer to the file-by-file setting rather than forcing all smart meshing on or off.
+\end{itemize}
+
+
+
+\section{Commands Added Since FEMM 4.2}
+
+Every command below is specific to FEMMX and is not present in FEMM
+4.2. They are documented in full alongside their peers in the sections
+that follow; this list exists so that a script written for FEMM 4.2 can
+be told apart from one that requires FEMMX.
+
+\begin{itemize}
+\item {\tt get\_solve\_stats()} --- returns the last solve's duration
+and CPU/GPU/RAM usage, for benchmarking scripts.
+\item {\tt setgui("name")} / {\tt getgui()} --- choose which GUI renders
+for the commands that produce GUI-derived output.
+\item {\tt mi\_setgpuaccel(flag)} and {\tt ei\_setgpuaccel(flag)} ---
+opt the magnetics and electrostatics solvers into CUDA-accelerated
+solving.
+\item {\tt mi\_setredraw(flag)} and {\tt ei\_setredraw(flag)} ---
+suppress redraws during a scripted sequence of edits.
+\item {\tt mi\_savepng("filename")} and {\tt mo\_savepng("filename")}
+--- save a PNG screenshot; FEMM 4.2 could only write bitmaps and
+metafiles.
 \end{itemize}
 
 
@@ -609,6 +653,17 @@ The various properties that can be modified are listed below:
 view to the file specified by {\tt "filename"}, subject to the {\tt
 printf}-type formatting explained previously for the {\tt
 savefemmfile} command.
+\item{\tt mi\_savepng("filename")} saves a PNG screenshot of the current
+view to the file specified by {\tt "filename"}, following the same file
+name rules as {\tt mi\_savebitmap} above. Which GUI does the drawing
+depends on the current {\tt setgui} setting: under {\tt setgui("classic")}
+the traditional view renders itself and the result is encoded as PNG,
+while under {\tt setgui("qt")} the file --- which must already be saved to
+disk --- is handed to {\tt femmqt.exe}, which renders it offscreen with its
+own antialiased plotting. An optional pixel size may be given as
+{\tt mi\_savepng("filename",w,h)}; it applies only to the Qt renderer,
+since the classic one can only capture its window at the size that window
+actually is.
 \item{\tt mi\_savemetafile("filename")} saves a metafile screenshot of the current
 view to the file specified by {\tt "filename"}, subject to the {\tt
 printf}-type formatting explained previously for the {\tt
@@ -1010,6 +1065,17 @@ use a path you must use two backslashes ({\em e.g.}
 enclose the file name in (extra) quotes by using a
 \verb+\"+ sequence. For example:\\
  \verb+mo_save_bitmap("\"c:\\temp\\screenshot.bmp\"")+
+\item{\tt mo\_savepng("filename")} saves a PNG screen shot of the current
+view to the file specified by {\tt "filename"}, following the same file
+name rules as {\tt mo\_savebitmap} above. Which GUI does the drawing
+depends on the current {\tt setgui} setting: under {\tt setgui("classic")}
+the traditional post-processor view renders itself and the result is
+encoded as PNG, while under {\tt setgui("qt")} the solution --- which must
+already be saved to disk --- is handed to {\tt femmqt.exe}, which renders
+it offscreen with its own antialiased density and contour plotting. An
+optional pixel size may be given as {\tt mo\_savepng("filename",w,h)}; it
+applies only to the Qt renderer, since the classic one can only capture
+its window at the size that window actually is.
 \item{\tt mo\_savemetafile("filename")} saves a metafile screenshot of the current
 view to the file specified by {\tt "filename"}, subject to the {\tt
 printf}-type formatting explained previously for the {\tt

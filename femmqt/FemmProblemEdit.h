@@ -1,6 +1,9 @@
 #pragma once
 
+#include <complex>
+
 struct FemmProblem;
+struct FemmArcSegment;
 
 // Mutating operations on a FemmProblem that keep node-index references
 // (FemmSegment::n0/n1, FemmArcSegment::n0/n1) consistent -- kept separate
@@ -11,6 +14,21 @@ namespace FemmProblemEdit {
 
 int addNode(FemmProblem& p, double x, double y);
 int addSegment(FemmProblem& p, int n0, int n1);
+
+// Splits every pair of segments that cross, inserting a node at each
+// crossing -- what classic FEMM does in FancyEnforcePSLG, and what
+// femmqt has never done (DxfIO.h documents the same gap for imports).
+// Without it two crossing lines stay logically disconnected: the mesher
+// sees no shared vertex there, so the regions they appear to bound are
+// not actually bounded.
+//
+// Only PROPER crossings are split. Segments that merely share an
+// endpoint, or that touch end-to-middle, are left alone: the first is
+// already connected, and the second would need the touching endpoint
+// merged rather than a new node invented on top of it.
+//
+// Returns the number of nodes inserted.
+int splitIntersectingSegments(FemmProblem& p);
 int addArcSegment(FemmProblem& p, int n0, int n1, double arcLengthDeg, double maxSideLengthDeg);
 int addBlockLabel(FemmProblem& p, double x, double y);
 
@@ -21,6 +39,13 @@ int addBlockLabel(FemmProblem& p, double x, double y);
 // QVector::remove call at the GeometryScene layer.
 void deleteNode(FemmProblem& p, int nodeIndex);
 void deleteSegment(FemmProblem& p, int segmentIndex);
+// Modified by Claude (Anthropic), noreply@anthropic.com: unlike
+// deleteNode/deleteSegment/deleteArcSegment/deleteBlockLabel above,
+// nothing else in FemmProblem ever references a dimension or constraint BY
+// INDEX (each references nodes/segments/arcs, never the reverse) -- so
+// these are plain removals, no cascade or renumbering elsewhere needed.
+void deleteDimension(FemmProblem& p, int dimensionIndex);
+void deleteConstraint(FemmProblem& p, int constraintIndex);
 void deleteArcSegment(FemmProblem& p, int arcIndex);
 void deleteBlockLabel(FemmProblem& p, int blockLabelIndex);
 
@@ -107,5 +132,22 @@ bool canCreateRadius(const FemmProblem& p, int nodeIndex);
 // corner (two segments case), or no tangent-circle solution actually
 // touches both original entities within their own extents (arc cases).
 bool createRadius(FemmProblem& p, int nodeIndex, double r);
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: exposed (moved out
+// of FemmProblemEdit.cpp's local anonymous namespaces) for reuse by
+// ConstraintSolver.cpp -- Tangent/Concentric/Equal-radius constraint
+// residuals need the same arc-center/radius derivation createRadius already
+// uses internally, and the Symmetric constraint residual is exactly the
+// mirrorSelected() reflection formula.
+//
+// Mirrors CFemmeDoc::GetCircle (femm/FemmeDoc.cpp): derives arc `arc`'s
+// center (c) and radius (R) from its n0/n1 nodes and included angle. Returns
+// false (leaving c/R untouched) if the arc is degenerate (coincident
+// endpoints, or a ~0/~360 degree included angle).
+bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R);
+
+// Reflects point (x,y) across the line through (x0,y0) with unit direction
+// (ux,uy), in place.
+void reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy);
 
 } // namespace FemmProblemEdit

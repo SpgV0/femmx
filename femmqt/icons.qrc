@@ -40,5 +40,18 @@
     <file alias="circuit_props.svg">toolbar_icons/circuit_props.svg</file>
     <file alias="contour_plot.svg">toolbar_icons/contour_plot.svg</file>
     <file alias="density_plot.svg">toolbar_icons/density_plot.svg</file>
+    <file alias="constraint_coincident.svg">toolbar_icons/constraint_coincident.svg</file>
+    <file alias="constraint_horizontal.svg">toolbar_icons/constraint_horizontal.svg</file>
+    <file alias="constraint_vertical.svg">toolbar_icons/constraint_vertical.svg</file>
+    <file alias="constraint_parallel.svg">toolbar_icons/constraint_parallel.svg</file>
+    <file alias="constraint_perpendicular.svg">toolbar_icons/constraint_perpendicular.svg</file>
+    <file alias="constraint_equal.svg">toolbar_icons/constraint_equal.svg</file>
+    <file alias="constraint_tangent.svg">toolbar_icons/constraint_tangent.svg</file>
+    <file alias="constraint_concentric.svg">toolbar_icons/constraint_concentric.svg</file>
+    <file alias="constraint_symmetric.svg">toolbar_icons/constraint_symmetric.svg</file>
+    <file alias="dimension_distance.svg">toolbar_icons/dimension_distance.svg</file>
+    <file alias="dimension_radius.svg">toolbar_icons/dimension_radius.svg</file>
+    <file alias="dimension_angle.svg">toolbar_icons/dimension_angle.svg</file>
+    <file alias="dimension_smart.svg">toolbar_icons/dimension_smart.svg</file>
   </qresource>
 </RCC>

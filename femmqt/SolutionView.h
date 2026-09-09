@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QImage>
 #include <QElapsedTimer>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
@@ -12,6 +13,7 @@
 
 #include "FemmProblem.h"
 #include "MeshSolution.h"
+#include "ViewPanning.h"
 
 #include <complex>
 
@@ -301,7 +303,28 @@ class MeshSolutionItem : public QGraphicsItem {
   // as the original |B|-only version) rather than rescanning the mesh
   // every time the user switches which quantity is plotted.
   struct QuantityData {
-    QVector<double> nodeAvg; // per-node average of touching elements' value -- see below for why
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was a flat
+    // per-NODE average (nodeAvg) of every touching element's value,
+    // regardless of material or distance. Per direct user report ("the
+    // density view... renders a bit rough" compared to the classic GUI,
+    // with a side-by-side screenshot showing the serration concentrated
+    // exactly along material boundaries -- the core edge, the halo
+    // around each winding) -- root-caused to that: a flat average blurs
+    // a real physical discontinuity in B across a material boundary,
+    // which reads as noise. femm/FemmviewDoc.cpp's own smoothing
+    // (GetNodalB) never does this -- it excludes neighbors whose
+    // material differs, and weights the rest by 1/distance to their
+    // centroid, not equally.
+    //
+    // This is that, adapted to this app's one-value-per-element (not
+    // per-node) model: one value per (element, corner) instead of per
+    // node -- classic's own b1[i]/b2[i] concept -- so two elements
+    // sharing a node but belonging to different materials each keep
+    // their own, locally-correct smoothed value there instead of
+    // averaging into one that is physically wrong for both. Element
+    // ei's corner touching FemmSolutionElement::p{c} is at index
+    // 3*ei+c. See MeshSolutionItem's constructor for how this is built.
+    QVector<double> cornerAvg;
     double vMin = 0, vMax = 0;
   };
   // Indexed by DensityQuantity's underlying int value -- sized via
@@ -508,6 +531,7 @@ class SolutionGraphicsView : public QGraphicsView {
   class QRubberBand* m_rubberBand = nullptr;
   bool m_zoomWindowActive = false;
   QPoint m_rubberBandOrigin;
+  DragPanState m_pan;
 };
 
 enum class SolutionToolMode {
@@ -524,6 +548,18 @@ class SolutionWindow : public QMainWindow {
   explicit SolutionWindow(QWidget* parent = nullptr);
 
   void openAnsFile(const QString& path);
+
+  // Renders the loaded solution offscreen to an image, for the
+  // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng
+  // shell out to when a script has called setgui("qt"). Draws the SCENE
+  // rather than grabbing the view: the viewport is a QOpenGLWidget when
+  // built with OpenGL, and grabbing one that was never shown is not
+  // reliable. Returns a null image if nothing is loaded.
+  QImage renderToImage(QSize size, QRectF source = QRectF());
+  // The viewer opens in Contour mode; the offscreen --render-png
+  // path needs a way to ask for Density without a menu.
+  void selectDensityPlot();
+
 
   private slots:
   void onOpenTriggered();
@@ -563,6 +599,7 @@ class SolutionWindow : public QMainWindow {
   void onSwitchToClassicTriggered();
   void onOpenRecentFile();
   void onHelpTopicsTriggered();
+  void onKeyboardShortcutsTriggered();
   void onLicenseTriggered();
   void onAboutTriggered();
 

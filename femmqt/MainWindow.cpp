@@ -9,6 +9,8 @@
 #include "BlockLabelPropDialog.h"
 #include "BoundaryPropDialog.h"
 #include "CircuitPropDialog.h"
+#include "ConstraintListDialog.h"
+#include "ConstraintSolver.h"
 #include "DxfIO.h"
 #include "ExteriorRegionDialog.h"
 #include "FemmFileIO.h"
@@ -58,6 +60,7 @@
 #include <QPrintPreviewDialog>
 #include <QPrinter>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
 #include <QSettings>
@@ -88,6 +91,37 @@ QString uniqueName(const QVector<T>& list, const QString& base)
     if (!existing.contains(candidate))
       return candidate;
   }
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: human-readable
+// label for ConstraintListDialog -- names the type plus the node indices
+// it touches, via ConstraintSolver::touchedNodes (the same node set the
+// solver itself scopes its unknowns to -- see that function's own
+// comment), rather than duplicating each type's own refA/refB/refC field
+// semantics here.
+QString constraintTypeName(ConstraintType type)
+{
+  switch (type) {
+  case ConstraintType::Coincident: return "Coincident";
+  case ConstraintType::Horizontal: return "Horizontal";
+  case ConstraintType::Vertical: return "Vertical";
+  case ConstraintType::Parallel: return "Parallel";
+  case ConstraintType::Perpendicular: return "Perpendicular";
+  case ConstraintType::Equal: return "Equal";
+  case ConstraintType::Tangent: return "Tangent";
+  case ConstraintType::Concentric: return "Concentric";
+  case ConstraintType::Symmetric: return "Symmetric";
+  }
+  return "?";
+}
+
+QString describeConstraint(const FemmProblem& p, const FemmConstraint& c)
+{
+  const QVector<int> nodes = ConstraintSolver::touchedNodes(p, c);
+  QStringList nodeStrs;
+  for (int n : nodes)
+    nodeStrs << QString::number(n);
+  return QString("%1 (nodes %2)").arg(constraintTypeName(c.type)).arg(nodeStrs.join(", "));
 }
 
 // Matches ProblemPropertiesDialog.cpp's m_lengthUnits combo text exactly
@@ -216,6 +250,41 @@ MainWindow::MainWindow(QWidget* parent)
   editMenu->addSeparator();
   editMenu->addAction("&Preferences...", this, &MainWindow::onPreferencesTriggered);
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com: menu-based
+  // access to the drawing tools -- per direct user request ("I want a
+  // tools tab for the drawing tools similar to constraints tab"). Until
+  // now these existed ONLY as Draw-toolbar buttons with no menu entry
+  // (see the toolbar-construction code below, where the still-checkable
+  // QActions actually get created). Populated a bit further down, once
+  // those QActions exist -- reuses the exact same QAction objects
+  // (already checkable, already in the shared `toolGroup` QActionGroup)
+  // rather than duplicating them, so a menu selection and a toolbar
+  // click stay in sync for free, with no extra wiring.
+  QMenu* toolsMenu = menuBar()->addMenu("&Tools");
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+  // geometric constraints -- per direct user request ("add dimensions
+  // when drawings and constraints similar to modern cad"). No classic
+  // FEMM precedent (see FemmProblem.h's FemmConstraint comment) -- select
+  // the entities a constraint type needs first (same selection mechanism
+  // as Move/Copy/Scale/Mirror above), then apply it here.
+  QMenu* constraintsMenu = menuBar()->addMenu("&Constraints");
+  constraintsMenu->addAction("&Coincident", this, &MainWindow::onCoincidentConstraintTriggered);
+  constraintsMenu->addAction("&Horizontal", this, &MainWindow::onHorizontalConstraintTriggered);
+  constraintsMenu->addAction("&Vertical", this, &MainWindow::onVerticalConstraintTriggered);
+  constraintsMenu->addAction("&Parallel", this, &MainWindow::onParallelConstraintTriggered);
+  constraintsMenu->addAction("Perpe&ndicular", this, &MainWindow::onPerpendicularConstraintTriggered);
+  constraintsMenu->addAction("&Equal", this, &MainWindow::onEqualConstraintTriggered);
+  constraintsMenu->addAction("&Tangent", this, &MainWindow::onTangentConstraintTriggered);
+  constraintsMenu->addAction("Co&ncentric", this, &MainWindow::onConcentricConstraintTriggered);
+  constraintsMenu->addAction("&Symmetric", this, &MainWindow::onSymmetricConstraintTriggered);
+  constraintsMenu->addSeparator();
+  constraintsMenu->addAction("&Solve Constraints", this, &MainWindow::onSolveConstraintsTriggered);
+  constraintsMenu->addAction("Constraint &List...", this, &MainWindow::onConstraintListTriggered);
+  constraintsMenu->addSeparator();
+  constraintsMenu->addAction("Clear All Constraints", this, &MainWindow::onClearConstraintsTriggered);
+  constraintsMenu->addAction("Clear All Dimensions", this, &MainWindow::onClearDimensionsTriggered);
+
   // Matches femm.rc's separate Mesh (Create/Show/Purge) and Analysis
   // (Analyze/View Results) menus, just combined under one "Mesh" menu
   // rather than two -- Create Mesh alone (no solve) lets a mesh be
@@ -286,6 +355,7 @@ MainWindow::MainWindow(QWidget* parent)
 
   QMenu* helpMenu = menuBar()->addMenu("&Help");
   helpMenu->addAction("&Help Topics", this, &MainWindow::onHelpTopicsTriggered);
+  helpMenu->addAction("&Keyboard Shortcuts...", this, &MainWindow::onKeyboardShortcutsTriggered);
   helpMenu->addSeparator();
   helpMenu->addAction("&License", this, &MainWindow::onLicenseTriggered);
   helpMenu->addAction("&About FEMMX...", this, &MainWindow::onAboutTriggered);
@@ -322,18 +392,36 @@ MainWindow::MainWindow(QWidget* parent)
   m_addNodeToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_node.svg"), "Add Node");
   m_addNodeToolAction->setToolTip("Add Node -- click to place a new node");
   m_addNodeToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addNodeToolAction->setShortcut(QKeySequence(Qt::Key_N));
   toolGroup->addAction(m_addNodeToolAction);
   connect(m_addNodeToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddNode); });
 
   m_addSegmentToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_segment.svg"), "Add Segment");
   m_addSegmentToolAction->setToolTip("Add Segment -- click two nodes to connect them with a straight line");
   m_addSegmentToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addSegmentToolAction->setShortcut(QKeySequence(Qt::Key_L));
   toolGroup->addAction(m_addSegmentToolAction);
   connect(m_addSegmentToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddSegment); });
 
   m_addArcToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_arc.svg"), "Add Arc");
   m_addArcToolAction->setToolTip("Add Arc -- click two nodes to connect them with a circular arc");
   m_addArcToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addArcToolAction->setShortcut(QKeySequence(Qt::Key_A));
   toolGroup->addAction(m_addArcToolAction);
   connect(m_addArcToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddArc); });
 
@@ -350,14 +438,104 @@ MainWindow::MainWindow(QWidget* parent)
   m_addRectangleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"), "Draw Rectangle");
   m_addRectangleToolAction->setToolTip("Draw Rectangle -- drag between two diagonal corners");
   m_addRectangleToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addRectangleToolAction->setShortcut(QKeySequence(Qt::Key_R));
   toolGroup->addAction(m_addRectangleToolAction);
   connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
 
   m_addCircleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_circle.svg"), "Draw Circle");
   m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
   m_addCircleToolAction->setCheckable(true);
+  // Single-key tool shortcut, per direct user request for CAD-style
+  // keys ("n for node, l for line, c for circle, r for rectangle").
+  // setShortcut, not just a menu mnemonic, so the bare key works
+  // whenever the canvas has focus. Matches the Smart Dimension "D"
+  // precedent below; none of these collide with an existing binding.
+  m_addCircleToolAction->setShortcut(QKeySequence(Qt::Key_C));
   toolGroup->addAction(m_addCircleToolAction);
   connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
+  // dimension tools -- per direct user request ("add dimensions when
+  // drawings"). Also reachable from the Tools menu, like every other
+  // drawing-tool button above -- see toolsMenu's population just below.
+  toolBar->addSeparator();
+  m_addDimensionDistanceToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_distance.svg"), "Distance Dimension");
+  m_addDimensionDistanceToolAction->setToolTip("Distance Dimension -- click two nodes, then enter the distance");
+  m_addDimensionDistanceToolAction->setCheckable(true);
+  toolGroup->addAction(m_addDimensionDistanceToolAction);
+  connect(m_addDimensionDistanceToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionDistance); });
+
+  m_addDimensionRadiusToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_radius.svg"), "Radius Dimension");
+  m_addDimensionRadiusToolAction->setToolTip("Radius Dimension -- click an arc, then enter the radius");
+  m_addDimensionRadiusToolAction->setCheckable(true);
+  toolGroup->addAction(m_addDimensionRadiusToolAction);
+  connect(m_addDimensionRadiusToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionRadius); });
+
+  m_addDimensionAngleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_angle.svg"), "Angle Dimension");
+  m_addDimensionAngleToolAction->setToolTip("Angle Dimension -- click two lines, move to place, then type the angle. The lines need not touch.");
+  m_addDimensionAngleToolAction->setCheckable(true);
+  toolGroup->addAction(m_addDimensionAngleToolAction);
+  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+  // report that "the angle tool does not always work well", asking for
+  // Fusion 360's behaviour -- this button now arms Smart Dimension rather
+  // than the old AddDimensionAngle mode.
+  //
+  // The old mode responded ONLY to clicks on nodes, and needed three of
+  // them in a fixed order (vertex first, then each ray end) with no
+  // feedback about which stage you were in, then popped a modal dialog
+  // immediately instead of the place-then-type step every other dimension
+  // here uses. Clicking the lines you actually wanted to angle did
+  // nothing at all.
+  //
+  // Fusion has no separate angle tool: Smart Dimension infers the kind of
+  // dimension from what you pick, and two line picks mean an angle. That
+  // path already existed here and is now general enough to be the whole
+  // answer (see handleToolClick's SmartDimension case, which as of this
+  // change also handles lines that never touch). AddDimensionAngle is
+  // left in place for the 3-node form rather than deleted, since existing
+  // .fem-adjacent workflows and the Tools menu still reference it.
+  connect(m_addDimensionAngleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::SmartDimension); });
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com: "Smart
+  // Dimension" -- per direct user request ("I want to be able to set
+  // dimension by pressing D and [click] the line or the nodes"), matching
+  // SolidWorks/Fusion 360's own "D" shortcut. setShortcut (not just a
+  // menu mnemonic) makes the bare "D" key work anywhere the canvas has
+  // focus, not just while a menu is open -- confirmed no existing action
+  // in this app already binds plain Key_D. See GeometryScene::
+  // handleToolClick's SmartDimension case for the actual click dispatch
+  // (segment -> Distance on its own 2 endpoints, arc -> Radius, node ->
+  // 2-click Distance).
+  m_smartDimensionToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_smart.svg"), "Smart Dimension");
+  m_smartDimensionToolAction->setToolTip("Smart Dimension (D) -- click a line for its length, an arc for its radius, or two nodes for the distance between them");
+  m_smartDimensionToolAction->setCheckable(true);
+  m_smartDimensionToolAction->setShortcut(QKeySequence(Qt::Key_D));
+  toolGroup->addAction(m_smartDimensionToolAction);
+  connect(m_smartDimensionToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::SmartDimension); });
+
+  // toolsMenu (created earlier, alongside the Edit menu) populated here,
+  // now that every tool QAction above actually exists -- same order as
+  // the toolbar itself, so the menu reads as a straightforward list
+  // version of it.
+  toolsMenu->addAction(m_selectToolAction);
+  toolsMenu->addAction(m_addNodeToolAction);
+  toolsMenu->addAction(m_addSegmentToolAction);
+  toolsMenu->addAction(m_addArcToolAction);
+  toolsMenu->addAction(m_addBlockLabelToolAction);
+  toolsMenu->addSeparator();
+  toolsMenu->addAction(m_addRectangleToolAction);
+  toolsMenu->addAction(m_addCircleToolAction);
+  toolsMenu->addSeparator();
+  toolsMenu->addAction(m_addDimensionDistanceToolAction);
+  toolsMenu->addAction(m_addDimensionRadiusToolAction);
+  toolsMenu->addAction(m_addDimensionAngleToolAction);
+  toolsMenu->addAction(m_smartDimensionToolAction);
+
   HoverTooltip::installOn(toolBar);
 
   // Matches femm.rc's IDR_FEMMETYPE toolbar's edit/mesh/analyze section --
@@ -389,6 +567,20 @@ MainWindow::MainWindow(QWidget* parent)
   editToolBar->addSeparator();
   addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", "Select all entities belonging to a numbered group", &MainWindow::onSelectByGroupTriggered);
   HoverTooltip::installOn(editToolBar);
+
+  QToolBar* constraintsToolBar = addToolBar("Constraints");
+  constraintsToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+  constraintsToolBar->setIconSize(QSize(20, 20));
+  addThemedAction(constraintsToolBar, ":/icons/constraint_coincident.svg", "Coincident", "Coincident -- select 2 nodes", &MainWindow::onCoincidentConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_horizontal.svg", "Horizontal", "Horizontal -- select 1 segment", &MainWindow::onHorizontalConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_vertical.svg", "Vertical", "Vertical -- select 1 segment", &MainWindow::onVerticalConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_parallel.svg", "Parallel", "Parallel -- select 2 segments", &MainWindow::onParallelConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_perpendicular.svg", "Perpendicular", "Perpendicular -- select 2 segments", &MainWindow::onPerpendicularConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_equal.svg", "Equal", "Equal -- select 2 segments, or 2 arcs", &MainWindow::onEqualConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_tangent.svg", "Tangent", "Tangent -- select 1 segment + 1 arc, or 2 arcs", &MainWindow::onTangentConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_concentric.svg", "Concentric", "Concentric -- select 2 arcs", &MainWindow::onConcentricConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_symmetric.svg", "Symmetric", "Symmetric -- select 2 nodes + 1 segment (the mirror line)", &MainWindow::onSymmetricConstraintTriggered);
+  HoverTooltip::installOn(constraintsToolBar);
 
   QToolBar* meshToolBar = addToolBar("Mesh");
   meshToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -1196,6 +1388,58 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
     }
     break;
   }
+  // Modified by Claude (Anthropic), noreply@anthropic.com: double-click
+  // to edit a dimension's value -- unlike the property dialogs above
+  // (which only ever change non-geometric properties like boundary/
+  // material assignment), this one CAN move geometry, via the constraint
+  // solver -- so it snapshots for undo itself, unlike its siblings here
+  // (none of which currently do; a pre-existing gap in this function,
+  // not something newly introduced).
+  case FemmItemKind::Dimension: {
+    if (indices.isEmpty() || indices.first() < 0 || indices.first() >= m_problem.dimensions.size())
+      break;
+    FemmDimension& dim = m_problem.dimensions[indices.first()];
+    // Modified by Claude (Anthropic), noreply@anthropic.com: was a 2-way
+    // ternary chain that silently fell through to the Angle label/bounds
+    // for HorizontalDistance/VerticalDistance (added alongside the Smart
+    // Dimension tool's two-point H/V/Aligned inference) -- switched to an
+    // explicit switch so a new DimensionType can't silently inherit the
+    // wrong label/bounds again.
+    QString label;
+    double minVal = 0.0, maxVal = 1.0e9;
+    switch (dim.type) {
+    case DimensionType::Distance:
+    case DimensionType::HorizontalDistance:
+    case DimensionType::VerticalDistance:
+      label = "Distance:";
+      break;
+    case DimensionType::Radius:
+      label = "Radius:";
+      break;
+    case DimensionType::Angle:
+      label = "Angle (deg):";
+      minVal = -359.99;
+      maxVal = 359.99;
+      break;
+    case DimensionType::AngleLines:
+      // Lines have no direction, so their angle only spans (0,180) -- see
+      // DimensionType::AngleLines in FemmProblem.h.
+      label = "Angle (deg):";
+      minVal = 0.01;
+      maxVal = 179.99;
+      break;
+    }
+    bool ok = false;
+    double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, dim.value, minVal, maxVal, 6, &ok);
+    if (ok && newValue != dim.value) {
+      snapshotForUndo();
+      dim.value = newValue;
+      ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+      m_scene->setConstraintStatus(result.nodeStatus);
+      accepted = true;
+    }
+    break;
+  }
   }
 
   if (accepted) {
@@ -1232,6 +1476,29 @@ void MainWindow::onZoomNatural()
 void MainWindow::onZoomWindowTriggered()
 {
   m_scene->setToolMode(GeometryToolMode::ZoomWindow);
+}
+
+QImage MainWindow::renderToImage(QSize size, QRectF source)
+{
+  if (m_scene == nullptr || size.isEmpty())
+    return QImage();
+
+  const QRectF bounds = m_scene->computeProblemBounds();
+  if (bounds.isEmpty())
+    return QImage();
+
+  QImage image(size, QImage::Format_ARGB32);
+  image.fill(AppTheme::background());
+
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  // y-up scene, same flip as SolutionWindow::renderToImage -- see there.
+  painter.translate(0, size.height());
+  painter.scale(1.0, -1.0);
+
+  m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
+      source.isEmpty() ? bounds : source, Qt::KeepAspectRatio);
+  return image;
 }
 
 void MainWindow::onZoomWindowSelected(QRectF sceneRect)
@@ -1455,6 +1722,223 @@ void MainWindow::onMirrorSelectedTriggered()
   markEdited();
 }
 
+void MainWindow::applyConstraint(const FemmConstraint& c)
+{
+  snapshotForUndo();
+  m_problem.constraints.push_back(c);
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->rebuild();
+  markEdited();
+  if (!result.converged)
+    statusBar()->showMessage("Constraint added, but the sketch could not be fully solved -- check for a conflict (shown in red).", 6000);
+}
+
+void MainWindow::onCoincidentConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (nodes.size() != 2 || !segments.isEmpty() || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Coincident", "Select exactly 2 nodes.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Coincident;
+  c.refA = nodes[0];
+  c.refB = nodes[1];
+  applyConstraint(c);
+}
+
+void MainWindow::onHorizontalConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Horizontal", "Select exactly 1 segment.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Horizontal;
+  c.refA = segments[0];
+  applyConstraint(c);
+}
+
+void MainWindow::onVerticalConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Vertical", "Select exactly 1 segment.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Vertical;
+  c.refA = segments[0];
+  applyConstraint(c);
+}
+
+void MainWindow::onParallelConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Parallel", "Select exactly 2 segments.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Parallel;
+  c.refA = segments[0];
+  c.refB = segments[1];
+  applyConstraint(c);
+}
+
+void MainWindow::onPerpendicularConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Perpendicular", "Select exactly 2 segments.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Perpendicular;
+  c.refA = segments[0];
+  c.refB = segments[1];
+  applyConstraint(c);
+}
+
+void MainWindow::onEqualConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  FemmConstraint c;
+  c.type = ConstraintType::Equal;
+  if (segments.size() == 2 && nodes.isEmpty() && arcs.isEmpty()) {
+    c.isArcPair = false;
+    c.refA = segments[0];
+    c.refB = segments[1];
+  } else if (arcs.size() == 2 && nodes.isEmpty() && segments.isEmpty()) {
+    c.isArcPair = true;
+    c.refA = arcs[0];
+    c.refB = arcs[1];
+  } else {
+    QMessageBox::information(this, "Equal", "Select exactly 2 segments, or exactly 2 arcs.");
+    return;
+  }
+  applyConstraint(c);
+}
+
+void MainWindow::onTangentConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  FemmConstraint c;
+  c.type = ConstraintType::Tangent;
+  if (segments.size() == 1 && arcs.size() == 1 && nodes.isEmpty()) {
+    c.firstIsArc = false;
+    c.refA = segments[0];
+    c.refB = arcs[0];
+  } else if (arcs.size() == 2 && nodes.isEmpty() && segments.isEmpty()) {
+    c.firstIsArc = true;
+    c.refA = arcs[0];
+    c.refB = arcs[1];
+  } else {
+    QMessageBox::information(this, "Tangent", "Select exactly 1 segment + 1 arc, or exactly 2 arcs.");
+    return;
+  }
+  applyConstraint(c);
+}
+
+void MainWindow::onConcentricConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (arcs.size() != 2 || !nodes.isEmpty() || !segments.isEmpty()) {
+    QMessageBox::information(this, "Concentric", "Select exactly 2 arcs.");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Concentric;
+  c.refA = arcs[0];
+  c.refB = arcs[1];
+  applyConstraint(c);
+}
+
+void MainWindow::onSymmetricConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (nodes.size() != 2 || segments.size() != 1 || !arcs.isEmpty()) {
+    QMessageBox::information(this, "Symmetric", "Select exactly 2 nodes and 1 segment (the mirror line).");
+    return;
+  }
+  FemmConstraint c;
+  c.type = ConstraintType::Symmetric;
+  c.refA = nodes[0];
+  c.refB = nodes[1];
+  c.refC = segments[0];
+  applyConstraint(c);
+}
+
+void MainWindow::onSolveConstraintsTriggered()
+{
+  if (m_problem.constraints.isEmpty() && m_problem.dimensions.isEmpty()) {
+    statusBar()->showMessage("No constraints or dimensions to solve.", 4000);
+    return;
+  }
+  snapshotForUndo();
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->rebuild();
+  markEdited();
+  statusBar()->showMessage(result.converged
+          ? QString("Solved in %1 iteration(s), residual %2.").arg(result.iterations).arg(result.finalResidualNorm, 0, 'g', 3)
+          : "Could not fully solve -- check for a conflict (shown in red).",
+      6000);
+}
+
+void MainWindow::onClearConstraintsTriggered()
+{
+  if (m_problem.constraints.isEmpty())
+    return;
+  snapshotForUndo();
+  m_problem.constraints.clear();
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onClearDimensionsTriggered()
+{
+  if (m_problem.dimensions.isEmpty())
+    return;
+  snapshotForUndo();
+  m_problem.dimensions.clear();
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onConstraintListTriggered()
+{
+  ConstraintListDialog::Callbacks cb;
+  cb.count = [this]() { return m_problem.constraints.size(); };
+  cb.descriptionAt = [this](int i) { return describeConstraint(m_problem, m_problem.constraints[i]); };
+  cb.selectOnCanvas = [this](int i) { m_scene->selectConstraintGlyph(i); };
+  cb.remove = [this](int i) {
+    snapshotForUndo();
+    FemmProblemEdit::deleteConstraint(m_problem, i);
+    ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+    m_scene->setConstraintStatus(result.nodeStatus);
+    m_scene->rebuild();
+    markEdited();
+  };
+  ConstraintListDialog dlg(cb, this);
+  dlg.exec();
+}
+
 void MainWindow::onCreateMeshTriggered()
 {
   // Same "must be saved first" requirement as Solve -- MeshBuilder reads
@@ -1630,6 +2114,61 @@ void MainWindow::onHelpTopicsTriggered()
   QMessageBox::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
+}
+
+// Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
+// request ("in the help menu make a list with the shortcuts") -- every
+// entry here is a REAL keyboard shortcut already wired up elsewhere
+// (QAction::setShortcut calls in this constructor, or a direct
+// keyPressEvent check in GeometryScene/GeometryView -- see each row's own
+// source for where), listed here purely for discoverability. This is a
+// plain description of existing behavior, not a new binding -- keep it in
+// sync by hand if a shortcut is ever added/changed/removed above.
+void MainWindow::onKeyboardShortcutsTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Keyboard Shortcuts");
+  dlg.resize(420, 520);
+  auto* layout = new QVBoxLayout(&dlg);
+
+  QString html = "<table cellspacing=6>"
+                  "<tr><td colspan=2><b>File</b></td></tr>"
+                  "<tr><td><b>Ctrl+N</b></td><td>New</td></tr>"
+                  "<tr><td><b>Ctrl+O</b></td><td>Open...</td></tr>"
+                  "<tr><td><b>Ctrl+S</b></td><td>Save</td></tr>"
+                  "<tr><td><b>Ctrl+Shift+S</b></td><td>Save As...</td></tr>"
+                  "<tr><td><b>Ctrl+P</b></td><td>Print...</td></tr>"
+                  "<tr><td colspan=2><b>Edit</b></td></tr>"
+                  "<tr><td><b>Ctrl+Z</b></td><td>Undo</td></tr>"
+                  "<tr><td><b>Delete</b> / <b>Backspace</b></td><td>Delete selected</td></tr>"
+                  "<tr><td><b>Space</b></td><td>Open Selected (edit properties)</td></tr>"
+                  "<tr><td><b>Tab</b></td><td>Enter Point -- type an exact coordinate "
+                  "while Add Node/Add Block Label is active</td></tr>"
+                  "<tr><td colspan=2><b>Tools</b></td></tr>"
+                  "<tr><td><b>D</b></td><td>Smart Dimension -- click a line for its "
+                  "length, an arc for its radius, or two nodes for the distance "
+                  "between them</td></tr>"
+                  "<tr><td colspan=2><b>Mesh</b></td></tr>"
+                  "<tr><td><b>Ctrl+L</b></td><td>Solve</td></tr>"
+                  "<tr><td colspan=2><b>View</b></td></tr>"
+                  "<tr><td><b>Page Up</b> / <b>Page Down</b></td><td>Zoom In / Out</td></tr>"
+                  "<tr><td><b>Home</b></td><td>Natural (fit to view)</td></tr>"
+                  "<tr><td><b>Arrow keys</b></td><td>Scroll Left/Right/Up/Down</td></tr>"
+                  "</table>";
+  auto* label = new QLabel(html, &dlg);
+  label->setTextFormat(Qt::RichText);
+  label->setWordWrap(true);
+
+  auto* scroll = new QScrollArea(&dlg);
+  scroll->setWidget(label);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  layout->addWidget(scroll);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 void MainWindow::onLicenseTriggered()

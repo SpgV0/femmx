@@ -69,7 +69,13 @@
 
 \vspace*{0.5in}
 \begin{center}
-{\LARGE FEMMX}
+% FEMMX logo -- the application icon (femm/res/idr_mainframe.ico, the same
+% one script.nsi uses for the installer and femmqt.rc embeds as the app
+% icon), rasterized to EPS because this manual builds through
+% latex -> dvips -> ps2pdf and dvips cannot consume PNG.
+\includegraphics[width=1.1in]{@CMAKE_CURRENT_SOURCE_DIR@/femmx_logo.eps}
+
+\vspace*{12pt} {\LARGE FEMMX}
 
 \vspace*{16pt} {\Large Finite Element Method Magnetics}
 
@@ -84,12 +90,60 @@
 \vspace*{32pt} Original FEMM by David Meeker \\
 \href{mailto:dmeeker@ieee.org}{\tt dmeeker@ieee.org}
 
+\vspace*{16pt} FEMMX fork by SpgV0 \\
+\href{mailto:spgr.eng.v0@gmail.com}{\tt spgr.eng.v0@gmail.com}
+
 \vspace*{16pt} FEMMX fork maintained at \\
 \href{https://github.com/SpgV0/femmx}{\tt github.com/SpgV0/femmx}
 \end{center}
 
 \newpage
 
+% ------------------------------------------------------------------------
+% Revision history
+% ------------------------------------------------------------------------
+\chapter*{Revision History}
+\addcontentsline{toc}{chapter}{Revision History}
+
+FEMMX version numbering is its own, starting at 1.0.0 when the fork was
+made; it is unrelated to FEMM's 4.x series. The baseline below is the
+upstream release this fork started from. Dates are the release dates
+recorded in {\tt CHANGELOG.md}, which carries the full detail for each
+entry.
+
+\begin{center}
+\begin{tabular}{|l|l|p{3.6in}|}
+\hline
+{\bf Version} & {\bf Date} & {\bf Summary} \\
+\hline
+FEMM 4.2 & 22 Oct 2023 & Upstream baseline this fork started from. \\
+\hline
+1.0.0 & 10 Jul 2026 & First FEMMX release: CUDA-accelerated solve,
+Dark Theme, CPU/GPU load monitor. \\
+\hline
+1.1.0 & 17 Jul 2026 & CUDA solve extended to the heat-flow,
+electrostatics and current-flow solvers. \\
+\hline
+1.1.1 & 17 Jul 2026 & Large-{\tt .ans} parsing speed-up. \\
+\hline
+1.2.0 & 17 Jul 2026 & Further solver and post-processor fixes. \\
+\hline
+2.0.0 & 19 Jul 2026 & {\tt femmqt}, a second, Qt-based GUI, alongside
+the classic interface. \\
+\hline
+2.1.0 & 1 Aug 2026 & CAD-style dimensions and a geometric constraint
+solver in {\tt femmqt}. \\
+\hline
+2.1.1 & 2 Aug 2026 & Fixed a Density Plot crash on the {\tt |J|},
+Re(J), Im(J) and log$_{10}$({\tt |B|}) quantities. \\
+\hline
+2.1.2 & 4 Aug 2026 & Fixed {\tt |H|} computed wrongly for
+BH-curve (nonlinear) materials. \\
+\hline
+\end{tabular}
+\end{center}
+
+\newpage
 
 % ------------------------------------------------------------------------
 % Acknowledgements:

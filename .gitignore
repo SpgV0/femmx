@@ -57,7 +57,16 @@ bin/statlib.dat
 # .txt reports are tracked as evidence; model/binary artifacts are not.
 test/results/**/*.fem
 test/results/**/*.ans
+# The other three physics types' equivalents of .fem/.ans. Missed when
+# the electrostatic/thermal/current-flow GPU solver tests were added --
+# only magnetics' extensions (and electrostatic's .res) were ever listed,
+# so those tests' outputs showed up as untracked and stayed that way.
+test/results/**/*.fee
 test/results/**/*.res
+test/results/**/*.feh
+test/results/**/*.anh
+test/results/**/*.fec
+test/results/**/*.anc
 test/results/**/*.dxf
 test/results/**/*.bmp
 test/results/**/*.edge
@@ -68,3 +77,6 @@ test/results/**/*.poly
 test/results/**/junit.xml
 __pycache__/
 .pytest_cache/
+
+# Scratch produced by examples/parallel_sweep.py
+examples/sweep_work/

@@ -59,6 +59,9 @@ class CFemmApp : public CWinApp {
 
   int CompatibilityMode;
   static int CFemmApp::lua_compatibilitymode(lua_State* L);
+  // setgui("classic"|"qt") / getgui() -- see ScriptGui.h.
+  static int CFemmApp::lua_setgui(lua_State* L);
+  static int CFemmApp::lua_getgui(lua_State* L);
   static int CFemmApp::lua_setcurrentdirectory(lua_State* L);
   static int CFemmApp::lua_smartmesh(lua_State* L);
   static int CFemmApp::lua_makeplot(lua_State* L);
