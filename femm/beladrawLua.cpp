@@ -2,6 +2,7 @@
 //
 
 #include "stdafx.h"
+#include "BitmapCapture.h"
 #include "femm.h"
 #include "beladrawDoc.h"
 #include "beladrawView.h"
@@ -1948,18 +1949,33 @@ int CbeladrawDoc::lua_savebitmap(lua_State* L)
   CDC* pDC = theView->GetDC();
 
   theView->GetClientRect(&r);
+
+  // Issue #4: a view that has never been shown -- every COM-automation
+  // session -- reports a rect with a zero dimension, and
+  // CreateCompatibleBitmap answers a zero dimension with a 1x1 MONOCHROME
+  // bitmap. That is how savebitmap used to write a valid, useless 58-byte
+  // file and report success. Capture at a real size instead.
+  SIZE cap = femmCaptureSize(r);
+
   tempDC.CreateCompatibleDC(pDC);
-  bitmap.CreateCompatibleBitmap(pDC, r.right, r.bottom);
-  tempDC.SelectObject(&bitmap);
+  bitmap.CreateCompatibleBitmap(pDC, cap.cx, cap.cy);
+  CBitmap* oldbitmap = tempDC.SelectObject(&bitmap);
 
-  tempDC.Rectangle(0, 0, r.right, r.bottom);
-
+  tempDC.Rectangle(0, 0, cap.cx, cap.cy);
   theView->OnDraw(&tempDC);
 
-  PBITMAPINFO pbmi;
+  CString bmpErr;
+  BOOL bmpOk = femmWriteBitmapFile(HBITMAP(bitmap), tempDC.m_hDC,
+                                   (LPCTSTR)filename, bmpErr);
 
-  pbmi = thisDoc->CreateBitmapInfoStruct(theView->m_hWnd, HBITMAP(bitmap));
-  thisDoc->CreateBMPFile(theView->m_hWnd, filename.GetBuffer(1), pbmi, HBITMAP(bitmap), tempDC.m_hDC);
+  // Only CFemmviewDoc used to restore and release; the other seven leaked a
+  // DC per call and let CBitmap delete a bitmap still selected into one.
+  tempDC.SelectObject(oldbitmap);
+  theView->ReleaseDC(pDC);
+  tempDC.DeleteDC();
+
+  if (!bmpOk)
+    MsgBox("%s", (LPCTSTR)bmpErr);
 
   return 0;
 }

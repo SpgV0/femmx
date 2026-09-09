@@ -196,6 +196,7 @@ set(femm_SOURCES
   XYPlotDlg.h
   ActiveFEMM.cpp
   ArcDlg.cpp
+  BitmapCapture.cpp
   bd_BdryDlg.cpp
   bd_CircProp.cpp
   bd_libdlg.cpp

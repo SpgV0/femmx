@@ -73,14 +73,6 @@ KNOWN_ISSUES = {
            "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
     "IEC": "pyfemm packaging bug: AWG()/IEC() reference `exp` without importing it "
            "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
-    "mi_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
-                      "unmeshed input view raises a 'possible page fault' error",
-    "ei_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
-                      "unmeshed input view raises a 'possible page fault' error",
-    "hi_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
-                      "unmeshed input view raises a 'possible page fault' error",
-    "ci_savebitmap": "pre-existing FEMM bug: savebitmap on a freshly-created, "
-                      "unmeshed input view raises a 'possible page fault' error",
     "ei_analyze": "electrostatics probdef/property argument conventions in this "
                   "sweep are not yet fully verified against the real Lua API; "
                   "solver rejects the saved file",
@@ -234,6 +226,13 @@ def run_problem_type(tracker, cfg):
     model_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.fem")
     dxf_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.dxf")
     bmp_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.bmp")
+    # pyfemm bug workaround: the *i_savebitmap / *i_savemetafile wrappers
+    # omit the fixpath() call their *o_ counterparts and *i_saveas all make,
+    # so a Windows path reaches Lua with its backslashes intact and they are
+    # eaten as string escapes -- the file then cannot be created. That, not
+    # the editors' bitmap capture, is why *i_savebitmap "reliably failed"
+    # while mo_savebitmap did not (see issue #4). Pass forward slashes.
+    bmp_path_lua = bmp_path.replace(chr(92), "/")
 
     femm.newdocument(cfg["doc_type"])
     c(tracker, ip, "probdef", *cfg["probdef"])
@@ -354,7 +353,7 @@ def run_problem_type(tracker, cfg):
     # save (must happen before createmesh/analyze -- both require the
     # document to already be saved to disk) ---------------------------------
     c(tracker, ip, "saveas", model_path)
-    c(tracker, ip, "savebitmap", bmp_path)
+    c(tracker, ip, "savebitmap", bmp_path_lua)
     c(tracker, ip, "savedxf", dxf_path)
 
     # mesh ------------------------------------------------------------------

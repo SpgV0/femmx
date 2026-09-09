@@ -118,18 +118,26 @@ As of the last run: 549 calls attempted, 397 pass, 13 fail (all in
 solve didn't succeed, plus a handful of commands that open blocking modal
 dialogs and can't run unattended). The known, pre-existing findings:
 
-- `mi_savebitmap`/`ei_savebitmap`/`hi_savebitmap`/`ci_savebitmap` reliably
-  fail with `"Critical error on getting bmp info, possible page fault
-  ahoyN"` when called on the pre-processor (input) editor's view. The
-  post-processor equivalent (`mo_savebitmap`) works fine, so this looks
-  like a genuine, narrow, pre-existing bug in the input editors' bitmap
-  capture, not something this fork's changes touch.
-- `ci_refreshview` is exposed as a Python wrapper by pyfemm but isn't
-  actually a registered Lua command in the current-flow editor
-  (`"attempt to call global 'ci_refreshview' (a nil value)"`).
 - `AWG`/`IEC` (wire-gauge helper functions) fail with `name 'exp' is not
   defined` -- a bug in the installed `pyfemm` PyPI package itself (missing
   `math.exp` import), unrelated to this fork.
+- **`*i_savebitmap` was NOT a bug in the input editors' bitmap capture --
+  it is a `pyfemm` bug, now worked around here (issue #4).** The four
+  input-editor wrappers (`mi_`, `ei_`, `hi_`, `ci_savebitmap`, and
+  `*i_savemetafile` too) omit the `fixpath()` call that their `*o_`
+  counterparts and `*i_saveas` all make, so a Windows path reaches Lua with
+  its backslashes intact and they are eaten as string escapes; the file
+  then cannot be created. That is the whole reason `mo_savebitmap` "worked
+  fine" on the same session -- `mo_` calls `fixpath`, `mi_` does not. The
+  sweep now passes a forward-slash path and all four assert normally.
+  Fixing `pyfemm` itself is out of scope (it is pip-installed), but any
+  script hitting this should pass forward slashes to `*i_savebitmap`.
+  The capture path itself had two real defects, both fixed in
+  `femm/BitmapCapture.h/.cpp`: a never-shown view reports a zero-height
+  client rect, which `CreateCompatibleBitmap` answers with a 1x1
+  MONOCHROME bitmap, so savebitmap used to write a valid, useless 58-byte
+  file and report success; and seven of the eight copies leaked a DC per
+  call and deleted a bitmap still selected into one.
 - The electrostatics/heat-flow/current-flow problem types' `analyze` step
   ("problem loading input file") doesn't yet succeed with this script's
   property setup, so their post-processing commands are skipped

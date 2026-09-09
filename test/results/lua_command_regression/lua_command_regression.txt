@@ -1,32 +1,24 @@
 FEMM Lua command regression sweep
 ==================================
 Total calls attempted: 549
-  PASS: 397
-  FAIL: 13
+  PASS: 402
+  FAIL: 8
   SKIP: 139
 
 --- FAIL details ---
   AWG [KNOWN ISSUE]: name 'exp' is not defined
   IEC [KNOWN ISSUE]: name 'exp' is not defined
-  mi_savebitmap [KNOWN ISSUE]: error: Critical error on getting bmp info  possible page fault ahoy23
-  ei_savebitmap [KNOWN ISSUE]: error: Critical error on getting bmp info  possible page fault ahoy7
   ei_analyze [KNOWN ISSUE]: error: problem loading input file
-  ei_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type
-  hi_savebitmap [KNOWN ISSUE]: error: Critical error on getting bmp info  possible page fault ahoy7
+  ei_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type
   hi_analyze [KNOWN ISSUE]: error: problem loading input file
-  hi_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
-  ci_refreshview [KNOWN ISSUE]: error: attempt to call global `ci_refreshview' (a nil value)
-stack traceback:
-   1:  main of string "lua2matlab(ci_refreshview())" at line 1
-
-  ci_savebitmap [KNOWN ISSUE]: error: Critical error on getting bmp info  possible page fault ahoy7
+  hi_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
   ci_analyze [KNOWN ISSUE]: error: problem loading input file
-  ci_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
+  ci_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
 
 --- SKIP details ---
-  create: opens a blocking modal dialog; cannot run unattended
   prompt: opens a blocking modal dialog; cannot run unattended
   messagebox: opens a blocking modal dialog; cannot run unattended
+  create: opens a blocking modal dialog; cannot run unattended
   mi_moverotate2: not exposed by pyfemm
   mi_setfocus: requires an already-open document's exact window title; not attempted
   ei_moverotate2: not exposed by pyfemm
@@ -371,9 +363,9 @@ stack traceback:
   [PASS] main_restore
   [PASS] main_minimize
   [PASS] main_restore
-  [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
   [PASS] mi_probdef
   [PASS] mi_getmaterial
   [PASS] mi_addcircprop
@@ -456,7 +448,7 @@ stack traceback:
   [PASS] mi_setgroup
   [PASS] mi_refreshview
   [PASS] mi_saveas
-  [FAIL] mi_savebitmap  (error: Critical error on getting bmp info  possible page fault ahoy23)
+  [PASS] mi_savebitmap
   [PASS] mi_savedxf
   [PASS] mi_createmesh
   [PASS] mi_showmesh
@@ -592,14 +584,14 @@ stack traceback:
   [PASS] ei_setgroup
   [PASS] ei_refreshview
   [PASS] ei_saveas
-  [FAIL] ei_savebitmap  (error: Critical error on getting bmp info  possible page fault ahoy7)
+  [PASS] ei_savebitmap
   [PASS] ei_savedxf
   [PASS] ei_createmesh
   [PASS] ei_showmesh
   [PASS] ei_smartmesh
   [PASS] ei_purgemesh
   [FAIL] ei_analyze  (error: problem loading input file)
-  [FAIL] ei_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
+  [FAIL] ei_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
   [SKIP] eo_numnodes  (no solution loaded (see loadsolution failure above))
   [SKIP] eo_numelements  (no solution loaded (see loadsolution failure above))
   [SKIP] eo_getnode  (no solution loaded (see loadsolution failure above))
@@ -726,14 +718,14 @@ stack traceback:
   [PASS] hi_setgroup
   [PASS] hi_refreshview
   [PASS] hi_saveas
-  [FAIL] hi_savebitmap  (error: Critical error on getting bmp info  possible page fault ahoy7)
+  [PASS] hi_savebitmap
   [PASS] hi_savedxf
   [PASS] hi_createmesh
   [PASS] hi_showmesh
   [PASS] hi_smartmesh
   [PASS] hi_purgemesh
   [FAIL] hi_analyze  (error: problem loading input file)
-  [FAIL] hi_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
+  [FAIL] hi_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
   [SKIP] ho_numnodes  (no solution loaded (see loadsolution failure above))
   [SKIP] ho_numelements  (no solution loaded (see loadsolution failure above))
   [SKIP] ho_getnode  (no solution loaded (see loadsolution failure above))
@@ -857,19 +849,16 @@ stack traceback:
   [PASS] ci_setcomment
   [SKIP] ci_setfocus  (requires an already-open document's exact window title; not attempted)
   [PASS] ci_setgroup
-  [FAIL] ci_refreshview  (error: attempt to call global `ci_refreshview' (a nil value)
-stack traceback:
-   1:  main of string "lua2matlab(ci_refreshview())" at line 1
-)
+  [PASS] ci_refreshview
   [PASS] ci_saveas
-  [FAIL] ci_savebitmap  (error: Critical error on getting bmp info  possible page fault ahoy7)
+  [PASS] ci_savebitmap
   [PASS] ci_savedxf
   [PASS] ci_createmesh
   [PASS] ci_showmesh
   [PASS] ci_smartmesh
   [PASS] ci_purgemesh
   [FAIL] ci_analyze  (error: problem loading input file)
-  [FAIL] ci_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\TMP\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
+  [FAIL] ci_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
   [SKIP] co_numnodes  (no solution loaded (see loadsolution failure above))
   [SKIP] co_numelements  (no solution loaded (see loadsolution failure above))
   [SKIP] co_getnode  (no solution loaded (see loadsolution failure above))
