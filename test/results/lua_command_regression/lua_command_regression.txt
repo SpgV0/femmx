@@ -1,160 +1,30 @@
 FEMM Lua command regression sweep
 ==================================
-Total calls attempted: 549
-  PASS: 402
-  FAIL: 8
-  SKIP: 139
+Total calls attempted: 561
+  PASS: 544
+  FAIL: 2
+  SKIP: 15
 
 --- FAIL details ---
   AWG [KNOWN ISSUE]: name 'exp' is not defined
   IEC [KNOWN ISSUE]: name 'exp' is not defined
-  ei_analyze [KNOWN ISSUE]: error: problem loading input file
-  ei_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type
-  hi_analyze [KNOWN ISSUE]: error: problem loading input file
-  hi_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
-  ci_analyze [KNOWN ISSUE]: error: problem loading input file
-  ci_loadsolution [KNOWN ISSUE]: no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type
 
 --- SKIP details ---
   prompt: opens a blocking modal dialog; cannot run unattended
-  messagebox: opens a blocking modal dialog; cannot run unattended
   create: opens a blocking modal dialog; cannot run unattended
+  messagebox: opens a blocking modal dialog; cannot run unattended
   mi_moverotate2: not exposed by pyfemm
   mi_setfocus: requires an already-open document's exact window title; not attempted
   ei_moverotate2: not exposed by pyfemm
   ei_setfocus: requires an already-open document's exact window title; not attempted
-  eo_numnodes: no solution loaded (see loadsolution failure above)
-  eo_numelements: no solution loaded (see loadsolution failure above)
-  eo_getnode: no solution loaded (see loadsolution failure above)
-  eo_getelement: no solution loaded (see loadsolution failure above)
-  eo_getpointvalues: no solution loaded (see loadsolution failure above)
-  eo_getprobleminfo: no solution loaded (see loadsolution failure above)
-  eo_selectblock: no solution loaded (see loadsolution failure above)
-  eo_blockintegral: no solution loaded (see loadsolution failure above)
-  eo_clearblock: no solution loaded (see loadsolution failure above)
-  eo_groupselectblock: no solution loaded (see loadsolution failure above)
-  eo_addcontour: no solution loaded (see loadsolution failure above)
-  eo_lineintegral: no solution loaded (see loadsolution failure above)
-  eo_bendcontour: no solution loaded (see loadsolution failure above)
-  eo_clearcontour: no solution loaded (see loadsolution failure above)
-  eo_selectpoint: no solution loaded (see loadsolution failure above)
-  eo_getconductorproperties: no solution loaded (see loadsolution failure above)
-  eo_showdensityplot: no solution loaded (see loadsolution failure above)
-  eo_hidedensityplot: no solution loaded (see loadsolution failure above)
-  eo_showcontourplot: no solution loaded (see loadsolution failure above)
-  eo_hidecontourplot: no solution loaded (see loadsolution failure above)
-  eo_showvectorplot: no solution loaded (see loadsolution failure above)
-  eo_showmesh: no solution loaded (see loadsolution failure above)
-  eo_hidemesh: no solution loaded (see loadsolution failure above)
-  eo_showgrid: no solution loaded (see loadsolution failure above)
-  eo_hidegrid: no solution loaded (see loadsolution failure above)
-  eo_shownames: no solution loaded (see loadsolution failure above)
-  eo_hidenames: no solution loaded (see loadsolution failure above)
-  eo_showpoints: no solution loaded (see loadsolution failure above)
-  eo_hidepoints: no solution loaded (see loadsolution failure above)
-  eo_smoothon: no solution loaded (see loadsolution failure above)
-  eo_smoothoff: no solution loaded (see loadsolution failure above)
-  eo_smooth: no solution loaded (see loadsolution failure above)
-  eo_zoomnatural: no solution loaded (see loadsolution failure above)
-  eo_zoomin: no solution loaded (see loadsolution failure above)
-  eo_zoomout: no solution loaded (see loadsolution failure above)
-  eo_zoom: no solution loaded (see loadsolution failure above)
-  eo_savebitmap: no solution loaded (see loadsolution failure above)
-  eo_refreshview: no solution loaded (see loadsolution failure above)
-  eo_reload: no solution loaded (see loadsolution failure above)
-  eo_close: no solution loaded (see loadsolution failure above)
-  eo_getd: no solution loaded (see loadsolution failure above)
-  eo_gete: no solution loaded (see loadsolution failure above)
   hi_moverotate2: not exposed by pyfemm
   hi_setfocus: requires an already-open document's exact window title; not attempted
-  ho_numnodes: no solution loaded (see loadsolution failure above)
-  ho_numelements: no solution loaded (see loadsolution failure above)
-  ho_getnode: no solution loaded (see loadsolution failure above)
-  ho_getelement: no solution loaded (see loadsolution failure above)
-  ho_getpointvalues: no solution loaded (see loadsolution failure above)
-  ho_getprobleminfo: no solution loaded (see loadsolution failure above)
-  ho_selectblock: no solution loaded (see loadsolution failure above)
-  ho_blockintegral: no solution loaded (see loadsolution failure above)
-  ho_clearblock: no solution loaded (see loadsolution failure above)
-  ho_groupselectblock: no solution loaded (see loadsolution failure above)
-  ho_addcontour: no solution loaded (see loadsolution failure above)
-  ho_lineintegral: no solution loaded (see loadsolution failure above)
-  ho_bendcontour: no solution loaded (see loadsolution failure above)
-  ho_clearcontour: no solution loaded (see loadsolution failure above)
-  ho_selectpoint: no solution loaded (see loadsolution failure above)
-  ho_getconductorproperties: no solution loaded (see loadsolution failure above)
-  ho_showdensityplot: no solution loaded (see loadsolution failure above)
-  ho_hidedensityplot: no solution loaded (see loadsolution failure above)
-  ho_showcontourplot: no solution loaded (see loadsolution failure above)
-  ho_hidecontourplot: no solution loaded (see loadsolution failure above)
-  ho_showvectorplot: no solution loaded (see loadsolution failure above)
-  ho_showmesh: no solution loaded (see loadsolution failure above)
-  ho_hidemesh: no solution loaded (see loadsolution failure above)
-  ho_showgrid: no solution loaded (see loadsolution failure above)
-  ho_hidegrid: no solution loaded (see loadsolution failure above)
-  ho_shownames: no solution loaded (see loadsolution failure above)
-  ho_hidenames: no solution loaded (see loadsolution failure above)
-  ho_showpoints: no solution loaded (see loadsolution failure above)
-  ho_hidepoints: no solution loaded (see loadsolution failure above)
-  ho_smoothon: no solution loaded (see loadsolution failure above)
-  ho_smoothoff: no solution loaded (see loadsolution failure above)
-  ho_smooth: no solution loaded (see loadsolution failure above)
-  ho_zoomnatural: no solution loaded (see loadsolution failure above)
-  ho_zoomin: no solution loaded (see loadsolution failure above)
-  ho_zoomout: no solution loaded (see loadsolution failure above)
-  ho_zoom: no solution loaded (see loadsolution failure above)
-  ho_savebitmap: no solution loaded (see loadsolution failure above)
-  ho_refreshview: no solution loaded (see loadsolution failure above)
-  ho_reload: no solution loaded (see loadsolution failure above)
-  ho_close: no solution loaded (see loadsolution failure above)
-  ho_getf: no solution loaded (see loadsolution failure above)
   ci_copytranslate2: not exposed by pyfemm
   ci_moverotate2: not exposed by pyfemm
   ci_defineouterspace: not exposed for this problem type
   ci_attachouterspace: not exposed for this problem type
   ci_detachouterspace: not exposed for this problem type
   ci_setfocus: requires an already-open document's exact window title; not attempted
-  co_numnodes: no solution loaded (see loadsolution failure above)
-  co_numelements: no solution loaded (see loadsolution failure above)
-  co_getnode: no solution loaded (see loadsolution failure above)
-  co_getelement: no solution loaded (see loadsolution failure above)
-  co_getpointvalues: no solution loaded (see loadsolution failure above)
-  co_getprobleminfo: no solution loaded (see loadsolution failure above)
-  co_selectblock: no solution loaded (see loadsolution failure above)
-  co_blockintegral: no solution loaded (see loadsolution failure above)
-  co_clearblock: no solution loaded (see loadsolution failure above)
-  co_groupselectblock: no solution loaded (see loadsolution failure above)
-  co_addcontour: no solution loaded (see loadsolution failure above)
-  co_lineintegral: no solution loaded (see loadsolution failure above)
-  co_bendcontour: no solution loaded (see loadsolution failure above)
-  co_clearcontour: no solution loaded (see loadsolution failure above)
-  co_selectpoint: no solution loaded (see loadsolution failure above)
-  co_getconductorproperties: no solution loaded (see loadsolution failure above)
-  co_showdensityplot: no solution loaded (see loadsolution failure above)
-  co_hidedensityplot: no solution loaded (see loadsolution failure above)
-  co_showcontourplot: no solution loaded (see loadsolution failure above)
-  co_hidecontourplot: no solution loaded (see loadsolution failure above)
-  co_showvectorplot: no solution loaded (see loadsolution failure above)
-  co_showmesh: no solution loaded (see loadsolution failure above)
-  co_hidemesh: no solution loaded (see loadsolution failure above)
-  co_showgrid: no solution loaded (see loadsolution failure above)
-  co_hidegrid: no solution loaded (see loadsolution failure above)
-  co_shownames: no solution loaded (see loadsolution failure above)
-  co_hidenames: no solution loaded (see loadsolution failure above)
-  co_showpoints: no solution loaded (see loadsolution failure above)
-  co_hidepoints: no solution loaded (see loadsolution failure above)
-  co_smoothon: no solution loaded (see loadsolution failure above)
-  co_smoothoff: no solution loaded (see loadsolution failure above)
-  co_smooth: no solution loaded (see loadsolution failure above)
-  co_zoomnatural: no solution loaded (see loadsolution failure above)
-  co_zoomin: no solution loaded (see loadsolution failure above)
-  co_zoomout: no solution loaded (see loadsolution failure above)
-  co_zoom: no solution loaded (see loadsolution failure above)
-  co_savebitmap: no solution loaded (see loadsolution failure above)
-  co_refreshview: no solution loaded (see loadsolution failure above)
-  co_reload: no solution loaded (see loadsolution failure above)
-  co_close: no solution loaded (see loadsolution failure above)
-  co_getj: no solution loaded (see loadsolution failure above)
 
 --- pyfemm functions never exercised by this sweep (194) ---
   ci_addmaterial
@@ -364,8 +234,8 @@ Total calls attempted: 549
   [PASS] main_minimize
   [PASS] main_restore
   [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
-  [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
   [PASS] mi_probdef
   [PASS] mi_getmaterial
   [PASS] mi_addcircprop
@@ -454,7 +324,7 @@ Total calls attempted: 549
   [PASS] mi_showmesh
   [PASS] mi_smartmesh
   [PASS] mi_purgemesh
-  [PASS] mi_analyze
+  [PASS] mi_analyze  (0.2s)
   [PASS] mi_loadsolution
   [PASS] mo_numnodes
   [PASS] mo_numelements
@@ -505,6 +375,7 @@ Total calls attempted: 549
   [PASS] ei_probdef
   [PASS] ei_getmaterial
   [PASS] ei_addconductorprop
+  [PASS] ei_addboundprop
   [PASS] ei_addboundprop
   [PASS] ei_addpointprop
   [PASS] ei_drawrectangle
@@ -590,55 +461,59 @@ Total calls attempted: 549
   [PASS] ei_showmesh
   [PASS] ei_smartmesh
   [PASS] ei_purgemesh
-  [FAIL] ei_analyze  (error: problem loading input file)
-  [FAIL] ei_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_electrostatics.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
-  [SKIP] eo_numnodes  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_numelements  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getnode  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getelement  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getpointvalues  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getprobleminfo  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_selectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_blockintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_clearblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_groupselectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_addcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_lineintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_bendcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_clearcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_selectpoint  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getconductorproperties  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showdensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidedensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showcontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidecontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showvectorplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showmesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidemesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showgrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidegrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_shownames  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidenames  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_showpoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_hidepoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_smoothon  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_smoothoff  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_smooth  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_zoomnatural  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_zoomin  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_zoomout  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_zoom  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_savebitmap  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_refreshview  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_reload  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_close  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_getd  (no solution loaded (see loadsolution failure above))
-  [SKIP] eo_gete  (no solution loaded (see loadsolution failure above))
+  [PASS] ei_analyze  (0.2s)
+  [PASS] ei_loadsolution
+  [PASS] eo_numnodes
+  [PASS] eo_numelements
+  [PASS] eo_getnode
+  [PASS] eo_getelement
+  [PASS] eo_getpointvalues
+  [PASS] eo_getprobleminfo
+  [PASS] eo_getd
+  [PASS] eo_gete
+  [PASS] eo_selectblock
+  [PASS] eo_blockintegral
+  [PASS] eo_clearblock
+  [PASS] eo_groupselectblock
+  [PASS] eo_clearblock
+  [PASS] eo_addcontour
+  [PASS] eo_addcontour
+  [PASS] eo_lineintegral
+  [PASS] eo_bendcontour
+  [PASS] eo_clearcontour
+  [PASS] eo_selectpoint
+  [PASS] eo_clearblock
+  [PASS] eo_getconductorproperties
+  [PASS] eo_showdensityplot
+  [PASS] eo_hidedensityplot
+  [PASS] eo_showcontourplot
+  [PASS] eo_hidecontourplot
+  [PASS] eo_showvectorplot
+  [PASS] eo_showmesh
+  [PASS] eo_hidemesh
+  [PASS] eo_showgrid
+  [PASS] eo_hidegrid
+  [PASS] eo_shownames
+  [PASS] eo_hidenames
+  [PASS] eo_showpoints
+  [PASS] eo_hidepoints
+  [PASS] eo_smoothon
+  [PASS] eo_smoothoff
+  [PASS] eo_smooth
+  [PASS] eo_zoomnatural
+  [PASS] eo_zoomin
+  [PASS] eo_zoomout
+  [PASS] eo_zoom
+  [PASS] eo_savebitmap
+  [PASS] eo_refreshview
+  [PASS] eo_reload
+  [PASS] eo_close
   [PASS] opendocument(electrostatics)
   [PASS] ei_close
   [PASS] hi_probdef
   [PASS] hi_getmaterial
   [PASS] hi_addconductorprop
+  [PASS] hi_addboundprop
   [PASS] hi_addboundprop
   [PASS] hi_addpointprop
   [PASS] hi_drawrectangle
@@ -724,54 +599,58 @@ Total calls attempted: 549
   [PASS] hi_showmesh
   [PASS] hi_smartmesh
   [PASS] hi_purgemesh
-  [FAIL] hi_analyze  (error: problem loading input file)
-  [FAIL] hi_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_heatflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
-  [SKIP] ho_numnodes  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_numelements  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getnode  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getelement  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getpointvalues  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getprobleminfo  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_selectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_blockintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_clearblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_groupselectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_addcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_lineintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_bendcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_clearcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_selectpoint  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getconductorproperties  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showdensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidedensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showcontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidecontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showvectorplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showmesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidemesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showgrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidegrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_shownames  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidenames  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_showpoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_hidepoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_smoothon  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_smoothoff  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_smooth  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_zoomnatural  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_zoomin  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_zoomout  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_zoom  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_savebitmap  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_refreshview  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_reload  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_close  (no solution loaded (see loadsolution failure above))
-  [SKIP] ho_getf  (no solution loaded (see loadsolution failure above))
+  [PASS] hi_analyze  (0.2s)
+  [PASS] hi_loadsolution
+  [PASS] ho_numnodes
+  [PASS] ho_numelements
+  [PASS] ho_getnode
+  [PASS] ho_getelement
+  [PASS] ho_getpointvalues
+  [PASS] ho_getprobleminfo
+  [PASS] ho_getf
+  [PASS] ho_selectblock
+  [PASS] ho_blockintegral
+  [PASS] ho_clearblock
+  [PASS] ho_groupselectblock
+  [PASS] ho_clearblock
+  [PASS] ho_addcontour
+  [PASS] ho_addcontour
+  [PASS] ho_lineintegral
+  [PASS] ho_bendcontour
+  [PASS] ho_clearcontour
+  [PASS] ho_selectpoint
+  [PASS] ho_clearblock
+  [PASS] ho_getconductorproperties
+  [PASS] ho_showdensityplot
+  [PASS] ho_hidedensityplot
+  [PASS] ho_showcontourplot
+  [PASS] ho_hidecontourplot
+  [PASS] ho_showvectorplot
+  [PASS] ho_showmesh
+  [PASS] ho_hidemesh
+  [PASS] ho_showgrid
+  [PASS] ho_hidegrid
+  [PASS] ho_shownames
+  [PASS] ho_hidenames
+  [PASS] ho_showpoints
+  [PASS] ho_hidepoints
+  [PASS] ho_smoothon
+  [PASS] ho_smoothoff
+  [PASS] ho_smooth
+  [PASS] ho_zoomnatural
+  [PASS] ho_zoomin
+  [PASS] ho_zoomout
+  [PASS] ho_zoom
+  [PASS] ho_savebitmap
+  [PASS] ho_refreshview
+  [PASS] ho_reload
+  [PASS] ho_close
   [PASS] opendocument(heatflow)
   [PASS] hi_close
   [PASS] ci_probdef
   [PASS] ci_getmaterial
   [PASS] ci_addconductorprop
+  [PASS] ci_addboundprop
   [PASS] ci_addboundprop
   [PASS] ci_addpointprop
   [PASS] ci_drawrectangle
@@ -857,48 +736,51 @@ Total calls attempted: 549
   [PASS] ci_showmesh
   [PASS] ci_smartmesh
   [PASS] ci_purgemesh
-  [FAIL] ci_analyze  (error: problem loading input file)
-  [FAIL] ci_loadsolution  (no .ans/.res solution file found next to C:\Users\spgry\Desktop\Workspace\Git\femmx\test\results\lua_command_regression\lua_regression_currentflow.fem after analyze -- solve did not succeed; skipping all post-processing for this type)
-  [SKIP] co_numnodes  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_numelements  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getnode  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getelement  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getpointvalues  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getprobleminfo  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_selectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_blockintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_clearblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_groupselectblock  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_addcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_lineintegral  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_bendcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_clearcontour  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_selectpoint  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getconductorproperties  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showdensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidedensityplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showcontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidecontourplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showvectorplot  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showmesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidemesh  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showgrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidegrid  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_shownames  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidenames  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_showpoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_hidepoints  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_smoothon  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_smoothoff  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_smooth  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_zoomnatural  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_zoomin  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_zoomout  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_zoom  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_savebitmap  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_refreshview  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_reload  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_close  (no solution loaded (see loadsolution failure above))
-  [SKIP] co_getj  (no solution loaded (see loadsolution failure above))
+  [PASS] ci_analyze  (0.2s)
+  [PASS] ci_loadsolution
+  [PASS] co_numnodes
+  [PASS] co_numelements
+  [PASS] co_getnode
+  [PASS] co_getelement
+  [PASS] co_getpointvalues
+  [PASS] co_getprobleminfo
+  [PASS] co_getj
+  [PASS] co_selectblock
+  [PASS] co_blockintegral
+  [PASS] co_clearblock
+  [PASS] co_groupselectblock
+  [PASS] co_clearblock
+  [PASS] co_addcontour
+  [PASS] co_addcontour
+  [PASS] co_lineintegral
+  [PASS] co_bendcontour
+  [PASS] co_clearcontour
+  [PASS] co_selectpoint
+  [PASS] co_clearblock
+  [PASS] co_getconductorproperties
+  [PASS] co_showdensityplot
+  [PASS] co_hidedensityplot
+  [PASS] co_showcontourplot
+  [PASS] co_hidecontourplot
+  [PASS] co_showvectorplot
+  [PASS] co_showmesh
+  [PASS] co_hidemesh
+  [PASS] co_showgrid
+  [PASS] co_hidegrid
+  [PASS] co_shownames
+  [PASS] co_hidenames
+  [PASS] co_showpoints
+  [PASS] co_hidepoints
+  [PASS] co_smoothon
+  [PASS] co_smoothoff
+  [PASS] co_smooth
+  [PASS] co_zoomnatural
+  [PASS] co_zoomin
+  [PASS] co_zoomout
+  [PASS] co_zoom
+  [PASS] co_savebitmap
+  [PASS] co_refreshview
+  [PASS] co_reload
+  [PASS] co_close
   [PASS] opendocument(currentflow)
   [PASS] ci_close

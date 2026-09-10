@@ -113,10 +113,40 @@ details with reasons, the list of pyfemm functions this sweep doesn't
 exercise, and the full call log), plus the generated `.fem`/`.dxf`/`.bmp`
 models for each problem type.
 
-As of the last run: 549 calls attempted, 397 pass, 13 fail (all in
-`KNOWN_ISSUES`), 139 skip (mostly cascading skips when a problem type's
-solve didn't succeed, plus a handful of commands that open blocking modal
-dialogs and can't run unattended). The known, pre-existing findings:
+As of the last run: 561 calls attempted, 544 pass, 2 fail (both in
+`KNOWN_ISSUES`, and both are bugs in the `pyfemm` package rather than in
+FEMM), 15 skip (commands that open a blocking modal dialog, plus a few
+pyfemm does not wrap). All four problem types now solve end-to-end and
+all four are hard, zero-tolerance gates.
+
+This is up from 397 pass / 13 fail / 139 skip. Three fixes got there,
+all recorded in issues #4, #5 and #6:
+
+1. Each physics has its own input extension and its solver appends that
+   extension to the basename it is handed -- `fkn` reads `.fem`,
+   `belasolv` `.fee`, `hsolv` `.feh`, `csolv` `.fec`. The sweep saved
+   every type as `.fem`, so three of the four solvers looked for a file
+   that was not there and exited 7, which the editor reports as the
+   generic "problem loading input file". Every post-processing command
+   for those types was then skipped -- that alone was most of the 139
+   skips.
+2. Heat flow then solved, but did not converge: the shipped `Air` heat
+   material carries an 18-point temperature-dependent conductivity table
+   starting at 200K, and the model fixed its boundary at 0K, so the
+   nonlinear iteration chased an extrapolated conductivity. Measured
+   before the fix: `hsolv` burning 24,410s of CPU over 7.3 hours on a
+   10x10mm square. The reference temperature is now 300K, inside the
+   table, and it converges in seconds. `analyze` also runs under a
+   120s watchdog now, so a non-converging solve fails the suite instead
+   of hanging it.
+3. All four edges carried the same zero-valued boundary condition, so
+   the solved field was identically zero. That cannot distinguish a
+   correct answer from a stream of zeros, and for current flow it made
+   `co_blockintegral` return a literal `nan` (0/0) which pyfemm eval()s
+   into "name 'nan' is not defined". One edge is now driven, so each
+   solve has a real gradient.
+
+The known, pre-existing findings:
 
 - `AWG`/`IEC` (wire-gauge helper functions) fail with `name 'exp' is not
   defined` -- a bug in the installed `pyfemm` PyPI package itself (missing

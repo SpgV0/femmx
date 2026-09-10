@@ -43,6 +43,9 @@ Usage:
 """
 
 import os
+import subprocess
+import threading
+import time
 
 import pytest
 
@@ -69,22 +72,13 @@ BLOCKING_COMMANDS = {"prompt", "messagebox", "create"}
 # treated as a failure); if a *new* command fails, that's not in this set
 # and will fail the build.
 KNOWN_ISSUES = {
+    # The only tolerated failures are in the pyfemm package itself. Every
+    # FEMM-side failure is now a hard gate for all four problem types --
+    # electrostatics, heat flow and current flow included (issue #6).
     "AWG": "pyfemm packaging bug: AWG()/IEC() reference `exp` without importing it "
            "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
     "IEC": "pyfemm packaging bug: AWG()/IEC() reference `exp` without importing it "
            "(NameError: name 'exp' is not defined) -- not FEMM/femmx code",
-    "ei_analyze": "electrostatics probdef/property argument conventions in this "
-                  "sweep are not yet fully verified against the real Lua API; "
-                  "solver rejects the saved file",
-    "ei_loadsolution": "cascades from ei_analyze (see above)",
-    "hi_analyze": "heat-flow probdef/property argument conventions in this sweep "
-                  "are not yet fully verified against the real Lua API; solver "
-                  "rejects the saved file",
-    "hi_loadsolution": "cascades from hi_analyze (see above)",
-    "ci_analyze": "current-flow probdef/property argument conventions in this "
-                  "sweep are not yet fully verified against the real Lua API; "
-                  "solver rejects the saved file",
-    "ci_loadsolution": "cascades from ci_analyze (see above)",
 }
 
 
@@ -128,6 +122,72 @@ class Tracker:
         return out
 
 
+# Solver binaries a runaway analyze can leave spinning. hsolv in particular
+# was measured burning 24,410s of CPU over 7.3 hours on a 10x10mm square
+# after issue #6 fixed the input extension and the solve finally started:
+# the shipped "Air" heat material carries an 18-point temperature-dependent
+# conductivity table, and iterating it around T~0K -- far below the table's
+# 200K floor -- does not converge. Whatever the model, a regression suite
+# must never hang, so analyze runs under a watchdog.
+SOLVER_PROCESSES = ("fkn", "belasolv", "hsolv", "csolv")
+ANALYZE_TIMEOUT_SEC = 120
+
+
+def _kill_solvers():
+    """Kill any solver still running. Returns the names actually killed."""
+    killed = []
+    for name in SOLVER_PROCESSES:
+        r = subprocess.run(["taskkill", "/F", "/IM", name + ".exe"],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            killed.append(name)
+    return killed
+
+
+def analyze_with_timeout(tracker, prefix, timeout=ANALYZE_TIMEOUT_SEC):
+    """Call <prefix>_analyze, killing the solver if it overruns.
+
+    pyfemm's analyze is a blocking COM call, so it cannot be interrupted
+    directly; killing the solver process makes it return.
+    """
+    label = prefix + "_analyze"
+    fn = getattr(femm, label, None)
+    if fn is None:
+        tracker.skip(label, "not exposed by pyfemm")
+        return
+
+    state = {"killed": None}
+    done = threading.Event()
+
+    def watchdog():
+        if not done.wait(timeout):
+            state["killed"] = _kill_solvers()
+
+    t = threading.Thread(target=watchdog, daemon=True)
+    t.start()
+    started = time.time()
+    try:
+        fn(1)
+    except Exception as exc:  # noqa: BLE001 -- recorded, not raised
+        done.set()
+        if state["killed"]:
+            tracker.records.append((label, "FAIL",
+                "solver exceeded %ds and was killed (%s); it is not converging"
+                % (timeout, ", ".join(state["killed"]))))
+        else:
+            tracker.records.append((label, "FAIL", str(exc)))
+        return
+    finally:
+        done.set()
+
+    if state["killed"]:
+        tracker.records.append((label, "FAIL",
+            "solver exceeded %ds and was killed (%s); it is not converging"
+            % (timeout, ", ".join(state["killed"]))))
+    else:
+        tracker.records.append((label, "PASS",
+                                "%.1fs" % (time.time() - started)))
+
 def c(tracker, prefix, name, *args):
     """Look up f"{prefix}_{name}" on the femm module and call it through the tracker."""
     label = f"{prefix}_{name}"
@@ -138,6 +198,9 @@ def c(tracker, prefix, name, *args):
 TYPES = [
     dict(
         key="magnetics",
+        ext="fem",
+        driven_boundprop_args=None,
+        contourplot_args=(1, 0, 1, "real"),
         doc_type=0,
         ip="mi",
         op="mo",
@@ -155,6 +218,9 @@ TYPES = [
     ),
     dict(
         key="electrostatics",
+        ext="fee",
+        driven_boundprop_args=("test_bound_hi", 1, 0, 0, 0, 0),
+        contourplot_args=(1, 0, 1),
         doc_type=1,
         ip="ei",
         op="eo",
@@ -172,13 +238,16 @@ TYPES = [
     ),
     dict(
         key="heatflow",
+        ext="feh",
+        driven_boundprop_args=("test_bound_hi", 0, 400, 0, 0, 0, 0),
+        contourplot_args=(1, 0, 1),
         doc_type=2,
         ip="hi",
         op="ho",
         material="Air",
         probdef=("millimeters", "planar", 1e-8, 1, 30),
         conductorprop_args=("test_conductor", 0, 0, 1),
-        boundprop_args=("test_bound", 0, 0, 0, 0, 0, 0),
+        boundprop_args=("test_bound", 0, 300, 0, 0, 0, 0),
         pointprop_args=("test_point", 0, 0),
         setblockprop_args=lambda mat: (mat, 1, 0, 0),
         setsegmentprop_args=lambda bound: (bound, 0, 1, 0, 0, ""),
@@ -189,6 +258,9 @@ TYPES = [
     ),
     dict(
         key="currentflow",
+        ext="fec",
+        driven_boundprop_args=("test_bound_hi", 1, 0, 0, 0, 0),
+        contourplot_args=(1, 0, 1),
         doc_type=3,
         ip="ci",
         op="co",
@@ -223,7 +295,16 @@ def run_standalone_commands(tracker):
 
 def run_problem_type(tracker, cfg):
     ip, op = cfg["ip"], cfg["op"]
-    model_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.fem")
+    # Each physics has its own input extension and its solver appends that
+    # extension to the basename it is handed: fkn reads .fem, belasolv .fee,
+    # hsolv .feh, csolv .fec. Saving every type as .fem meant the three
+    # non-magnetics solvers looked for a file that was not there and exited
+    # 7, which the editor reports as the generic "problem loading input
+    # file" -- belasolv's own wording is "problem loading .fee file", which
+    # names the extension. That, not a solver or editor defect, is why
+    # ei_/hi_/ci_analyze failed and every downstream command was skipped
+    # (see issue #6).
+    model_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.{cfg['ext']}")
     dxf_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.dxf")
     bmp_path = os.path.join(OUTPUT_DIR, f"lua_regression_{cfg['key']}.bmp")
     # pyfemm bug workaround: the *i_savebitmap / *i_savemetafile wrappers
@@ -244,6 +325,8 @@ def run_problem_type(tracker, cfg):
     else:
         c(tracker, ip, "addconductorprop", *cfg["conductorprop_args"])
     c(tracker, ip, "addboundprop", *cfg["boundprop_args"])
+    if cfg["driven_boundprop_args"]:
+        c(tracker, ip, "addboundprop", *cfg["driven_boundprop_args"])
     c(tracker, ip, "addpointprop", *cfg["pointprop_args"])
 
     # geometry ----------------------------------------------------------
@@ -268,8 +351,14 @@ def run_problem_type(tracker, cfg):
     c(tracker, ip, "selectsegment", 0, 10)
     c(tracker, ip, "setsegmentprop", *cfg["setsegmentprop_args"]("test_bound"))
     c(tracker, ip, "clearselected")
+    # Drive this edge, so the solved field is not identically zero. An
+    # all-zero solution exercises the post-processing commands without
+    # being able to tell a correct answer from a stream of zeros, and for
+    # current flow it made co_blockintegral return a literal nan (0/0),
+    # which pyfemm then eval()s into "name 'nan' is not defined".
     c(tracker, ip, "selectsegment", 20, 10)
-    c(tracker, ip, "setsegmentprop", *cfg["setsegmentprop_args"]("test_bound"))
+    _driven = "test_bound_hi" if cfg["driven_boundprop_args"] else "test_bound"
+    c(tracker, ip, "setsegmentprop", *cfg["setsegmentprop_args"](_driven))
     c(tracker, ip, "clearselected")
 
     c(tracker, ip, "selectlabel", 10, 10)
@@ -368,10 +457,14 @@ def run_problem_type(tracker, cfg):
     # script forever. So: check the solution file landed on disk first, and
     # only call loadsolution (and everything downstream that depends on a
     # loaded solution) if it did.
-    c(tracker, ip, "analyze", 1)
+    analyze_with_timeout(tracker, ip)
     base, _ = os.path.splitext(model_path)
     solution_path = None
-    for ext in (".ans", ".res"):
+    # Each physics writes its own solution extension, not just .ans/.res:
+    # fkn -> .ans, belasolv -> .res, hsolv -> .anh, csolv -> .anc. Probing
+    # only the first two would have reported a missing solution for heat
+    # flow and current flow even once their solve succeeded.
+    for ext in (".ans", ".res", ".anh", ".anc"):
         if os.path.exists(base + ext):
             solution_path = base + ext
             break
@@ -379,7 +472,7 @@ def run_problem_type(tracker, cfg):
     if solution_path is None:
         tracker.records.append((
             f"{ip}_loadsolution", "FAIL",
-            f"no .ans/.res solution file found next to {model_path} after analyze "
+            f"no solution file (.ans/.res/.anh/.anc) found next to {model_path} after analyze "
             "-- solve did not succeed; skipping all post-processing for this type",
         ))
         for name in (
@@ -429,7 +522,9 @@ def run_problem_type(tracker, cfg):
 
         c(tracker, op, "showdensityplot", 1, 0, 0, 1, "bmag" if op == "mo" else "ez")
         c(tracker, op, "hidedensityplot")
-        c(tracker, op, "showcontourplot", 1, 0, 1, "real")
+        # Only mo_showcontourplot takes the trailing plot-type argument;
+        # eo_/ho_/co_ are (numcontours, al, au).
+        c(tracker, op, "showcontourplot", *cfg["contourplot_args"])
         c(tracker, op, "hidecontourplot")
         c(tracker, op, "showvectorplot", 1, 1)
         c(tracker, op, "showmesh")
