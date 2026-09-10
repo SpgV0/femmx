@@ -351,7 +351,14 @@ bool FemxFileIO::readFemx(const char* femxPath, CFemmeDoc& doc)
         : CString();
     a.Hidden = rec.hidden;
     a.InGroup = rec.inGroup;
-    a.mySideLength = rec.mySideLength;
+    // Issue #7: the .fem text reader parses only seven arc fields and then
+    // does mySideLength = MaxSideLength (CFemmeDoc::OnOpenDocument), so the
+    // eighth column the writer emits is never read back. Restoring the
+    // stored value verbatim therefore made a cache load disagree with a
+    // text load of the same file -- arcs rendered at a different segment
+    // count. Normalise the same way the text path does.
+    a.mySideLength = a.MaxSideLength;
+    (void)rec.mySideLength;  // still written, for format compatibility
     doc.arclist.Add(a);
   }
 
@@ -385,7 +392,16 @@ bool FemxFileIO::readFemx(const char* femxPath, CFemmeDoc& doc)
     b.InGroup = rec.inGroup;
     b.Turns = rec.turns;
     b.IsExternal = rec.isExternal ? TRUE : FALSE;
-    b.IsDefault = rec.isDefault ? TRUE : FALSE;
+    // Issue #7: IsDefault is NOT a boolean in the classic model -- it holds
+    // the value 2 (see CFemmeDoc::OnEditBlockProps, blocklist[i].IsDefault
+    // = 2), because the .fem text format packs it as bit 1 of a flags field
+    // written as "IsExternal + IsDefault" and read back as (v & 2) / (v & 1).
+    // Restoring it as TRUE (=1) set the ISEXTERNAL bit instead: a default
+    // block label loaded through this cache and re-saved came back as an
+    // external (Kelvin outer-region) label with the default flag lost.
+    // The on-disk 0/1 encoding is unchanged and stays compatible with
+    // femmqt/FemxFileIO.cpp, which models the same flag as a bool.
+    b.IsDefault = rec.isDefault ? 2 : 0;
     doc.blocklist.Add(b);
   }
 

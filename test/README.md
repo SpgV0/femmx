@@ -39,6 +39,47 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## file_format_roundtrip_test.py
+
+`FILE_FORMATS.md` documents four formats and the relationships between
+them -- `.femx` is a binary cache of `.fem`, `.ansx` of `.ans`'s mesh --
+and nothing verified any of it. Both GUIs and all four solvers read and
+write these files, so a field written but not read back, or read back in
+the wrong order, is a data-loss bug no other test would notice (issue #7).
+
+The contract held to is the one `FILE_FORMATS.md` itself states: opening a
+file via its cache and via its text source must produce identical state,
+and a cache whose recorded source size/mtime no longer match must be
+treated as stale. Comparisons are on PARSED STRUCTURES with float
+tolerances, never raw bytes, and a failure names the field that drifted.
+
+**This found a real data-corruption bug**, now fixed in
+`femm/FemxFileIO.cpp`:
+
+- `IsDefault` is not a boolean in the classic model. It holds the value
+  **2**, because the `.fem` text format packs it as bit 1 of a flags field
+  written as `IsExternal + IsDefault` and read back as `(v & 2)` / `(v & 1)`.
+  The cache loader restored it as `TRUE` (= 1), which sets the **IsExternal**
+  bit instead. A default block label loaded through the cache and re-saved
+  therefore came back as an *external* (Kelvin outer-region) label with the
+  default flag lost -- silently, with no error. femmqt's independent
+  implementation models the same flag as a bool and encodes it correctly,
+  so only the classic side was affected.
+- `mySideLength` (arc column 7) is a derived rendering value that the text
+  format does not actually round-trip: the writer emits it but the reader
+  parses only seven arc fields and then sets `mySideLength = MaxSideLength`.
+  Restoring the stored value verbatim made a cache load disagree with a text
+  load of the same file, so arcs rendered at a different segment count. The
+  cache loader now normalises the same way the text path does.
+
+Because of the second point the `.fem` idempotence test compares the SECOND
+and THIRD saves rather than the first and second: a freshly drawn arc
+carries the constructor default of 1, so the first save records 1 and every
+save after a load records `MaxSideLength`. A companion test pins that as the
+only non-idempotent column, so it cannot grow quietly.
+
+Output: `results/file_format_roundtrip/` -- the fixture models plus
+`file_format_roundtrip.txt`.
 ## boundary_conditions_test.py
 
 Boundary conditions are the part of a FEM model most likely to be silently
