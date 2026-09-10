@@ -1,0 +1,14 @@
+Corrupt / truncated input handling
+==========================================================================
+    sources: fem=solve_src.fem, ans=solve_src.ans, femx=solve_src.femx, ansx=solve_src.ansx, dxf=roundtrip.dxf
+    belasolv  empty=2  trunc_10pct=2  trunc_50pct=2  trunc_90pct=2  garbage_appended=2  garbage_only=2
+    csolv     empty=2  trunc_10pct=2  trunc_50pct=2  trunc_90pct=2  garbage_appended=2  garbage_only=2
+    fkn       empty=2  trunc_10pct=2  trunc_50pct=2  trunc_90pct=2  garbage_appended=2  garbage_only=2
+    hsolv     empty=2  trunc_10pct=2  trunc_50pct=2  trunc_90pct=2  garbage_appended=2  garbage_only=2
+    fkn 2-arg on empty -> exit 2 (non-interactive, as designed)
+    fkn 1-arg on empty -> hung, killed (interactive path; suppressed only when __argc >= 3)
+    femmqt --convert-ansx  empty=1  trunc_10pct=1  trunc_50pct=1  trunc_90pct=1  garbage_appended=0  garbage_only=1
+    femmqt --import-dxf    empty=1  trunc_10pct=1  trunc_50pct=1  trunc_90pct=0  garbage_appended=0  garbage_only=1
+    corrupt .femx -> empty=loaded  trunc_10pct=loaded  trunc_50pct=loaded  trunc_90pct=loaded  garbage_appended=loaded  header_zeroed=loaded  count_inflated=loaded
+    corrupt .ansx -> empty=loaded  trunc_10pct=loaded  trunc_50pct=loaded  trunc_90pct=loaded  garbage_appended=loaded  header_zeroed=loaded  count_inflated=loaded
+    COM opendocument       empty=opened  trunc_10pct=opened  trunc_50pct=opened  trunc_90pct=opened  garbage_appended=opened  garbage_only=opened

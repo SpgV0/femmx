@@ -132,6 +132,18 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   solution.nodes.resize((int)nodeCount);
   for (long i = 0; i < nodeCount; i++) {
     line = file.readLine();
+    // Issue #10: a truncated .ans runs out of lines here, and readLine()
+    // then returns empty forever. Without this check the loop completes
+    // with zeroed nodes, the "element count" line that follows is really
+    // EOF so strtol() yields 0, and the whole read reports SUCCESS with a
+    // structurally impossible mesh -- measured: a 10%-truncated file
+    // converted to a .ansx claiming 9469 nodes and 0 elements, exit code 0.
+    if (line.isEmpty()) {
+      errorMessage = QStringLiteral(
+          "\"%1\" is truncated: it declares %2 mesh nodes but ends after %3.")
+              .arg(path).arg((qlonglong)nodeCount).arg((qlonglong)i);
+      return false;
+    }
     const char* p = line.constData();
     char* next = nullptr;
     MeshSolutionNode& n = solution.nodes[(int)i];
@@ -159,8 +171,24 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   // element referencing it -- same precompute-once rationale as B1/B2.
   // See MeshSolutionElement::bhMaterialIndex.
   QHash<int, int> bhIndexForMaterial;
+  // Issue #10: a solved mesh with nodes but no elements cannot exist. It is
+  // what a file truncated exactly at the element-count line produces, and
+  // it used to be accepted silently.
+  if (nodeCount > 0 && elemCount <= 0) {
+    errorMessage = QStringLiteral(
+        "\"%1\" is truncated or corrupt: it has %2 mesh nodes but no elements.")
+            .arg(path).arg((qlonglong)nodeCount);
+    return false;
+  }
+
   for (long i = 0; i < elemCount; i++) {
     line = file.readLine();
+    if (line.isEmpty()) {
+      errorMessage = QStringLiteral(
+          "\"%1\" is truncated: it declares %2 mesh elements but ends after %3.")
+              .arg(path).arg((qlonglong)elemCount).arg((qlonglong)i);
+      return false;
+    }
     const char* p = line.constData();
     char* next = nullptr;
     MeshSolutionElement& e = solution.elements[(int)i];

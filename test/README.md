@@ -39,6 +39,59 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## corrupt_input_test.py
+
+Nothing in the suite fed bad input to anything. `.fem`, `.ans`, `.femx`,
+`.ansx` and `.dxf` are all parsed by hand-rolled readers in both GUIs and in
+four solver binaries, and a truncated file is the normal outcome of an
+interrupted solve or a half-copied file -- a realistic input, not a fuzzing
+exotic (issue #10). Variants are generated systematically from real valid
+files: empty, truncated at 10/50/90%, garbage appended, garbage only, and
+for the binary caches a zeroed header and an inflated count field.
+
+| Target | Result |
+| --- | --- |
+| `fkn`, `belasolv`, `hsolv`, `csolv` | every variant exits 2, promptly, no crash |
+| `femmqt --convert-ansx` | rejects every truncation with exit 1 |
+| `femmqt --import-dxf` | rejects cleanly, no crash |
+| Corrupt `.femx` / `.ansx` cache | all 7 variants fall back to the text source and load |
+| COM `opendocument` | session stays responsive through every variant |
+
+**THE SOLVERS HAVE A NON-INTERACTIVE MODE AND IT IS NOT OPTIONAL FOR
+AUTOMATION.** `fkn/StdAfx.cpp`:
+
+```cpp
+int MsgBox(CString s) {
+  if (__argc < 3) return AfxMessageBox(s);   // modal, blocks forever
+  else            return IDOK;               // suppressed
+}
+```
+
+So `fkn.exe model` pops a modal dialog and hangs with no user to dismiss it,
+while `fkn.exe model anything` exits with a status code. The GUI passes the
+literal `bLinehook` as that second argument (`femm/FemmeView.cpp`).
+Measured: one-argument invocations on truncated, empty and garbage input all
+sat there until killed at 15s; two-argument invocations of the same files
+all exited 2 promptly. **Any CI or batch script driving a solver directly
+must pass a second argument.** A test pins this, because the cost of not
+knowing it is a build that hangs rather than fails.
+
+**This found a real defect**, now fixed in `femmqt/AnsFileIO.cpp`: a
+truncated `.ans` was read as a SUCCESS. `readAns` returned `true`
+unconditionally, so when truncation cut the node list short, the following
+"element count" line was really EOF, `strtol("")` gave 0, and the reader
+produced a mesh with nodes and no elements. Measured before the fix: a
+10%-truncated file converted to a `.ansx` claiming **9469 nodes and 0
+elements**, exit code **0**. It now detects EOF mid-list and rejects a
+node-bearing mesh with no elements, naming the file and the counts.
+
+One behaviour left as-is and documented rather than changed: FEMM accepts a
+garbage `.fem` over COM without complaint (producing an empty model rather
+than an error). The session stays responsive, which is what is asserted;
+tightening the `.fem` text reader to reject files it currently tolerates is a
+larger change than this ticket.
+
+Output: `results/corrupt_input/`.
 ## material_library_test.py
 
 `MaterialLibraryIO.cpp` / `BHCurve.h` parse the library every nonlinear
