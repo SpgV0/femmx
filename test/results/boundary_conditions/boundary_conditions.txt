@@ -1,0 +1,21 @@
+Boundary-condition cross-checks
+==============================================================================
+    two-wire dipole, probe at 60 mm (separation 4 mm)
+open boundary                  B at probe             ABC= 2.23332e-05  truncated= 2.17378e-05  differ=  2.74 % (tol 5.0)
+open boundary                  B vs dipole form       ABC= 2.23332e-05  analytic= 2.22222e-05  differ=  0.50 % (tol 8.0)
+open boundary (axi)            B on axis              ABC= 0.000311536  analytic= 0.000314159  differ=  0.84 % (tol 3.0)
+open boundary (axi)            B on axis              Kelvin= 0.000307798  analytic= 0.000314159  differ=  2.02 % (tol 3.0)
+open boundary (axi)            ABC vs Kelvin          ABC= 0.000311536  Kelvin= 0.000307798  differ=  1.21 % (tol 3.0)
+antiperiodic                   |B| at y=8 mm          slice=  0.00121606  full=  0.00120613  differ=  0.82 % (tol 10.0)
+antiperiodic                   |B| at y=12 mm         slice= 0.000602026  full= 0.000599529  differ=  0.42 % (tol 10.0)
+antiperiodic                   |B| at y=18 mm         slice= 0.000228903  full= 0.000232494  differ=  1.54 % (tol 10.0)
+periodic                       |B| at y=8 mm          1 pitch=  0.00224865  2 pitches=  0.00224782  differ=  0.04 % (tol 5.0)
+periodic                       |B| at y=12 mm         1 pitch=  0.00198058  2 pitches=  0.00198257  differ=  0.10 % (tol 5.0)
+periodic                       |B| at y=18 mm         1 pitch=   0.0018991  2 pitches=  0.00189964  differ=  0.03 % (tol 5.0)
+anti vs periodic               |B| at y=8 mm          1 bar anti=  0.00121606  2 bars periodic=  0.00121464  differ=  0.12 % (tol 5.0)
+anti vs periodic               |B| at y=12 mm         1 bar anti= 0.000602026  2 bars periodic= 0.000610857  differ=  1.45 % (tol 5.0)
+anti vs periodic               |B| at y=18 mm         1 bar anti= 0.000228903  2 bars periodic= 0.000232089  differ=  1.37 % (tol 5.0)
+    periodic vs antiperiodic slice differ by 45.9, 69.6, 87.9 %
+dirichlet (electrostatics)     value at edge          solved=          25  prescribed=          25  differ=  0.00 % (tol 1.0)
+dirichlet (heat flow)          value at edge          solved=         350  prescribed=         350  differ=  0.00 % (tol 1.0)
+dirichlet (current flow)       value at edge          solved=          12  prescribed=          12  differ=  0.00 % (tol 1.0)

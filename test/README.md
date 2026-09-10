@@ -39,6 +39,50 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## boundary_conditions_test.py
+
+Boundary conditions are the part of a FEM model most likely to be silently
+wrong: the solve converges and produces a plausible-looking field whether
+or not the condition means what the modeller thought, so a test that only
+asserts a number came back cannot tell the difference. Every case here is
+therefore checked by AGREEMENT BETWEEN TWO INDEPENDENT FORMULATIONS of the
+same physical problem (issue #3).
+
+| Family | Cross-check | Observed |
+| --- | --- | --- |
+| Open boundary | `mi_makeABC` vs a truncated domain, and vs the analytic dipole far field | 2.74% / 0.50% |
+| Kelvin transform | `mi_defineouterspace`/`mi_attachouterspace` vs `makeABC`, both vs `mu0*I/(2a)` | 1.21% |
+| Antiperiodic | one-pitch slice vs the middle of a six-bar alternating row | 0.4-1.5% |
+| Periodic | one periodic pitch vs two periodic pitches | 0.03-0.10% |
+| Periodic vs antiperiodic | one ANTIperiodic bar vs two PERIODIC bars of opposite sign | 0.12-1.45% |
+| Dirichlet | prescribed value actually held, in electrostatics / heat / current flow | 0.00% |
+
+Notes on why these particular comparisons:
+
+- **A same-polarity row cannot be checked against a finite multi-bar model**
+  the way an alternating one can. With every bar the same sign there is no
+  cancellation, so the field of the infinite row does not decay and a
+  six-bar model is a genuinely different problem -- measured 10% apart at
+  y=8mm growing to 30% at y=18mm. That is physics, not a solver defect. Two
+  periodic windows of different width over the same infinite structure ARE
+  equivalent, so that is what is compared.
+- **One antiperiodic bar against two periodic bars of opposite sign** is the
+  strongest statement available about the pair: the same infinite row
+  expressed through each condition in turn. It fails if either is wrong,
+  and unlike comparing each against its own full model it cannot be
+  satisfied by both being wrong the same way. A separate test asserts the
+  two conditions do NOT agree on the same one-bar slice (they differ by
+  46-88%), which would catch them being wired to the same behaviour.
+- **The truncated "ground truth" needs an explicit mesh size.** Left to
+  automesh across a large domain the air is far too coarse near a 4mm
+  dipole and the reference model becomes the LESS accurate of the two: it
+  measured 12.9% off the analytic far field where the ABC model was 0.18%.
+  Both models now pin the air mesh, and `belasolv`, which the ticket noted
+  had "no test of any kind", is additionally covered by
+  `analytic_fields_test.py`.
+
+Output: `results/boundary_conditions/` -- the models plus
+`boundary_conditions.txt`, the full cross-check table.
 ## magnetics_analytic_test.py
 
 The magnetics counterpart. `straight_wire_field_test.py` asserts exactly
