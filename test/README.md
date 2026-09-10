@@ -39,6 +39,57 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## femmqt C++ unit tests (ctest)
+
+Everything else in this directory is Python driving `femmx.exe` over COM.
+femmqt is a separate ~40-file Qt application that had **no automated tests
+at all** -- no `enable_testing()`, no `add_test()`, no `Qt6::Test` anywhere
+in the tree. CI compiled it and stopped (issue #11).
+
+It now has a real test target:
+
+- `femmqt` is split into a **`femmqt_core` static library** plus a thin
+  `main.cpp`. Most of the interesting logic (ConstraintSolver, DxfIO, the
+  FileIO classes, MeshBuilder) has no GUI dependency and is directly
+  unit-testable once it is reachable from something other than `main()`.
+- `femmqt/tests/tst_femmqt_core.cpp` is a QTest binary linking that library.
+- `enable_testing()` at the repository root, `add_test(NAME femmqt_core)` in
+  `femmqt/CMakeLists.txt`, and a **ctest step in both CI jobs**.
+
+Run it locally:
+
+```
+./build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -DoNotDeleteBuildFolder
+ctest --test-dir build_win_release64_notriangle -C Release --output-on-failure
+```
+
+`-DoNotDeleteBuildFolder` matters: `build.ps1` deletes the build tree as its
+last act, so without it ctest has nothing to run against. CI passes the same
+flag for the same reason.
+
+Three things that had to be got right, each of which failed first:
+
+- **`enable_testing()` must be at TOP-LEVEL scope in the root file.** The
+  first attempt put it inside `if(BUILD_MANUAL)`, which is off whenever
+  `-DisableLaTeX` is passed -- exactly what CI and `build_femmx.ps1` both do
+  -- so no `CTestTestfile.cmake` was generated and ctest silently found
+  nothing.
+- **`windeployqt` deploys `qwindows.dll` and no other platform plugin.**
+  With `QT_QPA_PLATFORM=offscreen` and a `QTEST_MAIN` (which builds a
+  `QApplication`), the binary could not load a platform at all: it produced
+  no output whatsoever and ctest killed it at its 300s timeout. These tests
+  are GUI-free so they use `QTEST_GUILESS_MAIN`, which needs no platform
+  plugin; the build also now copies `qoffscreen.dll` next to the test binary
+  so the widget tests later tickets add can run headless too.
+- **`Qt6::Test` is an `OPTIONAL_COMPONENT`**, guarded the same graceful way
+  the existing Qt6 lookup is. A Qt-less or Test-less configure skips the
+  target instead of failing the whole build, which is what a `REQUIRED`
+  lookup did to CI once before.
+
+The suite is deliberately small -- its job is to prove the harness works end
+to end. The substantial per-area suites (constraint/dimension layer,
+GeometryScene editing, golden-image rendering, mesh generation,
+post-processing parity) are separate tickets that build on this one.
 ## corrupt_input_test.py
 
 Nothing in the suite fed bad input to anything. `.fem`, `.ans`, `.femx`,

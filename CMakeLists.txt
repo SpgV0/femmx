@@ -48,6 +48,17 @@ option(SKIP_triangle "Skip building triangle" OFF)
 
 set(INSTALL_BIN_DIR  "${CMAKE_SOURCE_DIR}/bin" CACHE PATH "Path where exe will be installed")
 
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-10:
+# enable_testing() must be called at the ROOT, at TOP-LEVEL scope, for ctest
+# to find tests registered by add_test() in any subdirectory (issue #11).
+# Nothing in this tree called it before, so femmqt had nowhere to register a
+# test even if it had had one. Deliberately outside every if() here: the
+# first attempt put it inside if(BUILD_MANUAL), which is off whenever
+# -DisableLaTeX is passed -- exactly what CI and build_femmx.ps1 both do --
+# so no CTestTestfile.cmake was generated at all and ctest silently found
+# nothing to run.
+enable_testing()
+
 if(BUILD_MANUAL)
   add_subdirectory(manual)
 endif()

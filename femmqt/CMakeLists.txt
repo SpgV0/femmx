@@ -31,7 +31,7 @@ list(APPEND CMAKE_PREFIX_PATH "${FEMMQT_QT6_DIR}")
 # not take down femm/fkn/triangle/the installer with it. QUIET + an
 # explicit found-check + early return() achieves that; REQUIRED does not
 # offer a way to make just the package-not-found case non-fatal.
-find_package(Qt6 QUIET COMPONENTS Widgets Svg PrintSupport OPTIONAL_COMPONENTS OpenGLWidgets)
+find_package(Qt6 QUIET COMPONENTS Widgets Svg PrintSupport OPTIONAL_COMPONENTS OpenGLWidgets Test)
 # qt_standard_project_setup() (below) enables AUTOMOC but, confirmed this
 # session, not reliably AUTORCC -- icons.qrc silently never got compiled
 # into a qrc_icons.cpp without this, so IconTheme::themedToolIcon's
@@ -48,8 +48,20 @@ if (NOT Qt6_FOUND)
 endif()
 qt_standard_project_setup()
 
-qt_add_executable(femmqt WIN32
-  main.cpp
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-10:
+# split into a femmqt_core static library plus a thin executable, so the
+# app's own code can be linked into a QTest binary (issue #11). Before
+# this there was no enable_testing(), no add_test() and no Qt6::Test
+# anywhere in the tree -- CI compiled femmqt and stopped. Most of the
+# interesting logic (ConstraintSolver, DxfIO, the FileIO classes,
+# MeshBuilder) has no GUI dependency and is directly unit-testable once
+# it is reachable from something other than main().
+#
+# icons.qrc lives in the LIBRARY rather than the executable: Qt6 emits the
+# resource-initialiser for a qt_add_library target and links it in
+# automatically, so both femmqt.exe and the test binary get the icons
+# without a manual Q_INIT_RESOURCE call in each.
+qt_add_library(femmqt_core STATIC
   MainWindow.h
   MainWindow.cpp
   FemmProblem.h
@@ -143,6 +155,14 @@ qt_add_executable(femmqt WIN32
   icons.qrc
 )
 
+target_include_directories(femmqt_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(femmqt_core PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
+target_link_libraries(femmqt_core PUBLIC Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
+
+qt_add_executable(femmqt WIN32
+  main.cpp
+)
+
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
 # femmqt.rc embeds FEMMX's app icon (femm/res/idr_mainframe.ico, same one
 # script.nsi's installer now uses) as the exe's own Windows icon -- without
@@ -155,7 +175,7 @@ if(WIN32)
 endif()
 
 target_compile_options(femmqt PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
-target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
+target_link_libraries(femmqt PRIVATE femmqt_core)
 
 # Mirrors femm/CMakeLists.txt's identical block: femmqt.exe itself never
 # touches CUDA (it only shells out to fkn.exe/hsolv.exe/belasolv.exe/
@@ -165,7 +185,7 @@ target_link_libraries(femmqt PRIVATE Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 # GPUAccel on for a non-CUDA build would pop up "built without CUDA
 # support" on every single solve (see fkn/spars.cpp), not just the first.
 if(ENABLE_CUDA_SOLVER)
-  target_compile_definitions(femmqt PRIVATE FEMM_CUDA_ENABLED)
+  target_compile_definitions(femmqt_core PUBLIC FEMM_CUDA_ENABLED)
 endif()
 
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -178,9 +198,65 @@ endif()
 # whole target down (matches this file's existing missing-Qt6 tolerance) --
 # FEMMQT_HAVE_OPENGL gates the actual QOpenGLWidget usage in SolutionView.cpp.
 if(TARGET Qt6::OpenGLWidgets)
-  target_link_libraries(femmqt PRIVATE Qt6::OpenGLWidgets)
+  target_link_libraries(femmqt_core PUBLIC Qt6::OpenGLWidgets)
   # TEMP DIAGNOSTIC -- disabled to test a blue-background rendering bug
   # target_compile_definitions(femmqt PRIVATE FEMMQT_HAVE_OPENGL)
+endif()
+
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-10:
+# femmqt's first automated test target (issue #11). Guarded exactly the way
+# the Qt6 lookup above is: Test is an OPTIONAL_COMPONENT, so a Qt kit without
+# it -- or no Qt at all -- skips this quietly instead of failing the whole
+# configure, which is what broke CI when the Qt6 lookup was REQUIRED.
+if(TARGET Qt6::Test)
+  qt_add_executable(femmqt_tests
+    tests/tst_femmqt_core.cpp
+  )
+  target_compile_options(femmqt_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
+  target_link_libraries(femmqt_tests PRIVATE femmqt_core Qt6::Test)
+
+  # Never installed and never packaged: this is a build-tree artefact.
+  set_target_properties(femmqt_tests PROPERTIES
+    WIN32_EXECUTABLE OFF          # console app, so QTest output reaches ctest
+    EXCLUDE_FROM_ALL OFF
+  )
+
+  add_test(NAME femmqt_core COMMAND femmqt_tests)
+  # Offscreen by construction. No test may require a desktop session: the
+  # CI runners are headless, and a widget test on a headless box without
+  # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
+  # variable is actually set, so losing it here fails loudly rather than
+  # silently reintroducing a display dependency.
+  set_tests_properties(femmqt_core PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 300
+  )
+
+  # The test binary needs the Qt runtime beside it for the same reason
+  # femmqt.exe does.
+  if(WIN32 AND FEMMQT_WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET femmqt_tests POST_BUILD
+      COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:femmqt_tests>"
+      COMMENT "Deploying Qt runtime DLLs next to femmqt_tests.exe"
+    )
+    # windeployqt deploys the platform plugin it thinks the app needs, which
+    # on Windows is qwindows.dll and nothing else. A test running under
+    # QT_QPA_PLATFORM=offscreen then cannot load a platform at all: measured,
+    # the binary produced no output and ctest killed it at its 300s timeout.
+    # The current tests use QTEST_GUILESS_MAIN and need no platform, but the
+    # widget tests later tickets add will, so put qoffscreen.dll where they
+    # will look for it.
+    if(EXISTS "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
+      add_custom_command(TARGET femmqt_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll"
+                "$<TARGET_FILE_DIR:femmqt_tests>/platforms/qoffscreen.dll"
+        COMMENT "Deploying the offscreen QPA plugin for headless tests"
+      )
+    endif()
+  endif()
+else()
+  message(STATUS "femmqt: Qt6::Test not available -- skipping the femmqt_tests target")
 endif()
 
 install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")

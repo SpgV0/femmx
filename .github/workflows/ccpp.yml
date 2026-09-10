@@ -171,7 +171,10 @@ jobs:
 
     - name: 'Build FEMM'
       shell: pwsh
-      run: ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit
+      # -DoNotDeleteBuildFolder keeps build_win_release64_notriangle/ around
+      # so the ctest step below has a build tree to run against; build.ps1
+      # otherwise deletes it as its last act (issue #11).
+      run: ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -DoNotDeleteBuildFolder
 
     - name: 'Install LaTeX (MiKTeX) + Ghostscript for the manual PDF'
       shell: pwsh
@@ -243,6 +246,24 @@ jobs:
       with:
         python-version: '3.x'
 
+    - name: 'Run femmqt C++ unit tests (ctest)'
+      shell: pwsh
+      # femmqt's own QTest binary, registered via add_test() in
+      # femmqt/CMakeLists.txt. Skipped rather than failed when the target
+      # was not built: the Qt6 lookup there is deliberately optional, so a
+      # runner without Qt still produces a working femmx.exe (issue #11).
+      run: |
+        $buildDir = "${{ github.workspace }}/build_win_release64_notriangle"
+        if (-Not (Test-Path $buildDir)) {
+          Write-Host 'no build tree -- skipping ctest'
+          exit 0
+        }
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
+        Push-Location $buildDir
+        ctest --test-dir . -C Release --output-on-failure --no-tests=ignore
+        $code = $LASTEXITCODE
+        Pop-Location
+        exit $code
     - name: 'Install Python test dependencies'
       shell: pwsh
       run: python -m pip install -r ${{ github.workspace }}/test/requirements.txt
@@ -306,12 +327,30 @@ jobs:
       shell: pwsh
       run: |
         $extra = "-DENABLE_CUDA_SOLVER=ON `"-DFEMM_CUDA_ROOT=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}`""
-        ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -AdditionalBuildSetup $extra
+        ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -DoNotDeleteBuildFolder -AdditionalBuildSetup $extra
 
     - uses: actions/setup-python@v5
       with:
         python-version: '3.x'
 
+    - name: 'Run femmqt C++ unit tests (ctest)'
+      shell: pwsh
+      # femmqt's own QTest binary, registered via add_test() in
+      # femmqt/CMakeLists.txt. Skipped rather than failed when the target
+      # was not built: the Qt6 lookup there is deliberately optional, so a
+      # runner without Qt still produces a working femmx.exe (issue #11).
+      run: |
+        $buildDir = "${{ github.workspace }}/build_win_release64_notriangle"
+        if (-Not (Test-Path $buildDir)) {
+          Write-Host 'no build tree -- skipping ctest'
+          exit 0
+        }
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
+        Push-Location $buildDir
+        ctest --test-dir . -C Release --output-on-failure --no-tests=ignore
+        $code = $LASTEXITCODE
+        Pop-Location
+        exit $code
     - name: 'Install Python test dependencies'
       shell: pwsh
       run: python -m pip install -r ${{ github.workspace }}/test/requirements.txt
