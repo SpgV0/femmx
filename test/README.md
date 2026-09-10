@@ -39,6 +39,56 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## dxf_roundtrip_test.py
+
+DXF is how real geometry gets into FEMM from CAD, and there are two
+independent implementations in this tree: classic FEMM's `MOVECOPY.CPP`
+`ReadDXF`/`WriteDXF`, and `femmqt/DxfIO.cpp`, a direct port of it. Neither
+had a single test -- the Lua sweep writes a `.dxf` but never reads one back
+or looks at what it wrote (issue #8).
+
+Fixtures live in `test/fixtures/dxf/`, hand-written and committed, one
+entity type per file so a failure names the entity:
+
+| Check | Result |
+| --- | --- |
+| Export -> import round-trip (classic) | 6 nodes / 4 segments / 1 arc preserved |
+| LINE, ARC, CIRCLE, LWPOLYLINE, POLYLINE import | all five |
+| Arc geometry | endpoints on r=10, included angle 90.000 deg |
+| CIRCLE becomes closed arcs | 2 arcs totalling 360.000 deg |
+| Layers become groups | 3 declared layers -> groups [0, 1, 2] |
+| Both implementations agree | identical edges on 5 fixtures |
+| Merge tolerance | femmqt at its suggested tolerance matches classic exactly |
+| Malformed input | both reject cleanly, no crash |
+
+**Cross-implementation comparison needed a way to reach femmqt's parser**
+without driving the GUI -- classic's is scriptable via `mi_readdxf`,
+femmqt's was not. This ships with a `femmqt.exe --import-dxf <in.dxf>
+<out.fem> [tolerance]` CLI mode mirroring the existing `--convert-ansx`.
+
+Three things worth knowing, all learned the hard way while writing this:
+
+- **`mi_readdxf` raises an advisory, not an error**, for any endpoint not
+  shared with another entity ("There are lines or arcs with Orphaned end
+  points"). The import succeeds regardless, but pyfemm turns every FEMM
+  message into an exception, so an open shape looks like a failure. The
+  helper here tolerates that one message and re-raises anything else.
+- **A layer only becomes a group if it is declared in the TABLES section.**
+  Classic builds its layer list from `LAYER` table entries and uses each
+  layer's index as the group number; an entity's group-8 attribute alone
+  finds no match and everything silently lands in group 0.
+- **Node counts are not comparable across the two importers unless the
+  merge tolerance matches.** Classic merges coincident endpoints during
+  import; femmqt takes the tolerance as a parameter. The agreement tests
+  compare edges by coordinate, and a separate test pins the merge itself.
+
+**Neither implementation reads `$INSUNITS`.** A 1-unit line from a DXF
+declaring inches arrives 1 mm long in a millimetre problem, not 25.4. That
+is asserted as CURRENT behaviour rather than left undocumented, so
+implementing unit conversion fails this test and makes the change a
+deliberate one.
+
+Output: `results/dxf_roundtrip/`.
 ## file_format_roundtrip_test.py
 
 `FILE_FORMATS.md` documents four formats and the relationships between

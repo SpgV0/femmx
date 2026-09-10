@@ -7,6 +7,8 @@
 #include "AppTheme.h"
 #include "ConstraintSolver.h"
 #include "FemmProblem.h"
+#include "DxfIO.h"
+#include "FemmFileIO.h"
 #include "FemmProblemEdit.h"
 #include "MainWindow.h"
 #include "MeshSolution.h"
@@ -25,6 +27,50 @@ namespace {
 // needed -- though the executable is still WIN32-subsystem, so stdio
 // output is only visible when launched from a console that keeps it
 // attached.
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-10:
+// `femmqt.exe --import-dxf <in.dxf> <out.fem> [tolerance]` parses a DXF
+// through femmqt's own DxfIO and writes the resulting geometry as a .fem.
+// There are two independent DXF implementations in this tree -- classic
+// FEMM's MOVECOPY.CPP ReadDXF and femmqt's port of it -- and nothing could
+// compare them, because the classic one is reachable from Lua
+// (mi_readdxf) while this one was only reachable by driving the GUI
+// (issue #8). Mirrors --convert-ansx: stderr for messages, exit code for
+// success. Omitting the tolerance uses the same suggested value classic
+// FEMM's import dialog auto-fills.
+int importDxfCli(const QString& dxfPath, const QString& femPath,
+                 const QString& toleranceArg)
+{
+  FemmProblem problem;
+  double suggestedTolerance = 0.0;
+  QString error;
+  if (!DxfIO::parseDxf(dxfPath, problem, suggestedTolerance, error)) {
+    fprintf(stderr, "%s\n", qPrintable(error));
+    return 1;
+  }
+
+  double tolerance = suggestedTolerance;
+  if (!toleranceArg.isEmpty()) {
+    bool ok = false;
+    const double parsed = toleranceArg.toDouble(&ok);
+    if (!ok || parsed < 0.0) {
+      fprintf(stderr, "invalid tolerance: %s\n", qPrintable(toleranceArg));
+      return 1;
+    }
+    tolerance = parsed;
+  }
+  if (tolerance > 0.0)
+    DxfIO::mergeCoincidentNodes(problem, tolerance);
+
+  if (!FemmFileIO::writeFem(femPath, problem, error)) {
+    fprintf(stderr, "%s\n", qPrintable(error));
+    return 1;
+  }
+  fprintf(stderr, "Wrote %s (%d nodes, %d segments, %d arcs, tolerance %g)\n",
+          qPrintable(femPath), (int)problem.nodes.size(),
+          (int)problem.segments.size(), (int)problem.arcSegments.size(),
+          tolerance);
+  return 0;
+}
 int convertAnsxCli(const QString& ansPath)
 {
   FemmProblem problem;
@@ -625,6 +671,10 @@ int main(int argc, char* argv[])
 
   if (args.size() >= 3 && args.at(1) == "--convert-ansx")
     return convertAnsxCli(args.at(2));
+
+  if (args.size() >= 4 && args.at(1) == "--import-dxf")
+    return importDxfCli(args.at(2), args.at(3),
+                        args.size() >= 5 ? args.at(4) : QString());
 
   // `femmqt.exe --render-png <in> <out> [w h]` renders a .fem/.ans
   // offscreen to a PNG. This is what the classic GUI's Lua

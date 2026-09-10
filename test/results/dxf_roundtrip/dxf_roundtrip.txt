@@ -1,0 +1,22 @@
+DXF import/export checks
+======================================================================
+    classic export/import: before 6 nodes, 4 segments, 1 arcs -> after 6 nodes, 4 segments, 1 arcs
+    LINE        line.dxf -> 3 nodes, 2 segments, 0 arcs
+    ARC         arc.dxf -> 2 nodes, 0 segments, 1 arcs
+    CIRCLE      circle.dxf -> 2 nodes, 0 segments, 2 arcs
+    LWPOLYLINE  lwpolyline.dxf -> 4 nodes, 4 segments, 0 arcs
+    POLYLINE    polyline.dxf -> 3 nodes, 2 segments, 0 arcs
+    arc endpoints (10.0, 0.0) (6.123233995736766e-16, 10.0), included angle 90.000 deg
+    circle.dxf -> 2 arc(s) totalling 360.000 deg
+    layers.dxf (3 declared layers) -> 3 segments in groups [0, 1, 2]
+    inches.dxf ($INSUNITS=1) in a millimetre problem -> span 1.000000 (25.4 would mean units were honoured)
+    square.dxf      classic: 4 nodes, 4 segments, 0 arcs        femmqt: 8 nodes, 4 segments, 0 arcs
+    line.dxf        classic: 3 nodes, 2 segments, 0 arcs        femmqt: 4 nodes, 2 segments, 0 arcs
+    arc.dxf         classic: 2 nodes, 0 segments, 1 arcs        femmqt: 2 nodes, 0 segments, 1 arcs
+    circle.dxf      classic: 2 nodes, 0 segments, 2 arcs        femmqt: 2 nodes, 0 segments, 2 arcs
+    lwpolyline.dxf  classic: 4 nodes, 4 segments, 0 arcs        femmqt: 4 nodes, 4 segments, 0 arcs
+    square.dxf merge: classic 4 nodes, 4 segments, 0 arcs | femmqt (suggested tolerance) 4 nodes, 4 segments, 0 arcs
+    classic on truncated.dxf  returned without raising (session still responsive)
+    classic on garbage.dxf    returned without raising (session still responsive)
+    femmqt  on truncated.dxf  exit=1 stderr='No recognized geometry (POINT/LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE) found in the '
+    femmqt  on garbage.dxf    exit=1 stderr='No recognized geometry (POINT/LINE/ARC/CIRCLE/LWPOLYLINE/POLYLINE) found in the '
