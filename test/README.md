@@ -39,6 +39,44 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## material_library_test.py
+
+`MaterialLibraryIO.cpp` / `BHCurve.h` parse the library every nonlinear
+magnetics model depends on, and a regression there silently changes solved
+results rather than failing loudly (issue #9). This runs against the
+libraries the installer actually ships (`bin/*.dat`), parses them with an
+INDEPENDENT Python reader -- a third opinion rather than a reuse of the code
+under test -- and cross-checks a sample against what FEMM itself loads.
+
+| Check | Result |
+| --- | --- |
+| Shipped libraries parse | matlib 246, heatlib 136, statlib 26 entries |
+| `<BHPoints> = N` matches the rows that follow | all 87 nonlinear materials |
+| BH curves monotonic and starting at the origin | all 87 |
+| `mi_getmaterial` reproduces the library | 5 materials, 40 values + every BH point identical |
+| Scripted BH curve round-trips | 7 points in, 7 out |
+| `mi_clearbhpoints` empties it | 7 -> 0 |
+| Lamination / stranded-wire properties survive save/load | LamType, LamFill, d_lam, NStrands, WireD |
+| A deliberately broken library is detected | proves the shipped-library checks are not vacuous |
+
+**This found a real data defect in the shipped libraries** (filed as #34, and
+pinned here rather than silently "fixed"): two entries share a name with a
+different material, and `mi_getmaterial` looks up by name alone.
+
+- `matlib.dat` has two `Supermalloy` -- `mu_r` 529095 with 12 BH points in
+  Nickel Alloys, and `mu_r` 1 with 34 points in Metals Handbook DC
+  Magnetization Curves.
+- `heatlib.dat` has two `Ammonia` -- `k` = 0.546 in Saturated Liquids and
+  `k` = 0.0153 in Gases at 1 atm, a factor of 36 apart.
+
+The GUI browser disambiguates by folder; scripting cannot. Verified against a
+real `femmx.exe`: the first in file order wins, so the other is unreachable
+from a script entirely. A test pins which one that is, so a reordering of the
+library is caught, and any NEW duplicate fails the build. Renaming entries
+upstream ships and users reference by name is a data decision with an owner,
+not something a test should do quietly.
+
+Output: `results/material_library/`.
 ## dxf_roundtrip_test.py
 
 DXF is how real geometry gets into FEMM from CAD, and there are two
