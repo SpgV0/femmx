@@ -265,7 +265,10 @@ TYPES = [
         ip="ci",
         op="co",
         material="Copper",
-        probdef=("millimeters", "planar", 1e-8, 1, 30),
+        # current flow is the only problem type whose probdef takes a
+        # frequency; the 5-argument form silently shifts precision into
+        # depth and minangle into depth (see analytic_fields_test.py).
+        probdef=("millimeters", "planar", 0, 1e-8, 1, 30),
         conductorprop_args=("test_conductor", 0, 0, 1),
         boundprop_args=("test_bound", 0, 0, 0, 0, 0),
         pointprop_args=("test_point", 0, 0),

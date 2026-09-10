@@ -1,0 +1,27 @@
+Analytic correctness checks for belasolv / hsolv / csolv
+======================================================================
+parallel plate               |E| mid-gap            FEM=       20000  analytic=       20000 V/m     err=  0.00 %
+parallel plate               V at y=1.25 mm         FEM=          25  analytic=          25 V       err=  0.00 %
+parallel plate               V at y=2.50 mm         FEM=          50  analytic=          50 V       err=  0.00 %
+parallel plate               V at y=3.75 mm         FEM=          75  analytic=          75 V       err=  0.00 %
+parallel plate               C from energy          FEM= 3.54168e-14  analytic= 3.54168e-14 F       err=  0.00 %
+coax (axi)                   V at r=3.0 mm          FEM=     37.4078  analytic=     37.4035 V       err=  0.01 %
+coax (axi)                   V at r=5.0 mm          FEM=      21.537  analytic=     21.5338 V       err=  0.01 %
+coax (axi)                   V at r=8.0 mm          FEM=     6.93311  analytic=     6.93234 V       err=  0.01 %
+coax (axi)                   |E| at r=5.0 mm        FEM=     6221.07  analytic=     6213.35 V/m     err=  0.12 %
+1-D slab                     T at x=2.50 mm         FEM=         375  analytic=         375 K       err=  0.00 %
+1-D slab                     T at x=5.00 mm         FEM=         350  analytic=         350 K       err=  0.00 %
+1-D slab                     T at x=7.50 mm         FEM=         325  analytic=         325 K       err=  0.00 %
+1-D slab                     |F| mid-slab           FEM=       50000  analytic=       50000 W/m^2   err=  0.00 %
+cyl shell (axi)              T at r=3.0 mm          FEM=     449.631  analytic=     449.614 K       err=  0.00 %
+cyl shell (axi)              T at r=5.0 mm          FEM=     386.148  analytic=     386.135 K       err=  0.00 %
+cyl shell (axi)              T at r=8.0 mm          FEM=     327.732  analytic=     327.729 K       err=  0.00 %
+cyl shell (axi)              |F| at r=5.0 mm        FEM=     74652.8  analytic=     74560.2 W/m^2   err=  0.12 %
+convection wall              |F| mid-wall           FEM=       18750  analytic=       18750 W/m^2   err=  0.00 %
+convection wall              T at outer face        FEM=     375.075  analytic=         375 K       err=  0.02 %
+current bar                  V at x=3.00 mm         FEM=        3.75  analytic=        3.75 V       err=  0.00 %
+current bar                  V at x=6.00 mm         FEM=         2.5  analytic=         2.5 V       err=  0.00 %
+current bar                  V at x=9.00 mm         FEM=        1.25  analytic=        1.25 V       err=  0.00 %
+current bar                  |J| mid-bar            FEM= 4.16667e+08  analytic= 4.16667e+08 A/m^2   err=  0.00 %
+current bar                  R from power           FEM=      0.0015  analytic=      0.0015 ohm     err=  0.00 %
+current bar                  I from power           FEM=     3333.33  analytic=     3333.33 A       err=  0.00 %

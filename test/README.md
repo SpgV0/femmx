@@ -39,6 +39,53 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## analytic_fields_test.py
+
+The counterpart to `straight_wire_field_test.py` for the other three
+solvers. Until it existed, the straight-wire test was the only one in the
+suite that checked a NUMBER against physics, and it covers magnetostatics
+only -- `belasolv`, `hsolv` and `csolv` were exercised solely by the Lua
+command sweep, which asserts that commands RUN, not that their answers are
+right. A sign error or a unit-scaling regression in any of the three would
+have shipped green (issue #1).
+
+Each case is built from Python, solved, probed, and compared against a
+closed form within 2%:
+
+| Case | Closed form |
+| --- | --- |
+| Electrostatics, parallel plate | `E = V0/d`; `C = eps0*eps_r*A/d`, cross-checked against `2*W/V0^2` from the stored-energy integral |
+| Electrostatics, coaxial (axisymmetric) | `V(r) = V0*ln(b/r)/ln(b/a)`; `E_r = V0/(r*ln(b/a))` |
+| Heat flow, 1-D slab | linear `T(x)`; `q = k*dT/L` |
+| Heat flow, cylindrical shell (axisymmetric) | `T(r) = Tb + (Ta-Tb)*ln(b/r)/ln(b/a)`; `q_r = k*(Ta-Tb)/(r*ln(b/a))` |
+| Heat flow, convection boundary | `q = (Thot-Tinf)/(L/k + 1/h)`; `Tsurface = Tinf + q/h` |
+| Current flow, rectangular bar | `R = L/(sigma*W*depth)`; `I = V/R`, cross-checked against `V^2/P` from the real-power integral |
+
+The geometries are chosen so the closed form is EXACT for the modelled
+region rather than a large-aspect-ratio approximation -- Neumann side walls
+make the fringing-free uniform field exact for the parallel plate, and
+`dV/dz = 0` already satisfies the natural boundary condition on the flat
+ends of the axisymmetric cases, so there are no end effects. That is what
+makes a 2% tolerance meaningful. Worst observed error is 0.12%; most cases
+agree to the printed precision.
+
+Two API traps this test flushed out, both of which silently produce a
+plausible-looking wrong answer rather than an error:
+
+- **Only current flow takes a frequency argument.**
+  `ei_probdef`/`hi_probdef` are `(units, type, precision, depth, minangle)`
+  but `ci_probdef` is `(units, type, frequency, precision, depth,
+  minangle)`. Calling the 5-argument form shifts every value along, so a
+  2mm-deep bar gets solved 30mm deep with the minangle as its depth. The
+  Lua command sweep had the same bug and is fixed too.
+- **`belasolv` and `csolv` return complex phasors** even at DC, because
+  both support frequency-domain analysis. `eo_blockintegral` returns
+  `[real, imaginary]` rather than a scalar. The helper here asserts the
+  imaginary part is negligible instead of discarding it, since a non-zero
+  one would mean the solve was not actually static.
+
+Output: `results/analytic_fields/` -- the four models plus
+`analytic_fields.txt`, a FEM-vs-closed-form comparison table.
 ## copy_redraw_benchmark_test.py
 
 FEMM's magnetics editor redraws the entire drawing (every node, segment,
