@@ -39,6 +39,50 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## magnetics_analytic_test.py
+
+The magnetics counterpart. `straight_wire_field_test.py` asserts exactly
+one number -- |B| near an infinite straight wire, planar, DC, no materials,
+no circuits -- which left the parts of the magnetics path this fork
+actually touches unverified numerically (issue #2).
+
+| Case | Closed form | Observed error |
+| --- | --- | --- |
+| Circular loop, on axis (axisymmetric) | `B = mu0*I/(2a)` | 0.61% |
+| Same loop, far field on axis | dipole `mu0*I*a^2/(2*(a^2+z^2)^1.5)` | 0.42% |
+| Coax, external inductance | `L = mu0/(2*pi)*ln(b/a)` from the field-energy integral | 0.13% |
+| Coax, field between conductors | `B = mu0*I/(2*pi*r)` at three radii | 0.13% |
+| Solenoid, on-axis centre (two L/D ratios) | `B = mu0*N*I/sqrt(L^2+4R^2)` | 0.33% / 0.68% |
+| Two parallel wires, Lorentz force | `F/L = mu0*I1*I2/(2*pi*d)` | 0.67% |
+| Two parallel wires, weighted stress tensor | same, via a different integral | 0.63% |
+| Skin effect at 100 kHz | `delta = sqrt(2/(omega*mu*sigma))`, 1/e decay | 7.6% |
+
+Three of these are worth calling out:
+
+- **The axisymmetric code path had no numeric check at all** before this.
+  Both loop cases exercise `problemtype("axi")` end to end.
+- **The two force routes are cross-checked against each other**, not just
+  against the closed form: block integral 11 (steady-state Lorentz) and 18
+  (steady-state weighted stress tensor) on the same block agree to 0.04%.
+  Two parallel wires are used rather than an iron air gap on purpose -- a
+  gap force can only be compared against `B^2*A/(2*mu0)` after accounting
+  for fringing and gap meshing, so it would test the discretisation as much
+  as the force integral, whereas two wires in air have an exact answer.
+- **BH-curve saturation** is asserted on the shape of the response rather
+  than a single number, since the curve is library data and not a formula.
+  A closed planar picture-frame core (no gap, no free ends, so Amperes law
+  around the mean path sets `H = N*I/l` with no demagnetising factor to
+  estimate) is driven from 1 to 6000 ampere-turns: `mu_r` collapses from
+  13047 to 103 while B rises to 1.92 T and stays physically bounded, and
+  FEMM's own reported `Mu1` is checked against the `B/(mu0*H)` derived from
+  the same point. This is the check that catches BH-interpolation
+  regressions of the kind v2.1.2 shipped, where `mu_r` was effectively 1
+  regardless of the curve. Note an axisymmetric model cannot be used here:
+  a toroidal winding threads the core around its minor cross-section, which
+  is not a figure of revolution.
+
+Output: `results/magnetics_analytic/` -- nine models plus
+`magnetics_analytic.txt`, a FEM-vs-closed-form comparison table.
 ## analytic_fields_test.py
 
 The counterpart to `straight_wire_field_test.py` for the other three

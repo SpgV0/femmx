@@ -1,0 +1,21 @@
+Analytic correctness checks for the magnetics solver (fkn)
+==============================================================================
+axi loop                   B on axis                FEM=  0.00031223  analytic= 0.000314159 T       err=  0.61 % (tol 2.0)
+axi loop                   B on axis z=90mm         FEM= 3.19351e-06  analytic= 3.20709e-06 T       err=  0.42 % (tol 5.0)
+coax                       L_ext from energy        FEM= 3.21465e-08  analytic= 3.21888e-08 H       err=  0.13 % (tol 3.0)
+coax                       B at r=2.0 mm            FEM=  0.00199778  analytic=       0.002 T       err=  0.11 % (tol 3.0)
+coax                       B at r=3.0 mm            FEM=  0.00133157  analytic=  0.00133333 T       err=  0.13 % (tol 3.0)
+coax                       B at r=4.0 mm            FEM= 0.000999071  analytic=       0.001 T       err=  0.09 % (tol 3.0)
+solenoid L=60mm            B on axis, centre        FEM=  0.00791287  analytic=  0.00788654 T       err=  0.33 % (tol 3.0)
+solenoid L=20mm            B on axis, centre        FEM=   0.0170011  analytic=    0.017118 T       err=  0.68 % (tol 3.0)
+two wires                  F/L Lorentz              FEM=   0.0251686  analytic=       0.025 N/m     err=  0.67 % (tol 5.0)
+two wires                  F/L WST                  FEM=   0.0251579  analytic=       0.025 N/m     err=  0.63 % (tol 5.0)
+    Lorentz vs WST on the same block differ by 0.04 %
+    |B| at the midpoint = 1.967e-05 T, one wire alone would give 1.000e-03 T
+    low  drive   0.005 A (     1 A-turns): B= 0.0897 T  H=       5.5 A/m  mu_r=  13047.4 (FEMM reports 13047.4)
+    high drive  30.000 A (  6000 A-turns): B= 1.9184 T  H=   14813.4 A/m  mu_r=    103.1 (FEMM reports 103.1)
+    mean path = 0.200 m, so H_mean at high drive should be ~30000 A/m
+    f = 100000 Hz -> skin depth = 0.2090 mm (conductor radius 5.0 mm, r/delta = 23.9)
+    |J| surface=0.2064  1 delta in=0.08173  centre=1.45e-10 A/m^2
+skin effect                |J| ratio at 1 delta     FEM=    0.395907  analytic=    0.367879 -       err=  7.62 % (tol 25.0)
+    R_ac = 0.0026824 ohm, R_dc = 0.000219524 ohm, ratio = 12.22
