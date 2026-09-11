@@ -39,6 +39,54 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## mesh_generation_test.py
+
+Triangle drives every solved result downstream, and nothing asserted it
+produces a usable mesh. A mesher or parameter change that quietly halves the
+element count, or emits a sliver, would change every number this suite checks
+elsewhere without failing anything (issue #15).
+
+| Check | Result |
+| --- | --- |
+| Counts stay in a 25% band of measured references | 24/30, 84/135, 307/548 |
+| No zero-area or inverted elements | 0 and 0 of 212 |
+| Minimum angle honoured | 30 deg requested, worst 33.39, 0 below |
+| Every mesh node referenced by an element | 123 of 123, 0 orphaned |
+| Per-block mesh size controls density, monotonically | 16 -> 87 -> 356 elements |
+| Crossing segments partition into real regions | 4 quadrants, 4 distinct labels |
+| Triangle build variant | x86 (CI always passes `-ForceTriangle32bit`) |
+
+**Where the mesh is read from:** `mi_createmesh()` returns an element count
+but leaves no `.node`/`.ele` behind -- the solver consumes and deletes them.
+The solved `.ans` carries the whole mesh (node coordinates then element
+connectivity), so that is what is parsed, with the advantage of being the
+mesh the solver actually used rather than one regenerated afterwards.
+
+Reference counts are a **tolerance band, not exact numbers**. Triangle's
+output depends on its own refinement heuristics and floating-point detail; a
+band makes a real change visible while tolerating wobble that would otherwise
+flake.
+
+Two things worth knowing, both of which produced a wrong-looking result
+first:
+
+- **`mi_addsegment` connects the nearest EXISTING nodes** to the coordinates
+  given -- it does not create them. The quadrant model's two dividing
+  segments initially snapped to the corners and collapsed into a single
+  diagonal, taking two of the four block labels with them, which looked
+  exactly like a mesher failing to partition the region.
+- **The 4th column of an `.ans` element row is the block-label index**
+  (`meshele[i].lbl`, `fkn/prob1big.cpp`), not the material index. That is
+  what makes the quadrant partition assertion meaningful.
+
+**Not covered:** a direct 32-bit vs 64-bit Triangle comparison. The tree
+carries both `triangle/` and `triangle64/`, but a given build produces one
+`triangle.exe`, so the two cannot be run side by side in this layout. The
+test records which variant was actually exercised instead of pretending to a
+comparison it cannot make. Comparing femmqt's `MeshBuilder` against the MFC
+editor's mesh would likewise need a femmqt meshing CLI.
+
+Output: `results/mesh_generation/`.
 ## render_golden_test.py
 
 `femmqt --render-png` renders geometry and solutions offscreen with no

@@ -1,0 +1,11 @@
+Mesh generation checks
+======================================================================
+    coarse  mesh_size=5.00  ->    24 nodes,    30 elements (reference 24 / 30)
+    fine    mesh_size=1.25  ->   307 nodes,   548 elements (reference 307 / 548)
+    medium  mesh_size=2.50  ->    84 nodes,   135 elements (reference 84 / 135)
+    quality: 212 elements, smallest |area| 1.076e+00, 0 zero-area, 0 inverted
+    min angle: requested 30 deg, worst 33.39 deg, 0/212 elements below (0.00%)
+    referencing: 123 nodes, 123 referenced, 0 orphaned
+    density control: size=6.0 -> 16 elems  size=3.0 -> 87 elems  size=1.5 -> 356 elems
+    quadrants: 210 elements across 4 distinct block labels [0, 1, 2, 3]
+    triangle.exe is a x86 build (102912 bytes)
