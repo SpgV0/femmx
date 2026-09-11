@@ -1,0 +1,12 @@
+COM automation checks
+======================================================================
+    registration: HKCU="C:\Users\spgry\Desktop\Workspace\Git\femmx\bin\plain\femmx.exe" | HKLM=(none)
+    register script run twice: exit codes [0, 0], path "C:\Users\spgry\Desktop\Workspace\Git\femmx\bin\plain\femmx.exe" -> "C:\Users\spgry\Desktop\Workspace\Git\femmx\bin\plain\femmx.exe"
+    teardown: started 1 process(es), 0 still alive after closefemm()
+    a new session after an abandoned one: works
+    unknown Lua command -> raised: error: attempt to call global `this_command_does_not_exist' (a nil val
+    mi_probdef with a bogus unit -> raised: error: Unknown length unit furlongs
+stack traceback:
+   1:  function `
+    headless solve: 28 nodes in 0.3s (no dialog blocked it)
+    -lua-var value round-trip: sent 'MixedCase_VALUE_123', script saw 'MixedCase_VALUE_123'

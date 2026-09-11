@@ -74,6 +74,19 @@ test/results/**/*.ele
 test/results/**/*.node
 test/results/**/*.pbc
 test/results/**/*.poly
+# Artifacts of the coverage work of 2026-09: rendered PNGs, probe CSVs,
+# generated Lua, deliberately-corrupted inputs and .femx caches. Same rule
+# as above -- each is reproduced by re-running its .py, so only the report
+# stays in the tree.
+test/results/**/*.png
+test/results/**/*.csv
+test/results/**/*.lua
+test/results/**/*.dat
+test/results/**/*.femx
+test/results/**/*.ansx
+test/results/**/*.bak
+test/results/**/*.stale
+test/results/**/luavar_out.txt
 test/results/**/junit.xml
 __pycache__/
 .pytest_cache/
