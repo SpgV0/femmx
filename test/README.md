@@ -39,6 +39,54 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## solver_regression_test.py
+
+Two gaps (issue #17). The `*_gpu_solver_test.py` modules compare CPU against
+GPU **within a single run**, and the analytic tests check one number each --
+so a change shifting every result by 0.5% (preconditioner, convergence
+tolerance, matrix assembly ordering) passed everything in the suite. And the
+`GPUAccel` fallback, which runs on every CI machine and most users'
+machines, was never asserted to be *taken* rather than failing.
+
+| Check | Result |
+| --- | --- |
+| Drift vs stored references (linear, nonlinear, harmonic) | 0.000e+00 |
+| Determinism: same model solved twice | 8 quantities, bit-identical |
+| `GPUAccel=1` on a CPU-only build | solve completes, result identical to CPU |
+| Fallback diagnostics present in `fkn.exe` | both messages |
+| Larger stress model (marked `slow`) | 11467 nodes, 0.3s, physical `\|B\|` |
+
+References live in `solver_references.json` and are regenerated
+deliberately:
+
+```
+pytest test/solver_regression_test.py --update-references
+pytest test/solver_regression_test.py -m "not slow"        # fast lane
+```
+
+Three constraints that shaped how this is written:
+
+- **The solver cannot be invoked by hand.** Running `fkn.exe <base>
+  bLinehook` directly would let its stderr be captured, but FEMM cleans up
+  the `.node`/`.ele` files, so a hand-run solver exits 2 ("problem loading
+  mesh") -- and `mi_createmesh` does not leave them behind either. The
+  fallback is therefore driven through the normal analyze path, which costs
+  the "falling back to CPU" diagnostic but still proves the part that
+  matters: the solve succeeds and returns the CPU answer.
+- **A companion test pins that the fallback is really the path taken.** The
+  comparison above would pass trivially on a CUDA build with a working GPU,
+  since there would be no fallback to take. Asserting `fkn.exe` carries the
+  "falling back to CPU" string is a cheap way to know which situation the
+  suite is in, and it would also catch that branch being removed outright.
+- **No iteration-count guard is possible.** The ticket asks for one so a
+  preconditioner regression reads as "converged in 40x the iterations"
+  rather than a slower green run. FEMM exposes an iteration count nowhere --
+  not through Lua, not in the `.ans`, not on the solver's stderr. Wall time
+  is the only proxy and a poor one, so the ceiling is deliberately generous
+  (60s for a 0.3s solve): it catches an order-of-magnitude regression, and
+  the test says so rather than pretending to be a performance gate.
+
+Output: `results/solver_regression/`.
 ## postprocess_parity_test.py
 
 femmqt carries a second, independent implementation of numbers users make

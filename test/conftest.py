@@ -35,6 +35,12 @@ def pytest_addoption(parser):
         default=False,
         help="rewrite render_golden_test.py's reference PNGs from this run",
     )
+    parser.addoption(
+        "--update-references",
+        action="store_true",
+        default=False,
+        help="rewrite solver_regression_test.py's stored solver results",
+    )
 
 def _femm_available():
     if femm is None:
@@ -57,6 +63,15 @@ def _femm_available():
         "register it (see scripts/register_femm_com.ps1)."
     )
 
+
+def pytest_configure(config):
+    """Register the markers this suite uses.
+
+    "slow" lets CI run a fast lane with -m "not slow" while a full run
+    still exercises the larger stress models.
+    """
+    config.addinivalue_line(
+        "markers", "slow: a long-running case, excluded from the fast lane")
 
 _AVAILABLE, _REASON = _femm_available()
 
