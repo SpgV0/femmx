@@ -1,0 +1,11 @@
+Installer smoke test
+======================================================================
+    installed FEMMX_v2.2.1_installer.exe -> C:\femmx_installer_smoke (exit 0)
+    layout: 15 of 15 required files present
+    dependencies: 8 executables checked, 0 with unresolved imports
+    femmqt: platform plugin present, Qt6Core present
+    after install, LocalServer32 = "C:\femmx_installer_smoke\bin\femmx.exe"
+    installed-copy solve: stored energy = 0.002396374853090692
+    matlib.dat: 155694 bytes, 246 block names
+    install-over-install: exit 0, 0 files missing after
+    uninstall: exit 0, 0 files left, dir removed: True, COM keys left: no

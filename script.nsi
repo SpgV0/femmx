@@ -147,6 +147,22 @@ Function .onInit
     ReadRegStr $0 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString"
     IfErrors done
 
+    ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+    ; NSIS runs .onInit for a /S install too, and a MessageBox there has
+    ; nobody to answer it -- so `installer.exe /S` used to hang FOREVER on
+    ; any machine that already had FEMMX installed, with the wizard window
+    ; created but never shown. Measured while writing the installer smoke
+    ; test (issue #21): the process sat at 0.1s of CPU with a "FEMMX Setup"
+    ; main window and no visible top-level window, until killed. That made
+    ; unattended upgrades impossible -- for CI, for a deployment script,
+    ; for anyone at all -- and it failed by blocking rather than by saying
+    ; anything, which is the same shape as the modal-dialog hangs in
+    ; #10/#14 and in savebitmap.
+    ;
+    ; In silent mode the answer is not in doubt: the caller asked for an
+    ; unattended install, so take the upgrade path without asking.
+    IfSilent do_uninstall
+
     ReadRegStr $1 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "DisplayVersion"
     MessageBox MB_YESNO|MB_ICONQUESTION \
         "${PROJECT_NAME} $1 is already installed.$\n$\nUninstall it and continue installing this version?" \
@@ -289,11 +305,31 @@ Section
 
     # register the femm.ActiveFEMM COM automation class (see the
     # FEMM_COM_CLSID comment above) -- HKCU only, no admin rights needed
+    ;
+    ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+    ; SetRegView 64 added. makensis builds a 32-BIT installer, and on
+    ; 64-bit Windows a 32-bit process writing under HKCU\Software\Classes\
+    ; CLSID is silently redirected into HKCU\Software\Classes\Wow6432Node\
+    ; CLSID. femmx.exe is 64-bit, so this was registering a 64-bit COM
+    ; server in the one place no 64-bit client ever looks: after an
+    ; install, 64-bit Python/pyfemm, Octave and Scilab all got "class not
+    ; registered", and the only users for whom automation worked were
+    ; those who had separately run scripts/register_femm_com.ps1.
+    ;
+    ; Measured directly (issue #21): a silent install put
+    ; "C:\...\bin\femmx.exe" in ...Classes\Wow6432Node\CLSID\{...}\
+    ; LocalServer32 while the 64-bit view kept whatever was there before.
+    ; Note the half-registered state this produces, which is worse than a
+    ; clean failure: the ProgID key (Software\Classes\femm.ActiveFEMM) is
+    ; NOT subject to redirection, so it resolved to the CLSID perfectly
+    ; well while the CLSID itself was invisible.
+    SetRegView 64
     WriteRegStr HKCU "Software\Classes\${FEMM_COM_PROGID}" "" "Femm.ActiveFEMM Object"
     WriteRegStr HKCU "Software\Classes\${FEMM_COM_PROGID}\CLSID" "" "${FEMM_COM_CLSID}"
     WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}" "" "Femm.ActiveFEMM Object"
     WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}\LocalServer32" "" '"$INSTDIR\bin\femmx.exe"'
     WriteRegStr HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}\ProgID" "" "${FEMM_COM_PROGID}"
+    SetRegView lastused
 
     # create the uninstaller and a link to it in the start menu
     WriteUninstaller "$INSTDIR\${PROJECT_UNINSTALL_EXE}"
@@ -326,8 +362,18 @@ FunctionEnd
 # uninstaller section start
 Section "uninstall"
     # unregister the femm.ActiveFEMM COM automation class
+    ; SetRegView 64 for the same reason the install Section sets it: this
+    ; uninstaller is a 32-bit binary, so without it the DeleteRegKey calls
+    ; would go to Wow6432Node and leave the real registration behind
+    ; (issue #21). The Wow6432Node keys are deleted too, so a machine that
+    ; was "installed" by a pre-fix installer gets cleaned up rather than
+    ; keeping a dangling 32-bit-view registration forever.
+    SetRegView 64
     DeleteRegKey HKCU "Software\Classes\${FEMM_COM_PROGID}"
     DeleteRegKey HKCU "Software\Classes\CLSID\${FEMM_COM_CLSID}"
+    DeleteRegKey HKCU "Software\Classes\Wow6432Node\CLSID\${FEMM_COM_CLSID}"
+    DeleteRegKey HKCU "Software\Classes\Wow6432Node\${FEMM_COM_PROGID}"
+    SetRegView lastused
 
     # delete the installed subfolders (bin, mathfemm, mfiles, scifemm)
     RMDir /r "$INSTDIR\bin"
