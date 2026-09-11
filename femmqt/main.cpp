@@ -1,13 +1,16 @@
 #include <QApplication>
+#include <QFile>
 #include <QFileInfo>
+#include <QTextStream>
 
 #include "AnsFileIO.h"
 #include "AnsxFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
 #include "ConstraintSolver.h"
-#include "FemmProblem.h"
+#include "CircuitAnalysis.h"
 #include "DxfIO.h"
+#include "FemmProblem.h"
 #include "FemmFileIO.h"
 #include "FemmProblemEdit.h"
 #include "MainWindow.h"
@@ -71,6 +74,85 @@ int importDxfCli(const QString& dxfPath, const QString& femPath,
           tolerance);
   return 0;
 }
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+// `femmqt.exe --probe-ans <in.ans> <out.csv> [maxElements]` dumps what
+// femmqt's own post-processing computes from a solution -- per-element
+// flux density and centroid, the block areas, and each circuit's current,
+// voltage drop and flux linkage -- as CSV on stdout-equivalent.
+//
+// femmqt has a second, independent implementation of numbers users make
+// engineering decisions with (AnsFileIO's field computation,
+// CircuitAnalysis, the block integrals), and nothing could compare them
+// against the classic post-processor, because classic's are reachable
+// from Lua while femmqt's were only reachable by driving the GUI
+// (issue #16). Mirrors --convert-ansx and --import-dxf: stderr for
+// messages, exit code for success, and a machine-readable artifact for a
+// test to diff.
+int probeAnsCli(const QString& ansPath, const QString& csvPath,
+                int maxElements)
+{
+  FemmProblem problem;
+  MeshSolution solution;
+  QString error;
+  if (!AnsFileIO::readAns(ansPath, problem, solution, error)) {
+    fprintf(stderr, "%s\n", qPrintable(error));
+    return 1;
+  }
+
+  QFile out(csvPath);
+  if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    fprintf(stderr, "--probe-ans: could not write %s\n", qPrintable(csvPath));
+    return 1;
+  }
+  QTextStream ts(&out);
+  ts.setRealNumberNotation(QTextStream::ScientificNotation);
+  ts.setRealNumberPrecision(12);
+
+  ts << "kind,index,a,b,c,d\n";
+  ts << "mesh,0," << solution.nodes.size() << "," << solution.elements.size()
+     << "," << solution.bMagMin << "," << solution.bMagMax << "\n";
+
+  // Per-element centroid and flux density. Sampled rather than dumped in
+  // full: a real mesh has tens of thousands of elements and the test only
+  // needs enough points to catch a systematic difference.
+  const int total = solution.elements.size();
+  const int stride = (maxElements > 0 && total > maxElements)
+      ? (total + maxElements - 1) / maxElements
+      : 1;
+  for (int i = 0; i < total; i += stride) {
+    const MeshSolutionElement& e = solution.elements[i];
+    const double bx = std::hypot(e.B1re, e.B1im);
+    const double by = std::hypot(e.B2re, e.B2im);
+    ts << "element," << i << "," << e.ctrX << "," << e.ctrY << ","
+       << bx << "," << by << "\n";
+  }
+
+  // Circuit properties, femmqt's own CircuitAnalysis.
+  QVector<CircuitAnalysis::BlockCircuitInfo> blockInfo;
+  QString circErr;
+  if (!CircuitAnalysis::readBlockCircuitInfo(ansPath, blockInfo, circErr)) {
+    // Reported rather than silently skipped: a test that finds no circuit
+    // rows needs to know whether that is "this model has none" or "the
+    // read failed".
+    fprintf(stderr, "--probe-ans: no circuit info (%s)\n",
+            qPrintable(circErr));
+  } else {
+    for (int c = 0; c < problem.circuitProps.size(); c++) {
+      CircuitAnalysis::Result r =
+          CircuitAnalysis::compute(problem, solution, blockInfo, c + 1);
+      if (!r.ok)
+        continue;
+      ts << "circuit," << c << "," << r.amps.real() << ","
+         << r.voltsDrop.real() << "," << r.fluxLinkage.real() << ",0\n";
+    }
+  }
+
+  out.close();
+  fprintf(stderr, "Wrote %s (%d nodes, %d elements, every %d-th sampled)\n",
+          qPrintable(csvPath), (int)solution.nodes.size(), total, stride);
+  return 0;
+}
+
 int convertAnsxCli(const QString& ansPath)
 {
   FemmProblem problem;
@@ -138,6 +220,10 @@ int main(int argc, char* argv[])
   if (args.size() >= 4 && args.at(1) == "--import-dxf")
     return importDxfCli(args.at(2), args.at(3),
                         args.size() >= 5 ? args.at(4) : QString());
+
+  if (args.size() >= 4 && args.at(1) == "--probe-ans")
+    return probeAnsCli(args.at(2), args.at(3),
+                       args.size() >= 5 ? args.at(4).toInt() : 200);
 
   // `femmqt.exe --render-png <in> <out> [w h]` renders a .fem/.ans
   // offscreen to a PNG. This is what the classic GUI's Lua

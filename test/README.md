@@ -39,6 +39,51 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## postprocess_parity_test.py
+
+femmqt carries a second, independent implementation of numbers users make
+engineering decisions with -- `AnsFileIO`'s per-element field computation,
+`CircuitAnalysis`, the block integrals -- and nothing checked it against the
+classic post-processor (issue #16). Both sides read the **same** solved
+`.ans`, so any difference is in the post-processing, not the solve.
+
+femmqt's numbers come out through **`femmqt.exe --probe-ans <in.ans>
+<out.csv> [maxElements]`**, added for this: its post-processing was
+previously reachable only by driving the GUI, while classic's is a Lua call
+away.
+
+| Quantity | Agreement |
+| --- | --- |
+| Mesh node / element counts | identical (230 / 417) |
+| `\|B\|` at 138 element centroids | 4.5e-13 worst relative |
+| `B` components (not just magnitude) | 4.6e-13 worst normalised |
+| Circuit amps / volts / flux linkage | every printed digit |
+| Block area vs the geometry it covers | 64 mm2, exact |
+
+**The one real difference is smoothing, and it is documented rather than
+absorbed into a tolerance.** Classic's `mo_getb` DEFAULTS to smoothed: an
+inverse-distance weighted, material-aware average over the elements around
+the probe point (the `GetNodalB` path). femmqt's per-element `B` is the raw
+value implied by the linear `A` over that one triangle. Compared as-is they
+differ by 10-20%, and by exactly 0 vs non-zero at elements whose three nodes
+all sit on a Dirichlet boundary. With `mo_smooth("off")` they agree to
+round-off. A dedicated test measures **both** numbers (4.5e-13 off, 1.000
+on) so the difference is a recorded definition, not a wide band hiding a
+regression.
+
+One femmqt limitation found and recorded: `CircuitAnalysis::compute` handles
+only a solved-voltage **solid** conductor. A multi-turn stranded coil is
+written into the `.ans` as `caseType 1` (a prescribed current density) and
+is declined with "expected a solved-voltage solid conductor". The fixture
+uses `turns = 1` for that reason, and the test asserts rather than skips when
+no circuit result comes back -- a silent skip is the wrong way to discover
+it.
+
+**Not covered:** contour/line integrals along a path, and the XY plot series.
+Both are driven from the solution view's own tool state rather than a
+headless API, so they need a widget-level harness.
+
+Output: `results/postprocess_parity/`.
 ## mesh_generation_test.py
 
 Triangle drives every solved result downstream, and nothing asserted it

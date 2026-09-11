@@ -1,0 +1,8 @@
+femmqt vs classic post-processor parity
+======================================================================
+    mesh: classic 230 nodes / 417 elements, femmqt 230 / 417 (|B| range 0..0.0004644)
+    |B| at 138 element centroids: worst relative difference 4.544e-13 (tolerance 1e-06, 1 skipped as below the noise floor)
+    B components at 138 centroids: worst normalised difference 4.619e-13
+    smoothing: worst |B| difference is 4.544e-13 with mo_smooth(off) and 1.000e+00 with mo_smooth(on), classic's default
+    circuit 'drive': amps 12 vs 12 | volts 8.0819e-05 vs 8.0819e-05 | flux linkage 1.28853e-07 vs 1.28853e-07  (classic vs femmqt)
+    block area: classic integral 6.400000e-05 m^2, summed element areas 64 mm^2 (the 8x8 conductor is 64 mm^2)
