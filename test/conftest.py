@@ -69,17 +69,36 @@ def pytest_configure(config):
 
     "slow" lets CI run a fast lane with -m "not slow" while a full run
     still exercises the larger stress models.
+
+    "static" marks a test that reads the repository and nothing else --
+    no femmx.exe, no COM, no build. Added for issue #20: the bridge
+    wrapper checks are exactly that, and the whole point of them is that
+    they run on any checkout, so they must not be swept up by the
+    session-wide COM skip below.
     """
     config.addinivalue_line(
         "markers", "slow: a long-running case, excluded from the fast lane")
+    config.addinivalue_line(
+        "markers",
+        "static: reads the repository only -- needs no femmx.exe or COM")
 
 _AVAILABLE, _REASON = _femm_available()
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _require_femm():
-    if not _AVAILABLE:
-        pytest.skip(f"femmx.exe COM automation not available: {_REASON}")
+# Function-scoped, not session-scoped: a session fixture's request.node is
+# the Session, which carries no per-test markers, so the "static" check
+# below would never see one. The availability probe itself still runs once
+# -- it is the module-level _AVAILABLE above, not this fixture.
+@pytest.fixture(autouse=True)
+def _require_femm(request):
+    if _AVAILABLE:
+        return
+    # A static test asserts things about the source tree, so "COM is not
+    # registered" is not a reason to skip it -- it is exactly the
+    # environment those tests are meant to be useful in.
+    if request.node.get_closest_marker("static") is not None:
+        return
+    pytest.skip(f"femmx.exe COM automation not available: {_REASON}")
 
 
 @pytest.fixture(autouse=True)

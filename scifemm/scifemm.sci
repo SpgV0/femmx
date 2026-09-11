@@ -267,10 +267,6 @@ callfemm('ci_clearselected()');
 
 endfunction
 
-function ci_cleartkpoints(n)
-callfemm(['ci_cleartkpoints(' , quote(n) , ')' ]);
-
-endfunction
 
 function ci_close()
 callfemm('ci_close()');

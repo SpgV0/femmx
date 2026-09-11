@@ -238,6 +238,7 @@ def _registered_commands():
     return names
 
 
+@pytest.mark.static
 def test_every_fork_added_command_is_actually_registered():
     """The list this file tests against must match the binary."""
     registered = _registered_commands()
@@ -249,6 +250,7 @@ def test_every_fork_added_command_is_actually_registered():
         "them: %r" % missing)
 
 
+@pytest.mark.static
 def test_fork_added_commands_honour_femms_two_spellings_rule():
     """Both spellings, as the manual promises for every command.
 
@@ -343,6 +345,7 @@ def _manual_listed_commands():
     return {n.replace(chr(92), "") for n in names}
 
 
+@pytest.mark.static
 def test_the_manual_lists_every_fork_added_command():
     """A command the manual omits is a command nobody knows exists.
 
@@ -379,6 +382,7 @@ MANUAL_TEX_MAIN = os.path.join(REPO_ROOT, "manual", "manual.tex")
 CHANGELOG = os.path.join(REPO_ROOT, "CHANGELOG.md")
 
 
+@pytest.mark.static
 def test_the_manuals_revision_history_lists_every_release():
     """The Revision History chapter must not fall behind the releases.
 

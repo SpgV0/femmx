@@ -5167,8 +5167,6 @@ CIReadDXF[docname_]:=MLPut["ci_readdxf(" <> Quote[docname] <> ")" ]
 
 CISaveDXF[docname_]:=MLPut["ci_savedxf(" <> Quote[docname] <> ")" ]
 
-CIAddTKPoint[name_,b_,h_]:=MLPut["ci_addtkpoint(" <> QuoteC[name] <>
-        NumC[b] <> Num[h] <> ")" ]
 
 (****** Derived drawing functions ******)
 CIAddNode[p_]:=CIAddNode[p[[1]],p[[2]]]

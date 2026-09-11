@@ -1,0 +1,13 @@
+Scripting bridge wrappers vs registered commands
+======================================================================
+    mathfemm     442 commands, 4 missing (4 tracked: #46)
+    octavefemm   525 commands, 4 missing (4 tracked: #46)
+    scifemm      511 commands, 4 missing (4 tracked: #46)
+    allowlist: 4 entries, 0 now registered
+    mathfemm    covers 438 of 1042 registered commands (42%)
+    octavefemm  covers 521 of 1042 registered commands (50%)
+    scifemm     covers 507 of 1042 registered commands (49%)
+    mathfemm    exposes 1 of 13 FEMMX-specific commands
+    octavefemm  exposes 9 of 13 FEMMX-specific commands
+    scifemm     exposes 1 of 13 FEMMX-specific commands
+    manual checklist present, covers scifemm and mathfemm

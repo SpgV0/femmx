@@ -81,6 +81,7 @@ test/results/**/*.poly
 test/results/**/*.png
 test/results/**/*.csv
 test/results/**/*.lua
+test/results/**/octave_probe.*
 test/results/**/*.dat
 test/results/**/*.femx
 test/results/**/*.ansx

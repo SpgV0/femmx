@@ -7,6 +7,10 @@ FEMMX-specific scripting surface
     canvas after resuming redraw: 2359350 bytes vs 2359350, identical
     fork-added commands registered: 15 of 15
     two-spellings rule: 0 fork-added command(s) without a twin
+    mi: both spellings run, 0 error(s)
+    ei: both spellings run, 0 error(s)
+    hi: both spellings run, 0 error(s)
+    ci: both spellings run, 0 error(s)
     manual: 14 listed, 0 undocumented, 0 listed-but-absent
     revision history: 9 released, 9 in the table, 0 missing
     getgui() with <PreferredGUI> = 1 reports qt: True
