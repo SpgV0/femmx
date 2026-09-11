@@ -21,6 +21,21 @@ except ImportError:
     femm = None
 
 
+def pytest_addoption(parser):
+    """--update-goldens, for render_golden_test.py.
+
+    Regenerating reference images is deliberate, never automatic: an
+    intentional visual change should be an explicit commit containing the
+    new PNGs, reviewable as a picture. Without the flag a missing or
+    differing reference is a failure, which is the point.
+    """
+    parser.addoption(
+        "--update-goldens",
+        action="store_true",
+        default=False,
+        help="rewrite render_golden_test.py's reference PNGs from this run",
+    )
+
 def _femm_available():
     if femm is None:
         return False, "pyfemm is not installed (pip install pyfemm pywin32)"

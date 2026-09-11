@@ -155,6 +155,17 @@ int main(int argc, char* argv[])
       return 1;
     }
 
+    // Issue #14: check the input exists BEFORE constructing a window.
+    // MainWindow::openFile / SolutionWindow::openAnsFile report a missing
+    // or unreadable file through a modal QMessageBox, which in a CLI run
+    // has nobody to dismiss it: measured, `--render-png missing.fem out.png`
+    // sat there until killed rather than failing. A batch render over a
+    // directory with one bad path would hang the whole job.
+    if (!QFileInfo::exists(in)) {
+      fprintf(stderr, "--render-png: no such file: %s\n", qPrintable(in));
+      return 1;
+    }
+
     const QString suffix = QFileInfo(in).suffix();
     const bool isSolution = suffix.compare("ans", Qt::CaseInsensitive) == 0
         || suffix.compare("ansx", Qt::CaseInsensitive) == 0;

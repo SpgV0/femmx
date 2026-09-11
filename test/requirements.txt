@@ -1,3 +1,6 @@
 pytest>=7
 pyfemm
 pywin32; sys_platform == "win32"
+# render_golden_test.py compares --render-png output against committed
+# reference images. Perceptual comparison needs a PNG decoder.
+pillow

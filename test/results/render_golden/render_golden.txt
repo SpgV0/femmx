@@ -1,0 +1,10 @@
+--render-png golden image comparison
+======================================================================
+    geometry               0.0000% of pixels differ, worst channel delta 0 (budget 2.00% / 24)
+    contour                0.0000% of pixels differ, worst channel delta 0 (budget 2.00% / 24)
+    density                0.0000% of pixels differ, worst channel delta 0 (budget 2.00% / 24)
+    crop_density           0.0000% of pixels differ, worst channel delta 0 (budget 2.00% / 24)
+    density vs contour     58.98% of pixels differ between the two modes
+    bad size 0x300        exit=1
+    missing input         exit=1
+    unwritable output     exit=1

@@ -39,6 +39,59 @@ an infinite straight wire (Ampere's law) within 2%.
 
 Output: `results/straight_wire_field/straight_wire_field.{fem,ans}`.
 
+## render_golden_test.py
+
+`femmqt --render-png` renders geometry and solutions offscreen with no
+desktop, which makes it the cheapest way to regression-test the whole render
+pipeline -- and it is the path the classic GUI's `mi_savepng`/`mo_savepng`
+shell out to after `setgui("qt")` (issue #14).
+
+It is demonstrably fragile. `--density` was documented and implemented, but
+nothing in `main()` ever checked the argument, so **every `--density` render
+silently produced a contour plot** for multiple releases, until it was
+noticed by accident while verifying something unrelated. A golden-image test
+would have caught it on day one.
+
+| Case | Result |
+| --- | --- |
+| geometry (`.fem`) | 0.0000% of pixels differ |
+| contour (`.ans`) | 0.0000% |
+| density (`--density`) | 0.0000% |
+| scene-space crop + density | 0.0000% |
+| density vs contour (mode guard) | 58.98% differ, as they must |
+| bad size / missing input / unwritable output | exit 1 each |
+
+Comparison is perceptual, never byte-exact: a pixel counts as different only
+if a channel moves by more than 24, and at most 2% of pixels may differ at
+all, so font hinting and driver differences cannot flake it. On failure the
+actual, reference and a red diff image are written into
+`results/render_golden/` for CI artifacts.
+
+The **mode guard is independent of the references** on purpose: if `--density`
+were ignored again *and* the goldens were regenerated from that broken build,
+every image comparison would still pass while both files showed a contour
+plot. Comparing the two modes against each other instead catches that.
+
+Updating references is deliberate, never automatic:
+
+```
+pytest test/render_golden_test.py --update-goldens
+```
+
+Run it only when a visual change is intended and commit the new PNGs in the
+same change, so the difference is reviewable as a picture.
+
+**This found a real hang**, now fixed: `--render-png` on a missing input file
+blocked forever. `MainWindow::openFile` reports an unreadable file through a
+modal `QMessageBox`, which in a CLI run has nobody to dismiss it -- a batch
+render over a directory with one bad path would wedge the whole job. The CLI
+now checks the file exists before constructing any window. That is the third
+modal-dialog-hangs-automation defect in this backlog, after the solvers
+(#10) and `savebitmap` (#4).
+
+The fixture corpus is committed at `fixtures/render/` -- a deliberately
+coarse 246-node model (1.9 KB `.fem`, 28 KB `.ans`) plus four reference PNGs,
+264 KB in total.
 ## femmqt C++ unit tests (ctest)
 
 Everything else in this directory is Python driving `femmx.exe` over COM.
