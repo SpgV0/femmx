@@ -37,6 +37,11 @@ void ChdrawDoc::initalise_lua()
   lua_register(lua, "hi_smartmesh", lua_smartmesh);
   lua_register(lua, "hi_setgpuaccel", lua_setgpuaccel);
   lua_register(lua, "hi_setredraw", lua_setredraw);
+  // Both spellings, as every other command in this file has: FEMM's
+  // manual promises an underscore-separated form for each name, and
+  // these two fork-added commands only ever registered one (#19).
+  lua_register(lua, "hi_set_redraw", lua_setredraw);
+  lua_register(lua, "hi_set_gpuaccel", lua_setgpuaccel);
   lua_register(lua, "hi_showmesh", lua_show_mesh);
   lua_register(lua, "hi_purgemesh", lua_purge_mesh);
   lua_register(lua, "hi_probdef", lua_prob_def);

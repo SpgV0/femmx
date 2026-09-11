@@ -1211,8 +1211,21 @@ int CFemmviewDoc::lua_savepng(lua_State* L)
   theView->GetClientRect(&r);
   // Optional explicit size, only meaningful for the Qt path -- the
   // classic path can only render at the size its window actually is.
-  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)r.right;
-  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)r.bottom;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+  // savepng took its size straight from the client rect, which is the
+  // exact defect issue #4 fixed for savebitmap and then left standing
+  // here. A view that has never been shown -- every COM-automation
+  // session -- reports a rect with a zero dimension, and the two paths
+  // failed differently and both badly: the classic path asked
+  // CreateCompatibleBitmap for a 0-by-0 bitmap, which is documented to
+  // hand back a 1x1 MONOCHROME one, so a script got a valid, useless PNG
+  // and a success return; the Qt path shelled out
+  // `femmqt.exe --render-png ... 0 0`, which refuses a bad size and
+  // exits 1. femmCaptureSize() substitutes the same documented default
+  // savebitmap uses, so a headless script gets a real picture (#19).
+  SIZE cap = femmCaptureSize(r);
+  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)cap.cx;
+  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)cap.cy;
 
   if (GetScriptGui() == ScriptGui::Qt) {
     CString pn = thisDoc->GetPathName();
@@ -1237,9 +1250,9 @@ int CFemmviewDoc::lua_savepng(lua_State* L)
   CDC* pDC = theView->GetDC();
 
   tempDC.CreateCompatibleDC(pDC);
-  bitmap.CreateCompatibleBitmap(pDC, r.right, r.bottom);
+  bitmap.CreateCompatibleBitmap(pDC, cap.cx, cap.cy);
   oldbitmap = tempDC.SelectObject(&bitmap);
-  tempDC.Rectangle(0, 0, r.right, r.bottom);
+  tempDC.Rectangle(0, 0, cap.cx, cap.cy);
   theView->OnDraw(&tempDC);
 
   BOOL ok = SaveHBitmapAsPng(HBITMAP(bitmap), filename.GetBuffer(1));

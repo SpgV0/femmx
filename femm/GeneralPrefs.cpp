@@ -108,6 +108,41 @@ void CGeneralPrefs::WritePrefs()
   fname = ((CFemmApp*)AfxGetApp())->GetExecutablePath() + "femm.cfg";
   s_defdoc = m_defdoc.GetCurSel();
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+  // this used to truncate femm.cfg and write back only the five keys this
+  // dialog knows about, which silently destroyed every other key in the
+  // file. femm.cfg is no longer this dialog's private file: <PreferredGUI>
+  // (GuiSwitch) and <QtDarkTheme> (AppPreferences) live there too, so
+  // opening Preferences and pressing OK used to reset which GUI the user
+  // had chosen and throw away the Qt GUI's theme. Both of those writers
+  // already preserve lines they don't recognize; this one now does the
+  // same, in the other direction (issue #19).
+  //
+  // Unrecognized lines are read first, then the file is rewritten with
+  // this dialog's keys in their canonical order followed by everything
+  // else, so the file stays stable across repeated saves.
+  CStringArray others;
+  fp = fopen(fname, "rt");
+  if (fp != NULL) {
+    char line[1024];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      CString s(line);
+      s.TrimRight("\r\n");
+      CString trimmed(s);
+      trimmed.TrimLeft();
+      if (trimmed.IsEmpty())
+        continue;
+      if (_strnicmp(trimmed, "<ShowConsole>", 13) == 0
+          || _strnicmp(trimmed, "<SeparatePlots>", 15) == 0
+          || _strnicmp(trimmed, "<ShowOutputWindow>", 18) == 0
+          || _strnicmp(trimmed, "<SmartMesh>", 11) == 0
+          || _strnicmp(trimmed, "<DefaultType>", 13) == 0)
+        continue;
+      others.Add(s);
+    }
+    fclose(fp);
+  }
+
   fp = fopen(fname, "wt");
   if (fp != NULL) {
     fprintf(fp, "<ShowConsole>      = %i\n", m_def_lua_console);
@@ -115,6 +150,8 @@ void CGeneralPrefs::WritePrefs()
     fprintf(fp, "<ShowOutputWindow> = %i\n", m_def_show_output_window);
     fprintf(fp, "<SmartMesh>        = %i\n", m_def_smartmesh);
     fprintf(fp, "<DefaultType>      = %i\n", s_defdoc);
+    for (int i = 0; i < others.GetSize(); i++)
+      fprintf(fp, "%s\n", (const char*)others.GetAt(i));
     fclose(fp);
   }
 

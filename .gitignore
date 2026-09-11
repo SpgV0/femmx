@@ -93,3 +93,7 @@ __pycache__/
 
 # Scratch produced by examples/parallel_sweep.py
 examples/sweep_work/
+
+# ctest run-time scratch, written into the repo root by a bare `ctest`
+# invoked from the top-level build tree.
+Testing/

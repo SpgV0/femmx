@@ -127,3 +127,16 @@ matching what the section's own pre-existing comment already claimed it
 did and what every plugin-subfolder `File` line below it already does —
 the next new Qt module femmqt links against won't need this list edited
 by hand.
+
+**Never run the pytest suite while a build is in flight.**
+`build_femmx.ps1` does `Remove-Item -Recurse -Force bin\plain` and
+recreates it before moving the fresh binaries in, and `build.ps1`'s
+`--target install` writes through `bin\` on the way there.
+**Why this matters:** a suite started at the same moment as a build
+produced four failures that looked like real defects (a `NameError`
+cluster and a `femmqt.exe --render-png failed (exit code 1)`), and
+re-running them after the build finished was the only way to tell which
+were genuine. Any minute spent debugging a test result taken during a
+build is a minute spent on noise.
+**How to apply:** start the build, wait for its completion
+notification, then run tests. If both are needed, run the tests first.

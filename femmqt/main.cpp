@@ -13,6 +13,7 @@
 #include "FemmProblem.h"
 #include "FemmFileIO.h"
 #include "FemmProblemEdit.h"
+#include "FileRouting.h"
 #include "MainWindow.h"
 #include "MeshSolution.h"
 #include "SolutionView.h"
@@ -252,9 +253,7 @@ int main(int argc, char* argv[])
       return 1;
     }
 
-    const QString suffix = QFileInfo(in).suffix();
-    const bool isSolution = suffix.compare("ans", Qt::CaseInsensitive) == 0
-        || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
+    const bool isSolution = FileRouting::isSolutionFile(in);
 
     // Optional scene-space crop: --render-png in out w h x0 y0 x1 y1.
     // Renders a zoomed-in region without a GUI, which matters because the
@@ -316,8 +315,8 @@ int main(int argc, char* argv[])
   // OnSwitchToQtGui) opens the Solution Viewer, not the geometry editor --
   // otherwise the geometry editor would try to load a possibly-huge
   // solved mesh as if it were raw, editable geometry.
-  QString suffix = args.size() > 1 ? QFileInfo(args.at(1)).suffix() : QString();
-  bool isMagSolutionFile = suffix.compare("ans", Qt::CaseInsensitive) == 0 || suffix.compare("ansx", Qt::CaseInsensitive) == 0;
+  bool isMagSolutionFile = args.size() > 1
+      && FileRouting::isSolutionFile(args.at(1));
 
   if (isMagSolutionFile) {
     auto* solutionWindow = new SolutionWindow();

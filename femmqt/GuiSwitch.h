@@ -8,15 +8,13 @@
 // existing format and the 5 keys the classic GUI already keeps there),
 // and launches the other GUI's executable.
 //
-// Known limitation, not fixed here (out of scope -- would mean touching
-// femm/GeneralPrefs.cpp): CGeneralPrefs::WritePrefs() unconditionally
-// rewrites all 5 keys IT knows about every time the classic GUI's
-// Preferences dialog is saved, but has no notion of <PreferredGUI> --
-// so saving Preferences in the classic GUI after this has set
-// <PreferredGUI> will silently drop it back to the classic GUI's
-// default. This module's own writePreferredGui() preserves every other
-// line it doesn't recognize when it rewrites the file, so the reverse
-// (Qt GUI clobbering the classic GUI's preferences) doesn't happen.
+// Both writers preserve what they don't recognize. writePreferredGui()
+// below rewrites only the <PreferredGUI> line and keeps every other line
+// intact, and CGeneralPrefs::WritePrefs() does the same in the other
+// direction. It did not always: until issue #19 it truncated femm.cfg and
+// wrote back only the 5 keys that dialog knows about, so saving
+// Preferences in the classic GUI silently reset <PreferredGUI> (and threw
+// away the Qt GUI's <QtDarkTheme>).
 namespace GuiSwitch {
 
 enum class PreferredGui {

@@ -31,18 +31,27 @@ bool matchesTag(const QString& line, const char* tag, QString* value)
 
 GuiSwitch::PreferredGui GuiSwitch::readPreferredGui()
 {
-  // Defaults to Qt when femm.cfg has no <PreferredGUI> key yet (fresh
-  // install, or a femm.cfg predating this key) -- the Qt GUI is the
-  // default GUI (see script.nsi's FEMMX.lnk Start Menu shortcut, which
-  // now launches femmqt.exe). Nothing currently calls this to redirect
-  // femmx.exe's own startup (that would mean touching CFemmApp::
-  // InitInstance, which also handles COM automation -- out of scope,
-  // too much risk of affecting existing pyfemm/Octave/Scilab automation
-  // for this phase); it's read only where a caller explicitly wants to
-  // know the user's last explicit choice.
+  // Defaults to Classic when femm.cfg has no <PreferredGUI> key yet (a
+  // fresh install, or a femm.cfg predating the key).
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+  // this used to default to Qt, on the stated grounds that femmqt.exe was
+  // what script.nsi's FEMMX.lnk launched. That was reverted in v2.0.x --
+  // FEMMX.lnk points at femmx.exe again -- and the comment was left
+  // behind, so the two readers of this one key disagreed about what "no
+  // key" means: femm/ScriptGui.cpp's ReadPreferredGuiFromCfg() answers
+  // Classic and this answered Qt. Nothing in femmqt calls this yet, so
+  // the disagreement was invisible; the first caller would have inherited
+  // it. Both now answer Classic (issue #19).
+  //
+  // Nothing currently calls this to redirect femmx.exe's own startup
+  // (that would mean touching CFemmApp::InitInstance, which also handles
+  // COM automation -- too much risk to existing pyfemm/Octave/Scilab
+  // automation); it's read only where a caller explicitly wants to know
+  // the user's last explicit choice.
   QFile file(cfgPath());
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    return PreferredGui::Qt;
+    return PreferredGui::Classic;
 
   QTextStream in(&file);
   while (!in.atEnd()) {
@@ -51,7 +60,7 @@ GuiSwitch::PreferredGui GuiSwitch::readPreferredGui()
     if (matchesTag(line, "<PreferredGUI>", &value))
       return (value.toInt() != 0) ? PreferredGui::Qt : PreferredGui::Classic;
   }
-  return PreferredGui::Qt;
+  return PreferredGui::Classic;
 }
 
 bool GuiSwitch::writePreferredGui(PreferredGui value)

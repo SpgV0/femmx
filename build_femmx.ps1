@@ -24,7 +24,15 @@
 
 param(
   [switch]$Cuda,
-  [string]$CudaRoot = ""
+  [string]$CudaRoot = "",
+  # Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+  # build.ps1 deletes its build tree on the way out unless told not to,
+  # and this wrapper did not accept the flag at all -- so there was no way
+  # to get a tree ctest could run against from build_plain.bat /
+  # build_cuda.bat, and passing the flag here failed as an unknown
+  # parameter. CI sidesteps it by calling build.ps1 directly (see
+  # ccpp.yml), which is why it went unnoticed (issue #19).
+  [switch]$DoNotDeleteBuildFolder
 )
 
 Push-Location $PSScriptRoot
@@ -156,7 +164,13 @@ Write-Host ""
 # failure the throw propagates uncaught (deliberately not caught here,
 # see the note at the top of this file) and PowerShell exits the process
 # with a non-zero code on its own.
-& "$PSScriptRoot\build.ps1" -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -AdditionalBuildSetup $extra
+# Hashtable splat, not an array one: an array splat passes its elements
+# positionally, so @("-DoNotDeleteBuildFolder") bound the literal string to
+# the next positional parameter and build.ps1 died with a parameter-binding
+# transformation error before it did any work.
+$passThrough = @{}
+if ($DoNotDeleteBuildFolder) { $passThrough['DoNotDeleteBuildFolder'] = $true }
+& "$PSScriptRoot\build.ps1" -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -AdditionalBuildSetup $extra @passThrough
 
 # Move this build's output (everything build.ps1 just placed directly in
 # bin\, not the plain\/cuda\ subfolders themselves) into bin\<variant>\, so

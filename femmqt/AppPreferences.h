@@ -6,12 +6,10 @@
 // <QtDarkTheme> extension key the classic GUI doesn't know about. Like
 // GuiSwitch.h's <PreferredGUI> handling, save() preserves every line it
 // doesn't recognize when rewriting the file, so this and GuiSwitch don't
-// clobber each other. Known asymmetry (see GuiSwitch.h's own comment,
-// same root cause): the classic GUI's own WritePrefs() unconditionally
-// rewrites femm.cfg with only ITS 5 keys, so saving Preferences there
-// after this has set <QtDarkTheme>/<PreferredGUI> will silently drop them
-// back to defaults. Not fixable without touching femm/GeneralPrefs.cpp,
-// which is out of scope here.
+// clobber each other. The classic GUI's WritePrefs() now preserves
+// unrecognized lines as well (issue #19) -- until then it truncated
+// femm.cfg and wrote back only ITS 5 keys, so saving Preferences there
+// silently reset <QtDarkTheme> and <PreferredGUI>.
 struct AppPreferences {
   // Lua console at startup -- stored/round-tripped only; femmqt has no Lua
   // console yet (see the plan's Lua Console scope note).

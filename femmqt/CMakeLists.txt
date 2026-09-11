@@ -89,6 +89,8 @@ qt_add_library(femmqt_core STATIC
   SolutionView.cpp
   GuiSwitch.h
   GuiSwitch.cpp
+  FileRouting.h
+  FileRouting.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -218,13 +220,23 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_geometry_tests
     tests/tst_geometry_edit.cpp
   )
-  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests)
+  # femm.cfg is shared with the classic GUI and with AppPreferences, and
+  # each writer knows only its own keys (issue #19).
+  qt_add_executable(femmqt_gui_switch_tests
+    tests/tst_gui_switch.cpp
+  )
+  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests)
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
     target_link_libraries(${_femmqt_test} PRIVATE femmqt_core Qt6::Test)
+    # Fixtures live in the repo's test/ tree, two levels up. Passed as a
+    # define rather than found with QFINDTESTDATA, which searches the
+    # build tree and the app directory and would not look there.
+    target_compile_definitions(${_femmqt_test} PRIVATE
+      FEMMQT_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../test/fixtures")
   endforeach()
 
   # Never installed and never packaged: this is a build-tree artefact.
-  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests PROPERTIES
+  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests PROPERTIES
     WIN32_EXECUTABLE OFF          # console apps, so QTest output reaches ctest
     EXCLUDE_FROM_ALL OFF
   )
@@ -232,40 +244,68 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_core COMMAND femmqt_tests)
   add_test(NAME femmqt_constraints COMMAND femmqt_constraint_tests)
   add_test(NAME femmqt_geometry COMMAND femmqt_geometry_tests)
+  add_test(NAME femmqt_gui_switch COMMAND femmqt_gui_switch_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )
 
   # The test binary needs the Qt runtime beside it for the same reason
   # femmqt.exe does.
+  #
+  # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11
+  # (issue #19). Two things a QTest binary needs that windeployqt does not
+  # provide, both of which used to surface as a 300-second hang with no
+  # output rather than as an error:
+  #
+  #  1. Qt6Test.dll. windeployqt deploys applications, and Qt excludes the
+  #     Test module from deployment on the reasonable grounds that you do
+  #     not ship tests -- but these binaries still have to RUN from the
+  #     build tree. Measured: by hand the binary says "error while loading
+  #     shared libraries: Qt6Test.dll" and exits 127; under ctest the same
+  #     failure produced no output at all and a kill at the timeout, with
+  #     nothing anywhere naming the missing DLL.
+  #
+  #  2. qoffscreen.dll, for the targets that use QTEST_MAIN (today
+  #     tst_geometry_edit.cpp) and so construct a QApplication, which needs
+  #     a QPA platform. windeployqt deploys only qwindows.dll.
+  #
+  # Both copies now run per target, immediately after that target's own
+  # windeployqt step, rather than being attached to one target -- a
+  # POST_BUILD command only runs when its target relinks, so a step hung
+  # off a single target silently stops maintaining the directory as soon
+  # as that one target is up to date. Measured: femmqt_geometry_tests hung
+  # for exactly this reason, with platforms/ holding only qwindows.dll.
+  #
+  # The plugin is a hard requirement, so a missing one is a configure
+  # error. Silently skipping it is what turned a missing file into a hang.
   if(WIN32 AND FEMMQT_WINDEPLOYQT_EXECUTABLE)
-    foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests)
+    set(_femmqt_offscreen "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
+    if(NOT EXISTS "${_femmqt_offscreen}")
+      message(FATAL_ERROR
+        "femmqt: the offscreen QPA plugin is missing from the Qt kit "
+        "(looked for \"${_femmqt_offscreen}\"). The headless tests cannot "
+        "run without it, and without this check they would hang at their "
+        "ctest timeout rather than fail. Install the Qt kit's platform "
+        "plugins, or pass -DFEMMQT_QT6_DIR=<a complete Qt6 MSVC kit>.")
+    endif()
+    foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests)
       add_custom_command(TARGET ${_femmqt_test} POST_BUILD
         COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:${_femmqt_test}>"
-        COMMENT "Deploying Qt runtime DLLs next to ${_femmqt_test}.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Qt6::Test>"
+                "$<TARGET_FILE_DIR:${_femmqt_test}>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_femmqt_offscreen}"
+                "$<TARGET_FILE_DIR:${_femmqt_test}>/platforms/qoffscreen.dll"
+        COMMENT "Deploying the Qt runtime, Qt6Test and the offscreen QPA plugin next to ${_femmqt_test}.exe"
       )
     endforeach()
-    # windeployqt deploys the platform plugin it thinks the app needs, which
-    # on Windows is qwindows.dll and nothing else. A test running under
-    # QT_QPA_PLATFORM=offscreen then cannot load a platform at all: measured,
-    # the binary produced no output and ctest killed it at its 300s timeout.
-    # The current tests use QTEST_GUILESS_MAIN and need no platform, but the
-    # widget tests later tickets add will, so put qoffscreen.dll where they
-    # will look for it.
-    if(EXISTS "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
-      add_custom_command(TARGET femmqt_geometry_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll"
-                "$<TARGET_FILE_DIR:femmqt_geometry_tests>/platforms/qoffscreen.dll"
-        COMMENT "Deploying the offscreen QPA plugin for headless tests"
-      )
-    endif()
   endif()
 else()
   message(STATUS "femmqt: Qt6::Test not available -- skipping the femmqt_tests target")

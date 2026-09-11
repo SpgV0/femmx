@@ -153,11 +153,16 @@ be told apart from one that requires FEMMX.
 and CPU/GPU/RAM usage, for benchmarking scripts.
 \item {\tt setgui("name")} / {\tt getgui()} --- choose which GUI renders
 for the commands that produce GUI-derived output.
-\item {\tt mi\_setgpuaccel(flag)} and {\tt ei\_setgpuaccel(flag)} ---
-opt the magnetics and electrostatics solvers into CUDA-accelerated
-solving.
-\item {\tt mi\_setredraw(flag)} and {\tt ei\_setredraw(flag)} ---
-suppress redraws during a scripted sequence of edits.
+\item {\tt mi\_setgpuaccel(flag)}, {\tt ei\_setgpuaccel(flag)},
+{\tt hi\_setgpuaccel(flag)} and {\tt ci\_setgpuaccel(flag)} --- opt the
+corresponding solver into CUDA-accelerated solving. All four solvers
+carry the CUDA port and all four commands are registered; earlier
+revisions of this list credited only the first two.
+\item {\tt mi\_setredraw(flag)}, {\tt ei\_setredraw(flag)},
+{\tt hi\_setredraw(flag)} and {\tt ci\_setredraw(flag)} --- suppress
+redraws during a scripted sequence of edits. As with every other
+command, the underscore-separated spelling ({\tt mi\_set\_redraw}, and
+so on) works too.
 \item {\tt mi\_savepng("filename")} and {\tt mo\_savepng("filename")}
 --- save a PNG screenshot; FEMM 4.2 could only write bitmaps and
 metafiles.

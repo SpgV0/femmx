@@ -102,6 +102,11 @@ void CFemmeDoc::initalise_lua()
   lua_register(lua, "mi_refreshview", lua_updatewindow);
   lua_register(lua, "mi_setredraw", lua_setredraw);
   lua_register(lua, "mi_setgpuaccel", lua_setgpuaccel);
+  // Both spellings, as every other command in this file has: FEMM's
+  // manual promises an underscore-separated form for each name, and
+  // these two fork-added commands only ever registered one (#19).
+  lua_register(lua, "mi_set_redraw", lua_setredraw);
+  lua_register(lua, "mi_set_gpuaccel", lua_setgpuaccel);
   lua_register(lua, "mi_shownames", lua_shownames);
   lua_register(lua, "mi_showgrid", lua_showgrid);
   lua_register(lua, "mi_hidegrid", lua_hidegrid);
@@ -2238,8 +2243,21 @@ int CFemmeDoc::lua_savepng(lua_State* L)
 
   RECT r;
   theView->GetClientRect(&r);
-  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)r.right;
-  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)r.bottom;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-11:
+  // savepng took its size straight from the client rect, which is the
+  // exact defect issue #4 fixed for savebitmap and then left standing
+  // here. A view that has never been shown -- every COM-automation
+  // session -- reports a rect with a zero dimension, and the two paths
+  // failed differently and both badly: the classic path asked
+  // CreateCompatibleBitmap for a 0-by-0 bitmap, which is documented to
+  // hand back a 1x1 MONOCHROME one, so a script got a valid, useless PNG
+  // and a success return; the Qt path shelled out
+  // `femmqt.exe --render-png ... 0 0`, which refuses a bad size and
+  // exits 1. femmCaptureSize() substitutes the same documented default
+  // savebitmap uses, so a headless script gets a real picture (#19).
+  SIZE cap = femmCaptureSize(r);
+  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)cap.cx;
+  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)cap.cy;
 
   if (GetScriptGui() == ScriptGui::Qt) {
     CString pn = thisDoc->GetPathName();
@@ -2264,9 +2282,9 @@ int CFemmeDoc::lua_savepng(lua_State* L)
   CDC* pDC = theView->GetDC();
 
   tempDC.CreateCompatibleDC(pDC);
-  bitmap.CreateCompatibleBitmap(pDC, r.right, r.bottom);
+  bitmap.CreateCompatibleBitmap(pDC, cap.cx, cap.cy);
   oldbitmap = tempDC.SelectObject(&bitmap);
-  tempDC.Rectangle(0, 0, r.right, r.bottom);
+  tempDC.Rectangle(0, 0, cap.cx, cap.cy);
   theView->OnDraw(&tempDC);
 
   BOOL ok = SaveHBitmapAsPng(HBITMAP(bitmap), filename.GetBuffer(1));
