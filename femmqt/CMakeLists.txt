@@ -212,22 +212,28 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_tests
     tests/tst_femmqt_core.cpp
   )
-  target_compile_options(femmqt_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
-  target_link_libraries(femmqt_tests PRIVATE femmqt_core Qt6::Test)
+  qt_add_executable(femmqt_constraint_tests
+    tests/tst_constraint_solver.cpp
+  )
+  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests)
+    target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
+    target_link_libraries(${_femmqt_test} PRIVATE femmqt_core Qt6::Test)
+  endforeach()
 
   # Never installed and never packaged: this is a build-tree artefact.
-  set_target_properties(femmqt_tests PROPERTIES
-    WIN32_EXECUTABLE OFF          # console app, so QTest output reaches ctest
+  set_target_properties(femmqt_tests femmqt_constraint_tests PROPERTIES
+    WIN32_EXECUTABLE OFF          # console apps, so QTest output reaches ctest
     EXCLUDE_FROM_ALL OFF
   )
 
   add_test(NAME femmqt_core COMMAND femmqt_tests)
+  add_test(NAME femmqt_constraints COMMAND femmqt_constraint_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )
@@ -235,10 +241,12 @@ if(TARGET Qt6::Test)
   # The test binary needs the Qt runtime beside it for the same reason
   # femmqt.exe does.
   if(WIN32 AND FEMMQT_WINDEPLOYQT_EXECUTABLE)
-    add_custom_command(TARGET femmqt_tests POST_BUILD
-      COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:femmqt_tests>"
-      COMMENT "Deploying Qt runtime DLLs next to femmqt_tests.exe"
-    )
+    foreach(_femmqt_test femmqt_tests femmqt_constraint_tests)
+      add_custom_command(TARGET ${_femmqt_test} POST_BUILD
+        COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:${_femmqt_test}>"
+        COMMENT "Deploying Qt runtime DLLs next to ${_femmqt_test}.exe"
+      )
+    endforeach()
     # windeployqt deploys the platform plugin it thinks the app needs, which
     # on Windows is qwindows.dll and nothing else. A test running under
     # QT_QPA_PLATFORM=offscreen then cannot load a platform at all: measured,
@@ -247,10 +255,10 @@ if(TARGET Qt6::Test)
     # widget tests later tickets add will, so put qoffscreen.dll where they
     # will look for it.
     if(EXISTS "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
-      add_custom_command(TARGET femmqt_tests POST_BUILD
+      add_custom_command(TARGET femmqt_constraint_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll"
-                "$<TARGET_FILE_DIR:femmqt_tests>/platforms/qoffscreen.dll"
+                "$<TARGET_FILE_DIR:femmqt_constraint_tests>/platforms/qoffscreen.dll"
         COMMENT "Deploying the offscreen QPA plugin for headless tests"
       )
     endif()

@@ -86,6 +86,40 @@ Three things that had to be got right, each of which failed first:
   target instead of failing the whole build, which is what a `REQUIRED`
   lookup did to CI once before.
 
+Two test binaries are registered:
+
+| ctest name | Source | Covers |
+| --- | --- | --- |
+| `femmqt_core` | `tests/tst_femmqt_core.cpp` | FemmProblem defaults, .fem round-trip, geometry editing, DXF rejection |
+| `femmqt_constraints` | `tests/tst_constraint_solver.cpp` | the constraint/dimension solver (issue #12) |
+
+`femmqt_constraints` is where `femmqt.exe --test-constraints` went. That was a
+bespoke harness of ~520 lines inside `main.cpp` printing "ALL TESTS PASSED"
+that nothing in CI ever invoked -- numerical solver code no automated job
+runs is code that drifts. Its 17 scenarios were moved **verbatim** rather
+than rewritten (they encode carefully chosen starting geometries that
+visibly violate each relationship; re-deriving them would risk quietly
+weakening the checks) and each got its own QTest slot, so ctest reports
+per-constraint results instead of one pass/fail for the lot. `main.cpp` went
+from 774 lines to 245, and the CLI flag now points at ctest rather than
+erroring as an unknown argument.
+
+Six checks the CLI harness never had were added alongside: sketch-health
+classification, a redundant constraint being absorbed rather than
+destabilising the solve, contradictory dimensions terminating bounded
+instead of looping, determinism across runs, the `AngleLines` modulo-180
+wrap on a segment stored end-for-end, and the sketch layer never reaching a
+saved `.fem`.
+
+Two of those initially failed on my assumptions rather than the code, and
+both are now pinned with the reason:
+
+- `addSegment` is an unconditional append; de-duplication is not a
+  primitive's job.
+- `nodeStatus` is keyed by connected **component of the constraint graph**, so
+  a node in no constraint gets no entry at all -- it is trivially free, not
+  unclassified.
+
 The suite is deliberately small -- its job is to prove the harness works end
 to end. The substantial per-area suites (constraint/dimension layer,
 GeometryScene editing, golden-image rendering, mesh generation,
