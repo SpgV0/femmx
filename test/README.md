@@ -92,6 +92,7 @@ Two test binaries are registered:
 | --- | --- | --- |
 | `femmqt_core` | `tests/tst_femmqt_core.cpp` | FemmProblem defaults, .fem round-trip, geometry editing, DXF rejection |
 | `femmqt_constraints` | `tests/tst_constraint_solver.cpp` | the constraint/dimension solver (issue #12) |
+| `femmqt_geometry` | `tests/tst_geometry_edit.cpp` | GeometryScene / FemmProblemEdit editing (issue #13) |
 
 `femmqt_constraints` is where `femmqt.exe --test-constraints` went. That was a
 bespoke harness of ~520 lines inside `main.cpp` printing "ALL TESTS PASSED"
@@ -119,6 +120,34 @@ both are now pinned with the reason:
 - `nodeStatus` is keyed by connected **component of the constraint graph**, so
   a node in no constraint gets no entry at all -- it is trivially free, not
   unclassified.
+
+`femmqt_geometry` covers the editing operations in `GeometryScene.cpp`
+(124 KB, every editing operation femmqt has, and under active change). Most
+of that logic actually lives in `FemmProblemEdit`, which is deliberately
+GUI-free, so it runs without a widget; the hit-testing case constructs a
+`GeometryScene` directly, since a `QGraphicsScene` needs only a
+`QApplication` and no window. That binary uses `QTEST_MAIN` with the
+offscreen platform -- which is what the `qoffscreen.dll` deployment from #11
+was put there for.
+
+It asserts add/delete for all four entity types including cascade deletes and
+reference counting, the seven transforms (move, copy, translate-copy,
+rotate, rotate-copy, mirror, scale), and seven crossing-segment cases: a
+proper X splits, while shared endpoints, collinear overlaps, parallels and
+T-junctions do not; the per-segment interior tolerance behaves as "a hair
+inside the ends" in real distance rather than parameter space; and three
+crossings on one segment all split, which is the case that catches a
+single-pass implementation.
+
+**Undo/redo is not covered**, and deliberately so rather than silently: the
+scene only emits a signal and `MainWindow` owns the stack, so testing it
+means standing up a `QMainWindow`. Same for snapping and the Draw
+Rectangle/Circle tools, which are tool-mode state machines on the scene. A
+widget-level harness for those is worth its own ticket.
+
+One convention worth knowing, since a test written against the obvious guess
+fails: `blockTypeIndex` on a block label is **1-based** (`-1` = hole), so
+`materialProps[0]` is referenced by the marker value 1.
 
 The suite is deliberately small -- its job is to prove the harness works end
 to end. The substantial per-area suites (constraint/dimension layer,
