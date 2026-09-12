@@ -1,0 +1,49 @@
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (issue
+# #22). The build prerequisites were written out once per job in
+# ccpp.yml, so adding a third job -- the fast lane -- would have meant a
+# third copy, and any change to the Qt version would have meant editing
+# it in three places and hoping.
+#
+# A composite action rather than a reusable workflow: these are steps
+# inside an existing job, not a job of their own, and the caller still
+# owns the build and test steps that differ between lanes.
+name: 'FEMMX build prerequisites'
+description: >-
+  CMake, Qt6 and (optionally) NSIS, the things every FEMMX build job
+  needs before it can run build.ps1.
+
+inputs:
+  qt-version:
+    description: 'Qt6 version to install for femmqt'
+    required: false
+    default: '6.9.3'
+  install-nsis:
+    description: >-
+      Install NSIS so build.ps1 also packages the installer. The fast lane
+      does not need it: it builds and tests, it does not ship.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: lukka/get-cmake@latest
+
+    - name: 'Install NSIS'
+      if: inputs.install-nsis == 'true'
+      shell: pwsh
+      run: choco install nsis -y --no-progress
+
+    # continue-on-error, as before: femmqt/CMakeLists.txt looks for Qt6
+    # optionally and skips the femmqt target when it is absent, so a
+    # runner that cannot get Qt still produces a working femmx.exe rather
+    # than failing the whole build.
+    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
+      continue-on-error: true
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ inputs.qt-version }}
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
+        cache: true

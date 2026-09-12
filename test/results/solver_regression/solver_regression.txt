@@ -7,5 +7,5 @@ Solver regression corpus / determinism / GPU fallback
     model records [GPUAccel]    =  1, and the solve completed
     fallback result vs CPU result: worst relative difference 0.000e+00 on None
     fkn.exe: built-without-CUDA message present, falling-back message present
-    solve wall time: 0.32s (ceiling 60s -- an order-of-magnitude guard, not a performance test)
+    solve wall time: 0.37s (ceiling 60s -- an order-of-magnitude guard, not a performance test)
     stress model: 11467 nodes, solved in 0.3s, |B| at (3,0) = 0.000947743 T

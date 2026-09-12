@@ -3,7 +3,7 @@ GPU-accelerated electrostatic solve: correctness + benchmark
 CUDA-enabled build detected: False
 Probe point: (20, 0)
 
-CPU: V = 2.690557e+01  (time: 0.678s)
-GPU: V = 2.690557e+01  (time: 0.689s)
+CPU: V = 2.690557e+01  (time: 0.684s)
+GPU: V = 2.690557e+01  (time: 0.659s)
 Relative difference: 0.0000%
-Speedup: 0.98x
+Speedup: 1.04x

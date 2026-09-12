@@ -88,6 +88,9 @@ test/results/**/*.ansx
 test/results/**/*.bak
 test/results/**/*.stale
 test/results/**/luavar_out.txt
+# Per-run benchmark trend records: machine-specific and regenerated
+# every run, uploaded as a CI artifact rather than tracked (#22).
+test/results/**/*.json
 test/results/**/junit.xml
 __pycache__/
 .pytest_cache/

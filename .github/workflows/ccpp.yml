@@ -150,24 +150,16 @@ on:
 jobs:
   win-vcpkg:
     runs-on: windows-latest
+    # A backstop for a hang outside pytest's reach (the build, ctest, the
+    # LaTeX install). pytest has its own limits in pytest.ini. The full
+    # lane's last measured run was 14.9 min (#22).
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
 
-    - uses: lukka/get-cmake@latest
-
-    - name: 'Install NSIS'
-      shell: pwsh
-      run: choco install nsis -y --no-progress
-
-    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
-      continue-on-error: true
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.9.3'
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2022_64'
-        cache: true
+    # Shared with the fast lane (.github/workflows/fast.yml) so the Qt
+    # version and the prerequisite list live in one place (issue #22).
+    - uses: ./.github/actions/femmx-setup
 
     - name: 'Build FEMM'
       shell: pwsh
@@ -283,6 +275,15 @@ jobs:
       shell: pwsh
       run: ${{ github.workspace }}/scripts/unregister_femm_com.ps1
 
+    # JUnit XML was already uploaded as an artifact, which meant the only
+    # way to see which test failed was to download a zip -- so nobody did,
+    # and a red run read as "CI is broken" rather than naming the
+    # assertion. This puts it on the run's own page (issue #22).
+    - name: 'Publish test summary'
+      if: always()
+      shell: pwsh
+      run: python ${{ github.workspace }}/scripts/ci_test_summary.py ${{ github.workspace }}/test/results/junit.xml
+
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -296,25 +297,22 @@ jobs:
 
   win-cuda:
     runs-on: windows-2022
-    continue-on-error: true
+    # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+    # continue-on-error removed (issue #22). It was added while the CUDA
+    # build was still being brought up, and it hides exactly what it was
+    # meant to tolerate: with it set, GitHub reports the job's conclusion
+    # as "success" even when steps failed, so the two most recent runs
+    # looked green at the job level whether or not they were. Checking
+    # step by step, every step of the 2026-09-04 run passed, so the
+    # scaffolding has outlived its purpose and a genuine CUDA-build break
+    # can now fail a run.
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
 
-    - uses: lukka/get-cmake@latest
-
-    - name: 'Install NSIS'
-      shell: pwsh
-      run: choco install nsis -y --no-progress
-
-    - name: 'Install Qt6 (for femmqt, the Qt GUI)'
-      continue-on-error: true
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.9.3'
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2022_64'
-        cache: true
+    # Shared with the fast lane (.github/workflows/fast.yml) so the Qt
+    # version and the prerequisite list live in one place (issue #22).
+    - uses: ./.github/actions/femmx-setup
 
     - name: 'Install CUDA Toolkit'
       id: cuda-toolkit
@@ -363,12 +361,20 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
-        python -m pytest ${{ github.workspace }}/test/gpu_solver_test.py ${{ github.workspace }}/test/ac_gpu_solver_test.py ${{ github.workspace }}/test/thermal_gpu_solver_test.py ${{ github.workspace }}/test/electrostatic_gpu_solver_test.py ${{ github.workspace }}/test/currentflow_gpu_solver_test.py -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
+        # -m gpu rather than five hardcoded paths: the marker table lives
+        # in test/conftest.py, so a sixth GPU module is picked up here
+        # automatically instead of being silently left out (issue #22).
+        python -m pytest ${{ github.workspace }}/test -m gpu -k "not is_faster_when_available" --junitxml=${{ github.workspace }}/test/results/junit-cuda.xml -v
 
     - name: 'Restore femm.ActiveFEMM COM registration'
       if: always()
       shell: pwsh
       run: ${{ github.workspace }}/scripts/unregister_femm_com.ps1
+
+    - name: 'Publish test summary'
+      if: always()
+      shell: pwsh
+      run: python ${{ github.workspace }}/scripts/ci_test_summary.py ${{ github.workspace }}/test/results/junit-cuda.xml
 
     - uses: actions/upload-artifact@v4
       if: always()

@@ -4,3 +4,9 @@ pywin32; sys_platform == "win32"
 # render_golden_test.py compares --render-png output against committed
 # reference images. Perceptual comparison needs a PNG decoder.
 pillow
+
+# Bounds how long a test (and the whole session) may run. Every test here
+# drives femmx.exe over COM, and this fork's recurring defect is a modal
+# dialog on a path nobody expected to be interactive -- without a timeout
+# that shows up as a job that hangs until the runner kills it (#22).
+pytest-timeout

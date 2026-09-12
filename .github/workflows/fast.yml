@@ -1,0 +1,114 @@
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (issue
+# #22).
+#
+# THE PROBLEM THIS SOLVES. ccpp.yml is workflow_dispatch-only, deliberately,
+# to save minutes on a repository that gets frequent commits. The cost of
+# that is that the default state of any given commit is *untested*: a
+# regression is found whenever somebody remembers to press the button,
+# which in practice has meant weeks later, against a pile of commits, with
+# no obvious culprit.
+#
+# This lane runs automatically and is sized to be affordable: it builds,
+# runs femmqt's ctest targets, and runs the pytest "smoke" and "static"
+# selections -- 104 of the suite's 201 tests, measured at 25 seconds
+# against the full suite's 130. It does not build the LaTeX manual (2.8
+# min to install MiKTeX plus 1.0 to run it), does not install NSIS, does
+# not package the installer, and does not touch CUDA.
+#
+# BUDGET, from the timings of the last full run (2026-09-04): Qt6 install
+# 1.2 min, build 7.2 min, everything else under a minute. So this lands
+# around 10 minutes, nearly all of it the build itself -- there is no
+# version of a lane that compiles this codebase and finishes in two.
+#
+# ccpp.yml remains the full lane: the manual, the installer, the CUDA
+# build, and every test including the slow ones. Run it before a release.
+
+name: FEMMX fast lane
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A second push while the first is still building makes the first one
+# pointless -- cancel it rather than paying for both. Not applied to the
+# full lane, where a dispatch is always deliberate.
+concurrency:
+  group: fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke:
+    runs-on: windows-latest
+    # A hard ceiling, so a hang costs ~25 minutes rather than the runner's
+    # 6-hour default. pytest has its own per-test and per-session limits
+    # (see pytest.ini); this is the backstop for a hang in the build or in
+    # ctest, outside pytest's reach.
+    timeout-minutes: 25
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: ./.github/actions/femmx-setup
+      with:
+        install-nsis: 'false'
+
+    - name: 'Build FEMM'
+      shell: pwsh
+      # -DoNotDeleteBuildFolder keeps build_win_release64_notriangle/
+      # around for ctest; build.ps1 otherwise deletes it as its last act.
+      run: ${{ github.workspace }}/build.ps1 -DoNotUpdateTOOL -DisableInteractive -DisableLaTeX -ForceTriangle32bit -DoNotDeleteBuildFolder
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: 'Run femmqt C++ unit tests (ctest)'
+      shell: pwsh
+      run: |
+        $buildDir = "${{ github.workspace }}/build_win_release64_notriangle"
+        if (-Not (Test-Path $buildDir)) {
+          Write-Host 'no build tree -- skipping ctest'
+          exit 0
+        }
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
+        Push-Location $buildDir
+        ctest --test-dir . -C Release --output-on-failure --no-tests=ignore
+        $code = $LASTEXITCODE
+        Pop-Location
+        exit $code
+
+    - name: 'Install Python test dependencies'
+      shell: pwsh
+      run: python -m pip install -r ${{ github.workspace }}/test/requirements.txt
+
+    - name: 'Register femm.ActiveFEMM COM class'
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/register_femm_com.ps1
+
+    - name: 'Run smoke tests'
+      shell: pwsh
+      # "smoke or static": the smoke set needs a built, registered
+      # femmx.exe; the static set reads the source tree and would run even
+      # without one. Both are wanted here.
+      run: |
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/test/results | Out-Null
+        python -m pytest ${{ github.workspace }}/test -m "smoke or static" --junitxml=${{ github.workspace }}/test/results/junit-smoke.xml -v
+
+    - name: 'Restore femm.ActiveFEMM COM registration'
+      if: always()
+      shell: pwsh
+      run: ${{ github.workspace }}/scripts/unregister_femm_com.ps1
+
+    - name: 'Publish test summary'
+      if: always()
+      shell: pwsh
+      run: python ${{ github.workspace }}/scripts/ci_test_summary.py ${{ github.workspace }}/test/results/junit-smoke.xml
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: fast-lane-test-results
+        path: ${{ github.workspace }}/test/results
