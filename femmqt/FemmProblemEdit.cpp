@@ -455,10 +455,12 @@ void FemmProblemEdit::moveSelected(FemmProblem& p, double dx, double dy)
   }
 }
 
-void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy)
+void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy,
+    SketchTransform::Report* report)
 {
   // Old node index -> new node index, for remapping copied segments/arcs.
   QHash<int, int> nodeMap;
+  QHash<int, int> segmentMap, arcMap; // #32, see below
   int originalNodeCount = p.nodes.size();
   for (int i = 0; i < originalNodeCount; i++) {
     if (!p.nodes[i].isSelected)
@@ -480,6 +482,12 @@ void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy)
     copy.n0 = nodeMap[s.n0];
     copy.n1 = nodeMap[s.n1];
     copy.isSelected = false;
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+    // (issue #32): the segment and arc maps are recorded now, so the
+    // constraints and dimensions that reference them can be carried onto
+    // the copies below. Before this a copy of a fully constrained
+    // profile came back as dumb coordinates.
+    segmentMap[i] = p.segments.size();
     p.segments.push_back(copy);
   }
 
@@ -492,6 +500,7 @@ void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy)
     copy.n0 = nodeMap[a.n0];
     copy.n1 = nodeMap[a.n1];
     copy.isSelected = false;
+    arcMap[i] = p.arcSegments.size();
     p.arcSegments.push_back(copy);
   }
 
@@ -505,9 +514,14 @@ void FemmProblemEdit::copySelected(FemmProblem& p, double dx, double dy)
     copy.isSelected = false;
     p.blockLabels.push_back(copy);
   }
+
+  SketchTransform::Motion motion;
+  motion.type = SketchTransform::Motion::Translate;
+  SketchTransform::copyOntoCopies(p, nodeMap, segmentMap, arcMap, motion, report);
 }
 
-void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, double factor)
+void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, double factor,
+    SketchTransform::Report* report)
 {
   for (FemmNode& n : p.nodes) {
     if (n.isSelected) {
@@ -521,6 +535,17 @@ void FemmProblemEdit::scaleSelected(FemmProblem& p, double baseX, double baseY, 
       b.y = baseY + (b.y - baseY) * factor;
     }
   }
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #32). A scaled profile is a different size, so the dimensions
+  // that measure it have to say so. Without this the next constraint
+  // solve drags the geometry back to the old size and the scale is
+  // silently undone.
+  SketchTransform::Motion motion;
+  motion.type = SketchTransform::Motion::Scale;
+  motion.factor = factor;
+  SketchTransform::adjustAfterInPlace(p, motion, report);
+
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this
@@ -540,7 +565,8 @@ void FemmProblemEdit::reflectPoint(double& x, double& y, double x0, double y0, d
   y -= 2 * perpY;
 }
 
-void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1)
+void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, double x1, double y1,
+    SketchTransform::Report* report)
 {
   double dx = x1 - x0, dy = y1 - y0;
   double len = std::hypot(dx, dy);
@@ -587,6 +613,15 @@ void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, doubl
     if (p.nodes[a.n0].isSelected && p.nodes[a.n1].isSelected)
       std::swap(a.n0, a.n1);
   }
+
+  // #32. The motion carries the MIRROR AXIS's own direction, not an
+  // amount of rotation: a line at angle a comes back at 2f - a, so
+  // whether Horizontal survives depends entirely on f.
+  SketchTransform::Motion motion;
+  motion.type = SketchTransform::Motion::Mirror;
+  motion.angleDeg = std::atan2(y1 - y0, x1 - x0) * 180.0 / M_PI;
+  SketchTransform::adjustAfterInPlace(p, motion, report);
+
 }
 
 namespace {
@@ -607,7 +642,8 @@ bool isPermanentMagnet(const FemmProblem& p, const FemmBlockLabel& b)
 }
 }
 
-void FemmProblemEdit::rotateSelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg)
+void FemmProblemEdit::rotateSelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg,
+    SketchTransform::Report* report)
 {
   double t = angleDeg * M_PI / 180.0;
   double cosT = std::cos(t), sinT = std::sin(t);
@@ -621,9 +657,17 @@ void FemmProblemEdit::rotateSelected(FemmProblem& p, double aboutX, double about
     if (isPermanentMagnet(p, b))
       b.magDir += angleDeg;
   }
+
+  // #32.
+  SketchTransform::Motion motion;
+  motion.type = SketchTransform::Motion::Rotate;
+  motion.angleDeg = angleDeg;
+  SketchTransform::adjustAfterInPlace(p, motion, report);
+
 }
 
-void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg, int nCopies)
+void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double aboutY, double angleDeg,
+    int nCopies, SketchTransform::Report* report)
 {
   for (int nc = 0; nc < nCopies; nc++) {
     double t = angleDeg * (nc + 1) * M_PI / 180.0;
@@ -632,6 +676,7 @@ void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double a
     // Old node index -> new node index, for remapping copied segments/arcs
     // -- see copySelected's identical pattern/comment.
     QHash<int, int> nodeMap;
+    QHash<int, int> segmentMap, arcMap; // #32: so constraints can follow the copy
     int originalNodeCount = p.nodes.size();
     for (int i = 0; i < originalNodeCount; i++) {
       if (!p.nodes[i].isSelected)
@@ -652,6 +697,7 @@ void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double a
       copy.n0 = nodeMap[s.n0];
       copy.n1 = nodeMap[s.n1];
       copy.isSelected = false;
+      segmentMap[i] = p.segments.size();
       p.segments.push_back(copy);
     }
 
@@ -664,6 +710,7 @@ void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double a
       copy.n0 = nodeMap[a.n0];
       copy.n1 = nodeMap[a.n1];
       copy.isSelected = false;
+      arcMap[i] = p.arcSegments.size();
       p.arcSegments.push_back(copy);
     }
 
@@ -678,17 +725,27 @@ void FemmProblemEdit::rotateCopySelected(FemmProblem& p, double aboutX, double a
       copy.isSelected = false;
       p.blockLabels.push_back(copy);
     }
+
+    // #32. The angle here is the CUMULATIVE one for this copy, not the
+    // step: copy 3 of a 30-degree array sits at 90 degrees, where
+    // Horizontal and Vertical do swap onto each other, while copies 1
+    // and 2 sit at 30 and 60 where they survive as neither.
+    SketchTransform::Motion motion;
+    motion.type = SketchTransform::Motion::Rotate;
+    motion.angleDeg = angleDeg * (nc + 1);
+    SketchTransform::copyOntoCopies(p, nodeMap, segmentMap, arcMap, motion, report);
   }
 }
 
-void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy, int nCopies)
+void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy,
+    int nCopies, SketchTransform::Report* report)
 {
   // Each call only ever copies the ORIGINAL selection -- copySelected
   // clears isSelected on every copy it creates, so looping this way
   // reproduces femm/MOVECOPY.CPP's TranslateCopy exactly (copy i offset by
   // (dx,dy)*(i+1)) without needing a second, separate implementation.
   for (int nc = 0; nc < nCopies; nc++)
-    copySelected(p, dx * (nc + 1), dy * (nc + 1));
+    copySelected(p, dx * (nc + 1), dy * (nc + 1), report);
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: moved out of this

@@ -2097,12 +2097,18 @@ void MainWindow::onMoveSelectedTriggered()
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
+  // #32: a transform can change what a constraint MEANS -- a rotated
+  // line is no longer horizontal -- and the report says so rather than
+  // leaving the user to discover it when the next solve pulls the
+  // geometry back.
+  SketchTransform::Report sketchReport;
   if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
-    FemmProblemEdit::rotateSelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg());
+    FemmProblemEdit::rotateSelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg(), &sketchReport);
   else
     FemmProblemEdit::moveSelected(m_problem, dlg.deltaX(), dlg.deltaY());
   m_scene->rebuild();
   markEdited();
+  reportSketchTransform("Move", sketchReport);
 }
 
 void MainWindow::onCopySelectedTriggered()
@@ -2117,12 +2123,14 @@ void MainWindow::onCopySelectedTriggered()
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
+  SketchTransform::Report sketchReport;
   if (dlg.transformMode() == MoveCopyDialog::TransformMode::Rotate)
-    FemmProblemEdit::rotateCopySelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg(), dlg.numCopies());
+    FemmProblemEdit::rotateCopySelected(m_problem, dlg.aboutX(), dlg.aboutY(), dlg.shiftAngleDeg(), dlg.numCopies(), &sketchReport);
   else
-    FemmProblemEdit::translateCopySelected(m_problem, dlg.deltaX(), dlg.deltaY(), dlg.numCopies());
+    FemmProblemEdit::translateCopySelected(m_problem, dlg.deltaX(), dlg.deltaY(), dlg.numCopies(), &sketchReport);
   m_scene->rebuild();
   markEdited();
+  reportSketchTransform("Copy", sketchReport);
 }
 
 void MainWindow::onScaleSelectedTriggered()
@@ -2144,9 +2152,11 @@ void MainWindow::onScaleSelectedTriggered()
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::scaleSelected(m_problem, baseX, baseY, factor);
+  SketchTransform::Report sketchReport;
+  FemmProblemEdit::scaleSelected(m_problem, baseX, baseY, factor, &sketchReport);
   m_scene->rebuild();
   markEdited();
+  reportSketchTransform("Scale", sketchReport);
 }
 
 void MainWindow::onMirrorSelectedTriggered()
@@ -2171,9 +2181,36 @@ void MainWindow::onMirrorSelectedTriggered()
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
-  FemmProblemEdit::mirrorSelected(m_problem, x0, y0, x1, y1);
+  SketchTransform::Report sketchReport;
+  FemmProblemEdit::mirrorSelected(m_problem, x0, y0, x1, y1, &sketchReport);
   m_scene->rebuild();
   markEdited();
+  reportSketchTransform("Mirror", sketchReport);
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#32).
+//
+// The status bar for the ordinary outcome -- "N constraints came along"
+// is information, not a question -- and a dialog only when something was
+// dropped or now conflicts, because those change what the model means
+// and are worth stopping for.
+void MainWindow::reportSketchTransform(const QString& title,
+    const SketchTransform::Report& r)
+{
+  const QString summary = r.summary();
+  if (summary.isEmpty())
+    return;
+  if (r.constraintsDropped == 0 && r.conflictsIntroduced == 0) {
+    statusBar()->showMessage(title + ": " + summary, 8000);
+    return;
+  }
+  QMessageBox box(this);
+  box.setIcon(QMessageBox::Information);
+  box.setWindowTitle(title);
+  box.setText(summary);
+  if (!r.notes.isEmpty())
+    box.setDetailedText(r.notes.join("\n\n"));
+  box.exec();
 }
 
 void MainWindow::applyConstraint(const FemmConstraint& c)

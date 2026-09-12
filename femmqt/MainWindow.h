@@ -8,6 +8,7 @@
 #include "FemmProblem.h"
 #include "ConstructionGeometry.h"
 #include "GeometryScene.h"
+#include "SketchTransform.h"
 #include "GeometryView.h"
 
 class QAction;
@@ -173,6 +174,7 @@ class MainWindow : public QMainWindow {
   // installed separately once a toolbar's buttons are all in place).
   // #31. Not slots: called from the Construction Geometry submenu's own
   // lambdas, which supply the direction.
+  void reportSketchTransform(const QString& title, const SketchTransform::Report& r);
   void convertSelectionConstruction(bool toConstruction);
   void applyConstructionResult(const QString& title,
       const ConstructionGeometry::Result& r);

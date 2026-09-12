@@ -114,6 +114,8 @@ qt_add_library(femmqt_core STATIC
   OffsetChamfer.cpp
   ConstructionGeometry.h
   ConstructionGeometry.cpp
+  SketchTransform.h
+  SketchTransform.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -299,6 +301,13 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_construction_tests
     tests/tst_construction.cpp
   )
+
+  # What transforms do to the sketch layer (#32). Half of it pins down
+  # the audit's finding -- references were already correct -- so that
+  # staying correct is checked rather than assumed.
+  qt_add_executable(femmqt_sketch_transform_tests
+    tests/tst_sketch_transform.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -327,6 +336,7 @@ if(TARGET Qt6::Test)
     femmqt_trim_tests
     femmqt_offset_tests
     femmqt_construction_tests
+    femmqt_sketch_transform_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -361,6 +371,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_trim COMMAND femmqt_trim_tests)
   add_test(NAME femmqt_offset COMMAND femmqt_offset_tests)
   add_test(NAME femmqt_construction COMMAND femmqt_construction_tests)
+  add_test(NAME femmqt_sketch_transform COMMAND femmqt_sketch_transform_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
