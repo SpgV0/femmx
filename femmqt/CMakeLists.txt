@@ -110,6 +110,8 @@ qt_add_library(femmqt_core STATIC
   SnapEngine.cpp
   TrimExtend.h
   TrimExtend.cpp
+  OffsetChamfer.h
+  OffsetChamfer.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -280,6 +282,14 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_trim_tests
     tests/tst_trim_extend.cpp
   )
+
+  # Offset and chamfer (#30). The offset cases measure DISTANCE and SIDE
+  # back against the original, because the failure mode is valid
+  # geometry in the wrong place -- which no assertion about entity counts
+  # can see.
+  qt_add_executable(femmqt_offset_tests
+    tests/tst_offset_chamfer.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -306,6 +316,7 @@ if(TARGET Qt6::Test)
     femmqt_sketch_persistence_tests
     femmqt_snap_tests
     femmqt_trim_tests
+    femmqt_offset_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -338,6 +349,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_sketch_persistence COMMAND femmqt_sketch_persistence_tests)
   add_test(NAME femmqt_snap COMMAND femmqt_snap_tests)
   add_test(NAME femmqt_trim COMMAND femmqt_trim_tests)
+  add_test(NAME femmqt_offset COMMAND femmqt_offset_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without

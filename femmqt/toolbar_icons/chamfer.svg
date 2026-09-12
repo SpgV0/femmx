@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The corner that was there, faint, and the flat that replaces it. -->
+  <polyline points="4,3 4,12 13,21 21,21" fill="none" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <polyline points="4,12 4,21 13,21" fill="none" stroke="CURRENTCOLOR" stroke-width="2" stroke-dasharray="2 2" opacity="0.4"/>
+</svg>

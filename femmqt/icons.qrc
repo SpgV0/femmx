@@ -10,6 +10,8 @@
     <file alias="trim.svg">toolbar_icons/trim.svg</file>
     <file alias="extend.svg">toolbar_icons/extend.svg</file>
     <file alias="split.svg">toolbar_icons/split.svg</file>
+    <file alias="offset.svg">toolbar_icons/offset.svg</file>
+    <file alias="chamfer.svg">toolbar_icons/chamfer.svg</file>
     <file alias="group.svg">toolbar_icons/group.svg</file>
     <file alias="open_selected.svg">toolbar_icons/open_selected.svg</file>
     <file alias="mesh.svg">toolbar_icons/mesh.svg</file>

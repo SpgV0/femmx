@@ -26,6 +26,7 @@
 #include "MeshOverlay.h"
 #include "MoveCopyDialog.h"
 #include "NodePropDialog.h"
+#include "OffsetChamfer.h"
 #include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
 #include "PreferencesDialog.h"
@@ -613,6 +614,13 @@ MainWindow::MainWindow(QWidget* parent)
   addThemedAction(editToolBar, ":/icons/scale.svg", "Scale", "Scale the selected objects", &MainWindow::onScaleSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/mirror.svg", "Mirror", "Mirror the selected objects across a line", &MainWindow::onMirrorSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/create_radius.svg", "Create Radius", "Convert a sharp corner into a radius", &MainWindow::onCreateRadiusTriggered);
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #30). Beside Create Radius because they are the same family:
+  // a fillet, a flat and a parallel copy are the three things you do to
+  // a corner or an edge, and Create Radius was the only one of them
+  // femmqt had.
+  addThemedAction(editToolBar, ":/icons/chamfer.svg", "Chamfer", "Cut a sharp corner off with a flat -- the straight counterpart to Create Radius", &MainWindow::onChamferTriggered);
+  addThemedAction(editToolBar, ":/icons/offset.svg", "Offset", "Draw a parallel copy of the selected lines and arcs at a set distance", &MainWindow::onOffsetTriggered);
   addThemedAction(editToolBar, ":/icons/open_boundary.svg", "Create Open Boundary", "Create an asymptotic (Kelvin-transform) open boundary around the model", &MainWindow::onCreateOpenBoundaryTriggered);
   editToolBar->addSeparator();
   addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", "Select all entities belonging to a numbered group", &MainWindow::onSelectByGroupTriggered);
@@ -1221,6 +1229,163 @@ void MainWindow::onCreateRadiusTriggered()
   }
   m_scene->rebuild();
   markEdited();
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#30).
+//
+// Chamfer takes the same corner selection as Create Radius directly
+// above, and reports its refusals the same way -- a corner that cannot
+// be cut is a fact about the drawing, not an error.
+void MainWindow::onChamferTriggered()
+{
+  m_scene->syncSelectionToProblem();
+  int nodeIndex = -1;
+  for (int i = 0; i < m_problem.nodes.size(); i++) {
+    if (m_problem.nodes[i].isSelected) {
+      if (nodeIndex >= 0) {
+        QMessageBox::information(this, "Chamfer", "Select exactly one node first.");
+        return;
+      }
+      nodeIndex = i;
+    }
+  }
+  if (nodeIndex < 0) {
+    QMessageBox::information(this, "Chamfer",
+        "Select the corner node to chamfer first -- one shared by exactly two straight lines.");
+    return;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Chamfer");
+  auto* form = new QFormLayout;
+
+  auto* modeCombo = new QComboBox(&dlg);
+  modeCombo->addItems({ "Distance and distance", "Distance and angle" });
+  form->addRow("Define by:", modeCombo);
+
+  const QString units = lengthUnitsName(m_problem.lengthUnits);
+  auto* firstEdit = new QLineEdit("1", &dlg);
+  firstEdit->setValidator(new QDoubleValidator(1e-12, 1e12, 12, firstEdit));
+  form->addRow(QString("First distance (%1):").arg(units), firstEdit);
+
+  auto* secondEdit = new QLineEdit("1", &dlg);
+  secondEdit->setValidator(new QDoubleValidator(1e-12, 1e12, 12, secondEdit));
+  auto* secondLabel = new QLabel(QString("Second distance (%1):").arg(units), &dlg);
+  form->addRow(secondLabel, secondEdit);
+
+  // The second field means two different things, so it says which rather
+  // than leaving the user to infer it from the combo above.
+  QObject::connect(modeCombo, &QComboBox::currentIndexChanged, &dlg, [&](int i) {
+    if (i == 0) {
+      secondLabel->setText(QString("Second distance (%1):").arg(units));
+      secondEdit->setText("1");
+    } else {
+      secondLabel->setText("Angle to the first edge (degrees):");
+      secondEdit->setText("45");
+    }
+  });
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  const double first = firstEdit->text().toDouble();
+  const double second = secondEdit->text().toDouble();
+
+  // Try it on a copy, so a refusal costs no undo step -- same reasoning
+  // as GeometryScene::handleTrimExtendClick (#29).
+  FemmProblem trial = m_problem;
+  const OffsetChamfer::Result probe = modeCombo->currentIndex() == 0
+      ? OffsetChamfer::chamferDistances(trial, nodeIndex, first, second)
+      : OffsetChamfer::chamferDistanceAngle(trial, nodeIndex, first, second);
+  if (!probe.ok) {
+    QMessageBox::information(this, "Chamfer", probe.message);
+    return;
+  }
+
+  snapshotForUndo();
+  if (modeCombo->currentIndex() == 0)
+    OffsetChamfer::chamferDistances(m_problem, nodeIndex, first, second);
+  else
+    OffsetChamfer::chamferDistanceAngle(m_problem, nodeIndex, first, second);
+  m_scene->rebuild();
+  markEdited();
+}
+
+void MainWindow::onOffsetTriggered()
+{
+  m_scene->syncSelectionToProblem();
+  int selected = 0;
+  for (const FemmSegment& s : m_problem.segments)
+    if (s.isSelected)
+      selected++;
+  for (const FemmArcSegment& a : m_problem.arcSegments)
+    if (a.isSelected)
+      selected++;
+  if (selected == 0) {
+    QMessageBox::information(this, "Offset",
+        "Select the lines and arcs to offset first. A connected run offsets as one "
+        "curve, with its corners resolved; anything disconnected offsets on its own.");
+    return;
+  }
+
+  QDialog dlg(this);
+  dlg.setWindowTitle("Offset");
+  auto* form = new QFormLayout;
+
+  auto* distEdit = new QLineEdit("1", &dlg);
+  // Deliberately signed: the side is part of the distance, and there is
+  // no way to point at a side from a modal dialog.
+  distEdit->setValidator(new QDoubleValidator(-1e12, 1e12, 12, distEdit));
+  form->addRow(QString("Distance (%1):").arg(lengthUnitsName(m_problem.lengthUnits)), distEdit);
+
+  auto* cornerCombo = new QComboBox(&dlg);
+  cornerCombo->addItems({ "Sharp (extend and intersect)", "Rounded (arc of the offset radius)" });
+  form->addRow("Outside corners:", cornerCombo);
+
+  auto* note = new QLabel(
+      "A positive distance offsets to the left of each chain's direction of travel, "
+      "a negative one to the right. Boundary conditions are not copied onto the new "
+      "curve: the original still carries them, and imposing the same condition in two "
+      "places would change the problem rather than the drawing.",
+      &dlg);
+  note->setWordWrap(true);
+  note->setMinimumWidth(360);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(note);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  const double distance = distEdit->text().toDouble();
+  const OffsetChamfer::CornerStyle style = cornerCombo->currentIndex() == 0
+      ? OffsetChamfer::CornerStyle::Miter
+      : OffsetChamfer::CornerStyle::Fillet;
+
+  FemmProblem trial = m_problem;
+  const OffsetChamfer::Result probe = OffsetChamfer::offsetSelection(trial, distance, style);
+  if (!probe.ok) {
+    QMessageBox::information(this, "Offset", probe.message);
+    return;
+  }
+
+  snapshotForUndo();
+  const OffsetChamfer::Result r = OffsetChamfer::offsetSelection(m_problem, distance, style);
+  m_scene->rebuild();
+  markEdited();
+  // What was created, and what was deliberately not carried over. In the
+  // status bar rather than a dialog: it is a report, not a question.
+  statusBar()->showMessage(r.message, 10000);
 }
 
 void MainWindow::onCreateOpenBoundaryTriggered()

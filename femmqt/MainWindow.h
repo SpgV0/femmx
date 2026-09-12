@@ -58,6 +58,8 @@ class MainWindow : public QMainWindow {
   void onLoadMonitorToggled(bool show);
   void onCreateOpenBoundaryTriggered();
   void onCreateRadiusTriggered();
+  void onChamferTriggered();
+  void onOffsetTriggered();
   void onImportDxfTriggered();
   void onExportDxfTriggered();
   void onPrintTriggered();

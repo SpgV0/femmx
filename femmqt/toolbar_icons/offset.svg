@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The original corner, solid, and its parallel copy inside it. -->
+  <polyline points="3,4 3,20 20,20" fill="none" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <polyline points="8,4 8,15 20,15" fill="none" stroke="CURRENTCOLOR" stroke-width="2" stroke-dasharray="3 2" opacity="0.55"/>
+</svg>
