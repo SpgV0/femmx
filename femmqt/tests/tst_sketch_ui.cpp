@@ -35,7 +35,10 @@
 #include <QFile>
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
+#include <QApplication>
+#include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QSignalSpy>
 #include <QSet>
 
 #include <algorithm>
@@ -147,6 +150,10 @@ private slots:
   void aDisabledSnapTypeProducesNoIndicator();
   void snapPreferencesRoundTripThroughFemmCfg();
   void anOutOfRangeSnapMaskFallsBackToTheDefault();
+
+  void trimmingFromTheCanvasRemovesThePickedPiece();
+  void trimClicksPickTheLineNotTheNodeMarkerOnTopOfIt();
+  void aRefusedTrimCostsNoUndoStep();
 };
 
 // ---------------------------------------------------------------------------
@@ -881,6 +888,116 @@ void TestSketchUi::anOutOfRangeSnapMaskFallsBackToTheDefault()
     QVERIFY(QFile::copy(backup, cfg));
     QFile::remove(backup);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Trim from the canvas (issue #29)
+// ---------------------------------------------------------------------------
+//
+// tst_trim_extend.cpp covers the geometry. What it cannot cover is the
+// step in front of it: turning a click into an entity. That step has a
+// specific trap, and it is this file's trap -- node and block-label
+// markers sit ABOVE segments in z order on purpose, so that they stay
+// clickable. Taking the topmost hit unfiltered therefore picks a node
+// every time the user clicks near one, and near a junction is exactly
+// where trimming happens. The failure is silent: the click appears to do
+// nothing.
+
+namespace {
+
+// A horizontal line crossed by two verticals -- the classic trim
+// picture, matching tst_trim_extend.cpp's own fixture.
+FemmProblem crossedLine()
+{
+  FemmProblem p;
+  p.problemType = FemmCoordinateType::Planar;
+  const int a = FemmProblemEdit::addNode(p, 0, 0);
+  const int b = FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addSegment(p, a, b);
+  const int c = FemmProblemEdit::addNode(p, 3, -2);
+  const int d = FemmProblemEdit::addNode(p, 3, 2);
+  FemmProblemEdit::addSegment(p, c, d);
+  const int e = FemmProblemEdit::addNode(p, 7, -2);
+  const int f = FemmProblemEdit::addNode(p, 7, 2);
+  FemmProblemEdit::addSegment(p, e, f);
+  return p;
+}
+
+void clickAt(GeometryScene& scene, QPointF scenePos)
+{
+  QGraphicsSceneMouseEvent ev(QEvent::GraphicsSceneMousePress);
+  ev.setScenePos(scenePos);
+  ev.setButton(Qt::LeftButton);
+  ev.setButtons(Qt::LeftButton);
+  QApplication::sendEvent(&scene, &ev);
+}
+
+} // namespace
+
+void TestSketchUi::trimmingFromTheCanvasRemovesThePickedPiece()
+{
+  FemmProblem p = crossedLine();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+  h.scene.setToolMode(GeometryToolMode::Trim);
+
+  clickAt(h.scene, QPointF(5, 0)); // the middle piece
+
+  // Two verticals plus the two surviving pieces of the horizontal.
+  QCOMPARE(p.segments.size(), 4);
+  for (const FemmSegment& s : p.segments) {
+    if (p.nodes[s.n0].y == 0 && p.nodes[s.n1].y == 0) {
+      const double lo = std::min(p.nodes[s.n0].x, p.nodes[s.n1].x);
+      const double hi = std::max(p.nodes[s.n0].x, p.nodes[s.n1].x);
+      QVERIFY2(!(lo < 4.9 && hi > 5.1), "the picked piece is still there");
+    }
+  }
+}
+
+void TestSketchUi::trimClicksPickTheLineNotTheNodeMarkerOnTopOfIt()
+{
+  // Right next to the crossing at x=3, where the node marker's
+  // fixed-pixel hit area covers the line. Unfiltered, items() returns
+  // that marker first -- it has the higher z-value precisely so it stays
+  // clickable -- and the trim would quietly do nothing at all.
+  FemmProblem p = crossedLine();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+  h.scene.setToolMode(GeometryToolMode::Trim);
+
+  const int segmentsBefore = p.segments.size();
+  clickAt(h.scene, QPointF(3.2, 0));
+
+  QVERIFY2(p.segments.size() != segmentsBefore,
+      "the click landed on a node marker instead of the line under it, so "
+      "the trim did nothing -- and said nothing");
+}
+
+void TestSketchUi::aRefusedTrimCostsNoUndoStep()
+{
+  // aboutToEdit is what MainWindow snapshots for Undo. A click that
+  // changes nothing must not emit it, or one Ctrl+Z after a missed click
+  // would undo the edit BEFORE it -- the user's last real change -- and
+  // that is a data-loss bug, not a cosmetic one.
+  FemmProblem p = crossedLine();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+  h.scene.setToolMode(GeometryToolMode::Trim);
+
+  QSignalSpy edits(&h.scene, &GeometryScene::aboutToEdit);
+  QSignalSpy messages(&h.scene, &GeometryScene::toolMessage);
+
+  clickAt(h.scene, QPointF(50, 50)); // empty space
+  QCOMPARE(edits.count(), 0);
+  QVERIFY2(messages.count() > 0,
+      "a click that did nothing also said nothing, which is "
+      "indistinguishable from a broken tool");
+
+  clickAt(h.scene, QPointF(5, 0)); // a real trim
+  QCOMPARE(edits.count(), 1);
 }
 
 QTEST_MAIN(TestSketchUi)

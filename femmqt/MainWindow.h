@@ -190,6 +190,11 @@ class MainWindow : public QMainWindow {
   QAction* m_addBlockLabelToolAction = nullptr;
   QAction* m_addRectangleToolAction = nullptr;
   QAction* m_addCircleToolAction = nullptr;
+  // Trim/Extend/Split (#29) -- the three tools that modify existing
+  // geometry rather than adding or deleting it.
+  QAction* m_trimToolAction = nullptr;
+  QAction* m_extendToolAction = nullptr;
+  QAction* m_splitToolAction = nullptr;
   QAction* m_addDimensionDistanceToolAction = nullptr;
   QAction* m_addDimensionRadiusToolAction = nullptr;
   QAction* m_addDimensionAngleToolAction = nullptr;

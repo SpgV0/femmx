@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Both halves survive a split; the gap is only there to show the
+       cut, which is marked by the node the operation inserts. -->
+  <line x1="2" y1="16" x2="10" y2="16" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <line x1="14" y1="16" x2="22" y2="16" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <circle cx="12" cy="16" r="3" fill="none" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <line x1="12" y1="3" x2="12" y2="9" stroke="CURRENTCOLOR" stroke-width="2"/>
+</svg>

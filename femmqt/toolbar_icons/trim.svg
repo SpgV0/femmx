@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The line being trimmed: solid on the left of the cut, dashed on
+       the right to show the piece that goes. -->
+  <line x1="2" y1="16" x2="13" y2="16" stroke="CURRENTCOLOR" stroke-width="2"/>
+  <line x1="13" y1="16" x2="22" y2="16" stroke="CURRENTCOLOR" stroke-width="2" stroke-dasharray="2 2" opacity="0.45"/>
+  <!-- The cutting edge. -->
+  <line x1="13" y1="3" x2="13" y2="21" stroke="CURRENTCOLOR" stroke-width="2"/>
+</svg>

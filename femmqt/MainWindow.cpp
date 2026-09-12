@@ -463,6 +463,48 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addCircleToolAction);
   connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
 
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #29). These three MODIFY existing geometry, which is the
+  // category femmqt was missing entirely -- it could add and it could
+  // delete, so the only way to shorten a line was to delete it and draw
+  // it again, which is where stray fragments and near-miss junctions
+  // come from.
+  //
+  // Grouped behind their own separator for that reason: they are a
+  // different kind of operation from everything to their left, and the
+  // click means something different (it picks a PIECE, not a position).
+  toolBar->addSeparator();
+
+  m_trimToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/trim.svg"), "Trim");
+  m_trimToolAction->setToolTip("Trim -- click the piece of a line or arc to remove. "
+                               "The piece runs to the nearest crossing on each side; "
+                               "with nothing crossing it, the whole entity goes.");
+  m_trimToolAction->setCheckable(true);
+  // T, matching the single-key CAD-style bindings the tools to the left
+  // already use (N/L/A/R/C/D). Free: nothing else binds it.
+  m_trimToolAction->setShortcut(QKeySequence(Qt::Key_T));
+  toolGroup->addAction(m_trimToolAction);
+  connect(m_trimToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Trim); });
+
+  m_extendToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/extend.svg"), "Extend");
+  m_extendToolAction->setToolTip("Extend -- click near the end of a line or arc to grow it "
+                                 "until it meets the next entity in its path.");
+  m_extendToolAction->setCheckable(true);
+  m_extendToolAction->setShortcut(QKeySequence(Qt::Key_E));
+  toolGroup->addAction(m_extendToolAction);
+  connect(m_extendToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Extend); });
+
+  m_splitToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/split.svg"), "Split");
+  m_splitToolAction->setToolTip("Split -- click a line or arc to cut it in two at that point, "
+                                "moving nothing.");
+  m_splitToolAction->setCheckable(true);
+  // S is Save's modifier-less neighbour but not itself bound; K is what
+  // Fusion uses for Break, and is free here too. S reads better next to
+  // T and E, and Ctrl+S is unaffected.
+  m_splitToolAction->setShortcut(QKeySequence(Qt::Key_S));
+  toolGroup->addAction(m_splitToolAction);
+  connect(m_splitToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Split); });
+
   // Modified by Claude (Anthropic), noreply@anthropic.com: CAD-style
   // dimension tools -- per direct user request ("add dimensions when
   // drawings"). Also reachable from the Tools menu, like every other
@@ -534,6 +576,10 @@ MainWindow::MainWindow(QWidget* parent)
   toolsMenu->addSeparator();
   toolsMenu->addAction(m_addRectangleToolAction);
   toolsMenu->addAction(m_addCircleToolAction);
+  toolsMenu->addSeparator();
+  toolsMenu->addAction(m_trimToolAction);
+  toolsMenu->addAction(m_extendToolAction);
+  toolsMenu->addAction(m_splitToolAction);
   toolsMenu->addSeparator();
   toolsMenu->addAction(m_addDimensionDistanceToolAction);
   toolsMenu->addAction(m_addDimensionRadiusToolAction);
@@ -642,6 +688,12 @@ MainWindow::MainWindow(QWidget* parent)
   statusBar()->addPermanentWidget(m_snapLabel);
   connect(m_scene, &GeometryScene::mousePositionChanged, this, &MainWindow::onMousePositionChanged);
   connect(m_scene, &GeometryScene::snapChanged, this, &MainWindow::onSnapChanged);
+  // #29: trim/extend/split decline for ordinary geometric reasons
+  // ("nothing crosses that line"), which are not errors and must not be
+  // dialogs -- but a click that does nothing and says nothing is
+  // indistinguishable from a broken tool.
+  connect(m_scene, &GeometryScene::toolMessage, this,
+      [this](const QString& text) { statusBar()->showMessage(text, 6000); });
 
   statusBar()->showMessage("Ready");
   updateTitle();

@@ -8,6 +8,7 @@
 #include "IconTheme.h"
 #include "MeshOverlay.h"
 #include "MeshOverlayItem.h"
+#include "TrimExtend.h"
 
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsEllipseItem>
@@ -2484,9 +2485,100 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     }
     break;
   }
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #29). One click each, on the entity, at the place that says
+  // what to do to it -- see handleTrimExtendClick().
+  case GeometryToolMode::Trim:
+  case GeometryToolMode::Extend:
+  case GeometryToolMode::Split:
+    handleTrimExtendClick(pos);
+    break;
   default:
     break;
   }
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#29).
+//
+// `pos` is the RAW cursor position, not a snapped one. For these three
+// tools the click location is an argument, not a coordinate to be
+// placed: it picks which piece of a trimmed entity goes, which end to
+// extend, and where to split. Snapping it to the nearest endpoint --
+// which is what the geometry snap would usually do here, since the pick
+// is by definition on an entity -- would make "the piece nearest this
+// end" impossible to say.
+void GeometryScene::handleTrimExtendClick(QPointF pos)
+{
+  if (!m_problem)
+    return;
+
+  const QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+  QGraphicsItem* hit = nullptr;
+  for (QGraphicsItem* candidate : items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform)) {
+    const FemmItemKind k = static_cast<FemmItemKind>(candidate->data(KindKey).toInt());
+    // Only lines and arcs can be trimmed. Node and block-label markers
+    // sit ABOVE them in z order precisely so they stay clickable, so
+    // taking the topmost hit unfiltered would pick a node every time the
+    // user clicked near one -- and near one is where trimming happens.
+    if (!candidate->data(KindKey).isValid())
+      continue;
+    if (k == FemmItemKind::Segment || k == FemmItemKind::Arc) {
+      hit = candidate;
+      break;
+    }
+  }
+  if (!hit) {
+    emit toolMessage(tr("Click on a line or an arc."));
+    return;
+  }
+
+  const FemmItemKind kind = static_cast<FemmItemKind>(hit->data(KindKey).toInt());
+  const int index = hit->data(IndexKey).toInt();
+  const TrimExtend::EntityKind entity = kind == FemmItemKind::Arc
+      ? TrimExtend::EntityKind::Arc
+      : TrimExtend::EntityKind::Segment;
+
+  auto run = [&](FemmProblem& target) {
+    switch (m_toolMode) {
+    case GeometryToolMode::Trim:
+      return TrimExtend::trim(target, entity, index, pos.x(), pos.y());
+    case GeometryToolMode::Extend:
+      return TrimExtend::extend(target, entity, index, pos.x(), pos.y());
+    default:
+      return TrimExtend::split(target, entity, index, pos.x(), pos.y());
+    }
+  };
+
+  // Run it on a copy first, purely to find out whether it succeeds.
+  //
+  // aboutToEdit() is what MainWindow snapshots for Undo, and it has to
+  // be emitted while m_problem still holds the PRE-edit state -- so the
+  // outcome has to be known before the real edit begins. A refused trim
+  // must not emit it at all: a click that changed nothing but consumed
+  // an undo step means the next Ctrl+Z silently undoes the user's last
+  // real change instead, which is data loss rather than a nuisance.
+  //
+  // The alternative -- edit in place, then swap the old state back for
+  // the instant the signal takes -- also works today, but only because
+  // that connection happens to be direct. This does not depend on that.
+  // The operations are deterministic, so the second run does exactly
+  // what the first one did.
+  FemmProblem trial = *m_problem;
+  const TrimExtend::Result probe = run(trial);
+  if (!probe.ok) {
+    emit toolMessage(probe.message);
+    return;
+  }
+
+  emit aboutToEdit();
+  const TrimExtend::Result r = run(*m_problem);
+
+  ConstraintSolver::SolveResult solved = ConstraintSolver::solve(*m_problem);
+  setConstraintStatus(solved.nodeStatus);
+  rebuild();
+  emit problemEdited();
+  if (!r.message.isEmpty())
+    emit toolMessage(r.message);
 }
 
 void GeometryScene::keyPressEvent(QKeyEvent* event)

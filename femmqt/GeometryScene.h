@@ -90,6 +90,19 @@ enum class GeometryToolMode {
   // OnFDSelectCirc/SelectCircFlag. Toolbar-only in the classic GUI (no
   // menu item), found missing during a full icon-by-icon toolbar audit.
   SelectCircle,
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #29). Persistent, like the Add* tools: trimming a sketch back
+  // is done in a run of clicks, and dropping to Select after each one
+  // would double the work.
+  //
+  // All three take ONE click on the entity, and the click position
+  // matters as much as which entity was hit: it says which piece to
+  // remove, which end to grow, or where to cut. So they are deliberately
+  // NOT snapped -- snapping the pick to the nearest endpoint would make
+  // "the piece near this end" impossible to express.
+  Trim,
+  Extend,
+  Split,
 };
 
 // Editable rendering of a FemmProblem's geometry. Holds a non-owning
@@ -383,6 +396,13 @@ class GeometryScene : public QGraphicsScene {
   // QGraphicsView and does the actual fitInView().
   void zoomWindowSelected(QRectF sceneRect);
 
+  // A tool has something to say about what it just did, or declined to
+  // do (#29). Trim/extend/split fail for ordinary geometric reasons --
+  // nothing bounds this line, that end is shared -- which are not errors
+  // and must not be dialogs, but are useless unseen. MainWindow puts
+  // these in the status bar.
+  void toolMessage(const QString& text);
+
   // Emitted when a SelectCircle drag completes (the actual selection has
   // already happened by this point, see selectByCircle) -- MainWindow
   // uses this only to re-check its Select toolbar button, same reason
@@ -410,6 +430,9 @@ class GeometryScene : public QGraphicsScene {
 
   private:
   void handleToolClick(QGraphicsSceneMouseEvent* event);
+  // Trim/Extend/Split (#29). Takes the RAW scene position -- for these
+  // three the pick location is an argument, not a point being placed.
+  void handleTrimExtendClick(QPointF pos);
   // Modified by Claude (Anthropic), noreply@anthropic.com: shared by
   // AddDimensionDistance/AddDimensionRadius's own handleToolClick cases
   // AND the new SmartDimension tool -- prompts for the value

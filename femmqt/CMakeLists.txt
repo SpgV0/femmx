@@ -108,6 +108,8 @@ qt_add_library(femmqt_core STATIC
   SketchFileIO.cpp
   SnapEngine.h
   SnapEngine.cpp
+  TrimExtend.h
+  TrimExtend.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -269,6 +271,15 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_snap_tests
     tests/tst_snap_engine.cpp
   )
+
+  # Trim, extend and split (#29). The arc cases check that each result
+  # still lies on the SAME circle as the arc it came from, which is the
+  # kind of property a hand-computed expected coordinate cannot verify --
+  # see #25, where the hand derivation was wrong the same way the code
+  # was.
+  qt_add_executable(femmqt_trim_tests
+    tests/tst_trim_extend.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -294,6 +305,7 @@ if(TARGET Qt6::Test)
     femmqt_sketch_ui_tests
     femmqt_sketch_persistence_tests
     femmqt_snap_tests
+    femmqt_trim_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -325,6 +337,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_sketch_ui COMMAND femmqt_sketch_ui_tests)
   add_test(NAME femmqt_sketch_persistence COMMAND femmqt_sketch_persistence_tests)
   add_test(NAME femmqt_snap COMMAND femmqt_snap_tests)
+  add_test(NAME femmqt_trim COMMAND femmqt_trim_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
