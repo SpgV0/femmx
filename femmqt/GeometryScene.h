@@ -241,6 +241,13 @@ class GeometryScene : public QGraphicsScene {
   // indicator and the status bar.
   const SnapEngine::SnapResult& lastSnap() const { return m_lastSnap; }
 
+  // Drives the on-canvas glyph from whatever snapPoint() last resolved.
+  // Callers that snap outside a hover (a preview being dragged, say)
+  // call this afterwards to keep the marker truthful; hideSnapIndicator()
+  // is for when the hover is over.
+  void updateSnapIndicator();
+  void hideSnapIndicator();
+
   void setShowBlockNames(bool show);
   bool showBlockNames() const { return m_showBlockNames; }
 
@@ -330,6 +337,11 @@ class GeometryScene : public QGraphicsScene {
 
   signals:
   void problemEdited();
+
+  // The snap under the cursor changed (#28) -- MainWindow names it in the
+  // status bar. Carries SnapType::None when nothing matched, so the
+  // readout clears itself rather than going stale.
+  void snapChanged(const SnapEngine::SnapResult& snap);
 
   // Emitted right before an edit originating IN THIS SCENE actually
   // mutates m_problem -- MainWindow connects this to push an undo-stack
@@ -559,6 +571,9 @@ class GeometryScene : public QGraphicsScene {
   // need a reference point are off until a drawing operation supplies
   // one.
   unsigned m_snapFlags = SnapEngine::SnapDefault;
+  // SnapIndicatorItem, a type private to the .cpp -- same arrangement
+  // as m_nodeItems/m_constraintItems (static_cast at each use).
+  QGraphicsItem* m_snapIndicatorItem = nullptr;
   bool m_snapSuspended = false;
   QPointF m_snapReference;
   bool m_snapReferenceValid = false;

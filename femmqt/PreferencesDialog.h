@@ -2,6 +2,8 @@
 
 #include <QDialog>
 
+#include <QList>
+
 class QCheckBox;
 
 // Qt equivalent of femm/GeneralPrefs.cpp's CGeneralPrefs dialog -- see
@@ -24,4 +26,10 @@ class PreferencesDialog : public QDialog {
   QCheckBox* m_separatePlots = nullptr;
   QCheckBox* m_showOutputWindow = nullptr;
   QCheckBox* m_darkTheme = nullptr;
+
+  // One checkbox per SnapEngine::SnapFlags bit (issue #28), paired with
+  // the bit it controls so onAccept() can rebuild the mask without
+  // repeating the order the boxes were created in -- that duplication is
+  // exactly how a checkbox ends up wired to the wrong bit.
+  QList<QPair<QCheckBox*, unsigned>> m_snapBoxes;
 };

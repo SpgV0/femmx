@@ -188,6 +188,9 @@ MainWindow::MainWindow(QWidget* parent)
 
   m_scene = new GeometryScene(this);
   m_scene->setProblem(&m_problem);
+  // #28: honour the saved per-type snap choices from the first window
+  // onwards, not just after Preferences has been opened once.
+  m_scene->setSnapFlags(AppPreferences::load().snapFlags);
   connect(m_scene, &GeometryScene::problemEdited, this, &MainWindow::onProblemEdited);
   connect(m_scene, &GeometryScene::entityDoubleClicked, this, &MainWindow::onEntityDoubleClicked);
   connect(m_scene, &GeometryScene::openSelectedRequested, this, &MainWindow::onOpenSelectedTriggered);
@@ -629,10 +632,33 @@ MainWindow::MainWindow(QWidget* parent)
   m_positionLabel = new QLabel(this);
   m_positionLabel->setMinimumWidth(160);
   statusBar()->addPermanentWidget(m_positionLabel);
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#28):
+  // names the snap the cursor is currently on. Left of the coordinates
+  // because the two are read together -- the coordinate readout already
+  // shows the SNAPPED position, and without this there is no way to tell
+  // a snapped coordinate from a free one.
+  m_snapLabel = new QLabel(this);
+  m_snapLabel->setMinimumWidth(90);
+  statusBar()->addPermanentWidget(m_snapLabel);
   connect(m_scene, &GeometryScene::mousePositionChanged, this, &MainWindow::onMousePositionChanged);
+  connect(m_scene, &GeometryScene::snapChanged, this, &MainWindow::onSnapChanged);
 
   statusBar()->showMessage("Ready");
   updateTitle();
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#28).
+void MainWindow::onSnapChanged(const SnapEngine::SnapResult& snap)
+{
+  if (!m_snapLabel)
+    return;
+  // Grid is deliberately named here even though the on-canvas glyph
+  // stays hidden for it: a word in the status bar costs nothing and
+  // answers "why did my point move?", whereas a marker chasing the
+  // cursor across every grid square would be noise.
+  m_snapLabel->setText(snap.snapped()
+          ? QString("Snap: %1").arg(QString::fromLatin1(SnapEngine::name(snap.type)))
+          : QString());
 }
 
 void MainWindow::onMousePositionChanged(QPointF scenePos)
@@ -1063,10 +1089,16 @@ void MainWindow::onPreferencesTriggered()
 {
   bool wasDark = AppTheme::isDark();
   PreferencesDialog dlg(this);
-  if (dlg.exec() == QDialog::Accepted && AppTheme::isDark() != wasDark) {
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+  if (AppTheme::isDark() != wasDark) {
     m_scene->refreshTheme();
     refreshToolbarIcons();
   }
+  // #28: the snap toggles have to reach the live scene, not just
+  // femm.cfg -- a setting that only takes effect after a restart reads
+  // as a broken setting.
+  m_scene->setSnapFlags(AppPreferences::load().snapFlags);
 }
 
 void MainWindow::onDarkThemeToggled(bool dark)

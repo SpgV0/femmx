@@ -131,6 +131,7 @@ class MainWindow : public QMainWindow {
   void onAboutTriggered();
   void onOpenRecentFile();
   void onMousePositionChanged(QPointF scenePos);
+  void onSnapChanged(const SnapEngine::SnapResult& snap);
   // Matches femm/FemmeView.cpp's EnterPoint() -- TAB while Add Node/Add
   // Block Label is active (see GeometryView::enterPointRequested), types
   // an exact coordinate instead of clicking one on the canvas.
@@ -196,6 +197,8 @@ class MainWindow : public QMainWindow {
   QAction* m_showMeshAction = nullptr;
   QMenu* m_recentFilesMenu = nullptr;
   QLabel* m_positionLabel = nullptr;
+  // Names the active object snap (#28); empty when nothing is snapped.
+  QLabel* m_snapLabel = nullptr;
   // Every toolbar action added via addThemedAction(), paired with the SVG
   // path it was built from -- refreshToolbarIcons() walks this to re-tint
   // all of them after a dark/light toggle, not just the original 5 draw

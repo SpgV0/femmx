@@ -814,6 +814,131 @@ class ConstraintGlyphItem : public QGraphicsItem {
   double m_halfSize = kConstraintGlyphPixelRadius;
 };
 
+// ---------------------------------------------------------------------------
+// Snap indicator (issue #28)
+// ---------------------------------------------------------------------------
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12.
+//
+// A snap that moves the point without saying so is worse than no snap:
+// the user aimed at a midpoint, landed on an endpoint, and finds out
+// when the mesh comes back wrong. So the glyph names the snap TYPE, not
+// merely its position -- one distinct shape per type, the convention
+// every CAD package shares (square = endpoint, triangle = midpoint,
+// circle = centre, cross = intersection, and so on). Position alone
+// would be ambiguous exactly where it matters, because a midpoint and a
+// nearby endpoint can be a few pixels apart.
+
+constexpr double kSnapIndicatorPixelRadius = 7.0;
+
+class SnapIndicatorItem : public QGraphicsItem
+{
+  public:
+  SnapIndicatorItem()
+  {
+    // Above everything the user can click, and deliberately NOT
+    // selectable or hit-testable: it is a readout, not geometry. A
+    // clickable indicator would steal the very click it is describing.
+    setZValue(50.0);
+    setFlag(QGraphicsItem::ItemIsSelectable, false);
+    setAcceptedMouseButtons(Qt::NoButton);
+    setVisible(false);
+  }
+
+  void setSnapType(SnapEngine::SnapType type)
+  {
+    if (m_type == type)
+      return;
+    prepareGeometryChange();
+    m_type = type;
+    update();
+  }
+
+  void refreshFixedSize()
+  {
+    prepareGeometryChange();
+    m_halfSize = kSnapIndicatorPixelRadius / viewScaleFor(this);
+  }
+
+  QRectF boundingRect() const override
+  {
+    // Padded by the pen width so the stroke is never clipped.
+    double h = m_halfSize * 1.6;
+    return QRectF(-h, -h, 2 * h, 2 * h);
+  }
+
+  protected:
+  void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
+  {
+    const double h = m_halfSize;
+    QPen pen(AppTheme::selectedColor());
+    // Cosmetic: a fixed on-screen line width at every zoom, without
+    // having to divide by the view scale here as well.
+    pen.setCosmetic(true);
+    pen.setWidth(2);
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+
+    switch (m_type) {
+    case SnapEngine::SnapType::Endpoint:
+      painter->drawRect(QRectF(-h, -h, 2 * h, 2 * h));
+      break;
+    case SnapEngine::SnapType::Midpoint: {
+      // Upright in SCREEN space. The view is mirrored vertically
+      // (resetZoomTransform() does scale(1,-1)), so a triangle built the
+      // obvious way in scene coordinates draws upside down.
+      QPolygonF tri;
+      tri << QPointF(-h, h) << QPointF(h, h) << QPointF(0, -h);
+      painter->drawPolygon(tri);
+      break;
+    }
+    case SnapEngine::SnapType::Centre:
+      painter->drawEllipse(QRectF(-h, -h, 2 * h, 2 * h));
+      break;
+    case SnapEngine::SnapType::Intersection:
+      painter->drawLine(QPointF(-h, -h), QPointF(h, h));
+      painter->drawLine(QPointF(-h, h), QPointF(h, -h));
+      break;
+    case SnapEngine::SnapType::Quadrant: {
+      QPolygonF diamond;
+      diamond << QPointF(0, -h) << QPointF(h, 0) << QPointF(0, h) << QPointF(-h, 0);
+      painter->drawPolygon(diamond);
+      break;
+    }
+    case SnapEngine::SnapType::Perpendicular:
+      // The standard right-angle mark.
+      painter->drawLine(QPointF(-h, h), QPointF(-h, -h));
+      painter->drawLine(QPointF(-h, -h), QPointF(h, -h));
+      painter->drawLine(QPointF(-h, 0), QPointF(0, 0));
+      painter->drawLine(QPointF(0, 0), QPointF(0, -h));
+      break;
+    case SnapEngine::SnapType::Tangent:
+      painter->drawEllipse(QRectF(-h, -h + h / 3, 2 * h, 2 * h - h / 3));
+      painter->drawLine(QPointF(-h, -h + h / 3), QPointF(h, -h + h / 3));
+      break;
+    case SnapEngine::SnapType::OnEdge: {
+      // Bowtie -- "somewhere along this edge", as distinct from any
+      // named point on it.
+      QPolygonF bowtie;
+      bowtie << QPointF(-h, -h) << QPointF(h, -h) << QPointF(-h, h) << QPointF(h, h);
+      painter->drawPolygon(bowtie);
+      break;
+    }
+    case SnapEngine::SnapType::Grid:
+      painter->drawLine(QPointF(-h, 0), QPointF(h, 0));
+      painter->drawLine(QPointF(0, -h), QPointF(0, h));
+      break;
+    case SnapEngine::SnapType::None:
+      break;
+    }
+  }
+
+  private:
+  SnapEngine::SnapType m_type = SnapEngine::SnapType::None;
+  double m_halfSize = kSnapIndicatorPixelRadius;
+};
+
 } // namespace
 
 GeometryScene::GeometryScene(QObject* parent)
@@ -949,6 +1074,8 @@ void GeometryScene::rebuild()
   m_constraintItems.clear();
   m_constraintItemsByNode.clear();
   m_zoomWindowRectItem = nullptr;
+  // Deleted by clear() like everything else (#28).
+  m_snapIndicatorItem = nullptr;
   // Modified by Claude (Anthropic), noreply@anthropic.com: same
   // already-deleted-by-clear() reasoning as m_zoomWindowRectItem right
   // above, but a REAL (not just theoretical) risk for this one
@@ -1030,11 +1157,53 @@ void GeometryScene::refreshFixedPixelItemSizes()
     static_cast<BlockLabelItem*>(item)->refreshFixedSize();
   for (QGraphicsItem* item : std::as_const(m_constraintItems))
     static_cast<ConstraintGlyphItem*>(item)->refreshFixedSize();
+  if (m_snapIndicatorItem)
+    static_cast<SnapIndicatorItem*>(m_snapIndicatorItem)->refreshFixedSize();
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#28).
+// Shows where the cursor actually landed and which rule put it there,
+// from whatever the last snapPoint() call resolved. snapPoint() is const
+// (it is called from const contexts) so it cannot touch the scene's item
+// list itself; every caller that wants the indicator visible calls this
+// straight afterwards.
+void GeometryScene::updateSnapIndicator()
+{
+  // Grid snap is the pre-existing behaviour and is on by default; a
+  // marker that follows the cursor across every empty square would be
+  // constant visual noise for no information. The indicator is for
+  // snaps that attach to GEOMETRY, which is the case where being wrong
+  // is expensive.
+  const bool show = m_lastSnap.snapped() && m_lastSnap.type != SnapEngine::SnapType::Grid;
+  if (!show) {
+    if (m_snapIndicatorItem)
+      m_snapIndicatorItem->setVisible(false);
+    return;
+  }
+  if (!m_snapIndicatorItem) {
+    auto* item = new SnapIndicatorItem();
+    m_snapIndicatorItem = item;
+    addItem(item);
+    item->refreshFixedSize(); // needs item->scene(), just set by addItem()
+  }
+  auto* item = static_cast<SnapIndicatorItem*>(m_snapIndicatorItem);
+  item->setSnapType(m_lastSnap.type);
+  item->setPos(m_lastSnap.x, m_lastSnap.y);
+  item->setVisible(true);
+}
+
+void GeometryScene::hideSnapIndicator()
+{
+  if (m_snapIndicatorItem)
+    m_snapIndicatorItem->setVisible(false);
 }
 
 void GeometryScene::setToolMode(GeometryToolMode mode)
 {
   m_toolMode = mode;
+  // The indicator describes a hover that is now over (#28); leaving it
+  // parked would claim a snap that the next click will not get.
+  hideSnapIndicator();
   m_pendingNode = -1;
   m_pendingDimensionNodes.clear();
   m_pendingDimensionArc = -1;
@@ -1824,6 +1993,10 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
   emit mousePositionChanged(snapPoint(event->scenePos()));
+  // snapPoint() above refreshed m_lastSnap; reflect it on the canvas and
+  // tell the window so the status bar can name it (#28).
+  updateSnapIndicator();
+  emit snapChanged(m_lastSnap);
 
   if (m_toolMode == GeometryToolMode::SmartDimension && m_smartDimAwaitingPlacement) {
     // Deliberately the RAW (unsnapped) scene position -- dimension

@@ -136,6 +136,16 @@ void GeometryView::keyPressEvent(QKeyEvent* event)
     if (gs && gs->toolMode() == GeometryToolMode::Select)
       setDragMode(QGraphicsView::RubberBandDrag);
   }
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  // Alt suspends object snapping for as long as it is held (issue #28),
+  // so a point can be placed exactly where the cursor is without
+  // changing any setting. Every CAD package has this, because a snap
+  // that cannot be overridden is worse than no snap at all -- there is
+  // always the one point that must go just off the geometry.
+  if (event->key() == Qt::Key_Alt && !event->isAutoRepeat()) {
+    if (auto* gs = qobject_cast<GeometryScene*>(scene()))
+      gs->setSnapSuspended(true);
+  }
   QGraphicsView::keyPressEvent(event);
 }
 
@@ -143,7 +153,22 @@ void GeometryView::keyReleaseEvent(QKeyEvent* event)
 {
   if (event->key() == Qt::Key_Shift && !event->isAutoRepeat())
     setDragMode(QGraphicsView::NoDrag);
+  if (event->key() == Qt::Key_Alt && !event->isAutoRepeat()) {
+    if (auto* gs = qobject_cast<GeometryScene*>(scene()))
+      gs->setSnapSuspended(false);
+  }
   QGraphicsView::keyReleaseEvent(event);
+}
+
+void GeometryView::focusOutEvent(QFocusEvent* event)
+{
+  // Alt is the key Windows uses to reach the menu bar, so the view can
+  // lose focus while it is still physically down and never see the
+  // release -- leaving snapping suspended with no way for the user to
+  // tell why. Clear it on the way out (#28).
+  if (auto* gs = qobject_cast<GeometryScene*>(scene()))
+    gs->setSnapSuspended(false);
+  QGraphicsView::focusOutEvent(event);
 }
 
 bool GeometryView::event(QEvent* ev)

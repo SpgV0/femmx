@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SnapEngine.h"
+
 // Reads/writes femm.cfg's General Preferences fields (femm/GeneralPrefs.cpp's
 // CGeneralPrefs::ScanPrefs/WritePrefs -- <ShowConsole>/<SeparatePlots>/
 // <ShowOutputWindow>/<SmartMesh>/<DefaultType>) plus a Qt-only
@@ -25,6 +27,13 @@ struct AppPreferences {
   // for the classic GUI.
   int defaultDocType = 0; // <DefaultType>
   bool darkTheme = false; // <QtDarkTheme>, Qt-only
+  // Which object-snap types are enabled (issue #28), as a
+  // SnapEngine::SnapFlags bitmask. One integer rather than nine tags:
+  // femm.cfg is shared with the classic GUI, which has no object
+  // snapping at all, and nine Qt-only lines in a file the other program
+  // also reads and rewrites is a poor trade for readability nobody
+  // benefits from. Qt-only, like <QtDarkTheme>.
+  unsigned snapFlags = SnapEngine::SnapDefault; // <QtSnapFlags>
 
   static AppPreferences load();
   bool save() const;

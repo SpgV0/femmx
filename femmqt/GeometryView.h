@@ -75,6 +75,11 @@ class GeometryView : public QGraphicsView {
   // encloses. Only armed in Select tool mode -- see the .cpp for why.
   void keyPressEvent(QKeyEvent* event) override;
   void keyReleaseEvent(QKeyEvent* event) override;
+  // Alt is held to suspend object snapping (#28). Losing focus while it
+  // is down -- which Windows makes easy, since Alt also reaches the menu
+  // bar -- would otherwise strand snapping in the suspended state with
+  // no visible cause, so the release is also forced here.
+  void focusOutEvent(QFocusEvent* event) override;
   // Tab specifically has to be caught here, not in keyPressEvent() --
   // QWidget::event()'s default implementation consumes an unmodified Tab
   // key press for its own focus-navigation (calling focusNextPrevChild())

@@ -57,6 +57,14 @@ AppPreferences AppPreferences::load()
       prefs.defaultDocType = value.toInt();
     else if (matchesTag(line, "<QtDarkTheme>", &value))
       prefs.darkTheme = value.toInt() != 0;
+    else if (matchesTag(line, "<QtSnapFlags>", &value)) {
+      // An out-of-range value would silently disable snapping or enable
+      // bits that do not exist; fall back to the default rather than
+      // honour nonsense written by hand or by a future version.
+      bool ok = false;
+      uint v = value.toUInt(&ok);
+      prefs.snapFlags = (ok && v <= SnapEngine::SnapAll) ? v : (unsigned)SnapEngine::SnapDefault;
+    }
   }
   return prefs;
 }
@@ -66,6 +74,7 @@ bool AppPreferences::save() const
   QStringList lines;
   bool haveShowConsole = false, haveSeparatePlots = false, haveShowOutputWindow = false;
   bool haveSmartMesh = false, haveDefaultType = false, haveDarkTheme = false;
+  bool haveSnapFlags = false;
 
   QFile readFile(cfgPath());
   if (readFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -90,6 +99,9 @@ bool AppPreferences::save() const
       } else if (matchesTag(line, "<QtDarkTheme>", nullptr)) {
         lines << QStringLiteral("<QtDarkTheme>      = %1").arg(darkTheme ? 1 : 0);
         haveDarkTheme = true;
+      } else if (matchesTag(line, "<QtSnapFlags>", nullptr)) {
+        lines << QStringLiteral("<QtSnapFlags>      = %1").arg(snapFlags);
+        haveSnapFlags = true;
       } else {
         lines << line;
       }
@@ -109,6 +121,8 @@ bool AppPreferences::save() const
     lines << QStringLiteral("<DefaultType>      = %1").arg(defaultDocType);
   if (!haveDarkTheme)
     lines << QStringLiteral("<QtDarkTheme>      = %1").arg(darkTheme ? 1 : 0);
+  if (!haveSnapFlags)
+    lines << QStringLiteral("<QtSnapFlags>      = %1").arg(snapFlags);
 
   QFile writeFile(cfgPath());
   if (!writeFile.open(QIODevice::WriteOnly | QIODevice::Text))

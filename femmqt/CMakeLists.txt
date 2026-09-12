@@ -365,6 +365,32 @@ if(TARGET Qt6::Test)
   #
   # The plugin is a hard requirement, so a missing one is a configure
   # error. Silently skipping it is what turned a missing file into a hang.
+  #
+  # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  # this find_program used to live ~35 lines BELOW here, next to
+  # femmqt.exe's own deployment step, and this block simply read the
+  # variable it sets. On a re-configure that happened to work, because
+  # find_program caches -- but on a CLEAN configure the cache entry did
+  # not exist yet, the guard below was false, and the entire test
+  # deployment was skipped without a word. The test binaries then had no
+  # Qt6Test.dll and no offscreen plugin beside them and exited
+  # immediately with no output, which ctest reports as a timeout.
+  #
+  # Reproduced from a fresh build directory this session. It is the same
+  # silent-skip the comment directly above warns about, one level up: the
+  # careful FATAL_ERROR for a missing qoffscreen.dll was unreachable,
+  # because the `if` guarding it was already false.
+  find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${FEMMQT_QT6_DIR}/bin")
+  if(WIN32 AND NOT FEMMQT_WINDEPLOYQT_EXECUTABLE)
+    message(FATAL_ERROR
+      "femmqt: windeployqt was not found in \"${FEMMQT_QT6_DIR}/bin\". "
+      "The test binaries need the Qt runtime, Qt6Test.dll and the "
+      "offscreen QPA plugin copied next to them, and without it they do "
+      "not start at all -- silently, with no output, which ctest reports "
+      "as a timeout rather than a missing dependency. Point "
+      "-DFEMMQT_QT6_DIR at a complete Qt6 MSVC kit, or disable the Qt "
+      "GUI with -DSKIP_femmqt=ON.")
+  endif()
   if(WIN32 AND FEMMQT_WINDEPLOYQT_EXECUTABLE)
     set(_femmqt_offscreen "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
     if(NOT EXISTS "${_femmqt_offscreen}")
@@ -401,6 +427,9 @@ install(TARGETS femmqt DESTINATION "${INSTALL_BIN_DIR}")
 # PATH. This does NOT cover the separately-installed copy in
 # INSTALL_BIN_DIR (bin\) -- see the install(SCRIPT ...) below for that.
 if(WIN32)
+  # Already located above, before the test-deployment block that also
+  # needs it -- kept here as a no-op for the SKIP_femmqt_tests path,
+  # where that block never runs. find_program is a cache lookup once set.
   find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${FEMMQT_QT6_DIR}/bin")
   if(FEMMQT_WINDEPLOYQT_EXECUTABLE)
     add_custom_command(TARGET femmqt POST_BUILD

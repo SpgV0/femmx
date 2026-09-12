@@ -24,13 +24,18 @@
 
 #include <QtTest>
 
+#include "AppPreferences.h"
 #include "ConstraintSolver.h"
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
 #include "GeometryScene.h"
+#include "SnapEngine.h"
 
+#include <QCoreApplication>
+#include <QFile>
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
+#include <QGraphicsView>
 #include <QSet>
 
 #include <algorithm>
@@ -135,6 +140,13 @@ private slots:
 
   void rebuildIsIdempotent();
   void rebuildAfterADeletionDropsTheStaleItems();
+
+  void theSnapIndicatorAppearsForAGeometrySnap();
+  void theSnapIndicatorStaysHiddenForAGridSnap();
+  void changingToolModeDropsAStaleSnapIndicator();
+  void aDisabledSnapTypeProducesNoIndicator();
+  void snapPreferencesRoundTripThroughFemmCfg();
+  void anOutOfRangeSnapMaskFallsBackToTheDefault();
 };
 
 // ---------------------------------------------------------------------------
@@ -639,6 +651,236 @@ void TestSketchUi::rebuildAfterADeletionDropsTheStaleItems()
   scene.rebuild();
 
   QCOMPARE(countOfKind(scene, FemmItemKind::Constraint), constraintsBefore - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Object snapping, GUI half (issue #28)
+// ---------------------------------------------------------------------------
+//
+// SnapEngine itself is covered exhaustively by tst_snap_engine.cpp. What
+// is checked here is the part a user actually touches: that the canvas
+// SAYS which snap it applied, and that the Preferences toggles survive a
+// round trip through femm.cfg.
+//
+// Both are the silent-alias shape this file exists for. A snap moves the
+// point the user clicked; if it does that without saying so, the user
+// gets geometry they did not draw and no indication of why -- and a
+// toggle that does not persist is indistinguishable from one that does
+// nothing.
+
+namespace {
+
+// Two nodes joined by one segment. Deliberately minimal: with several
+// entities in range the priority rules decide the answer, and this file
+// is not the place that tests those (tst_snap_engine.cpp is).
+FemmProblem oneSegment()
+{
+  FemmProblem p;
+  p.problemType = FemmCoordinateType::Planar;
+  const int n0 = FemmProblemEdit::addNode(p, 0, 0);
+  const int n1 = FemmProblemEdit::addNode(p, 20, 0);
+  FemmProblemEdit::addSegment(p, n0, n1);
+  return p;
+}
+
+// The indicator carries no Kind/Index payload (it is a readout, not
+// geometry, and must never be hit-tested), so it is identified by its
+// z-value -- nothing else in the scene uses 50.
+const QGraphicsItem* snapIndicator(const GeometryScene& scene)
+{
+  const QGraphicsItem* found = nullptr;
+  for (const QGraphicsItem* item : scene.items()) {
+    if (qFuzzyCompare(item->zValue(), 50.0)) {
+      // More than one would mean the scene is leaking indicators, which
+      // would leave stale markers parked on old snap positions.
+      if (found)
+        return nullptr;
+      found = item;
+    }
+  }
+  return found;
+}
+
+// A view is not decoration here: snapPoint() converts its capture radius
+// from PIXELS using the attached view's scale, and with no view at all
+// the radius collapses to zero and nothing geometric can ever snap. An
+// identity transform gives a 12-unit radius, which is what the distances
+// below are chosen against.
+struct SceneWithView {
+  GeometryScene scene;
+  QGraphicsView view;
+  SceneWithView()
+      : view(&scene)
+  {
+    view.resize(400, 400);
+  }
+};
+
+} // namespace
+
+void TestSketchUi::theSnapIndicatorAppearsForAGeometrySnap()
+{
+  FemmProblem p = oneSegment();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+
+  // Just off the node at (0,0) -- well inside the 12-unit capture radius.
+  const QPointF snapped = h.scene.snapPoint(QPointF(0.4, 0.3));
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Endpoint);
+  QCOMPARE(snapped.x(), 0.0);
+  QCOMPARE(snapped.y(), 0.0);
+
+  h.scene.updateSnapIndicator();
+  const QGraphicsItem* ind = snapIndicator(h.scene);
+  QVERIFY2(ind, "no snap indicator was created for an endpoint snap");
+  QVERIFY2(ind->isVisible(), "the snap indicator exists but is hidden");
+  // It must sit ON the snapped point, not the cursor -- marking the
+  // cursor would be worse than no marker, since it would assert the
+  // point did not move when it did.
+  QCOMPARE(ind->pos().x(), 0.0);
+  QCOMPARE(ind->pos().y(), 0.0);
+}
+
+void TestSketchUi::theSnapIndicatorStaysHiddenForAGridSnap()
+{
+  FemmProblem p = oneSegment();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapToGrid(true);
+  h.scene.rebuild();
+
+  // Far from every entity: nearest is the node at (20,0), ~128 away.
+  const QPointF snapped = h.scene.snapPoint(QPointF(100.4, 100.4));
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Grid);
+  QCOMPARE(snapped.x(), 100.0);
+  QCOMPARE(snapped.y(), 100.0);
+
+  h.scene.updateSnapIndicator();
+  const QGraphicsItem* ind = snapIndicator(h.scene);
+  // Grid snap is the pre-existing default behaviour and applies
+  // everywhere; a marker chasing the cursor across every grid square is
+  // noise, and noise is what stops an indicator being read at all. The
+  // status bar still names it.
+  QVERIFY2(!ind || !ind->isVisible(),
+      "the grid snap put a marker on the canvas -- it would then follow "
+      "the cursor everywhere and stop meaning anything");
+}
+
+void TestSketchUi::changingToolModeDropsAStaleSnapIndicator()
+{
+  FemmProblem p = oneSegment();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+
+  h.scene.snapPoint(QPointF(0.4, 0.3));
+  h.scene.updateSnapIndicator();
+  QVERIFY(snapIndicator(h.scene) && snapIndicator(h.scene)->isVisible());
+
+  // Switching tools ends the hover that produced it. A marker left
+  // parked there claims a snap the next click will not necessarily get.
+  h.scene.setToolMode(GeometryToolMode::AddNode);
+  const QGraphicsItem* ind = snapIndicator(h.scene);
+  QVERIFY2(!ind || !ind->isVisible(),
+      "the snap indicator survived a tool change and is now asserting a "
+      "snap that is no longer live");
+}
+
+void TestSketchUi::aDisabledSnapTypeProducesNoIndicator()
+{
+  FemmProblem p = oneSegment();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+  // Everything off. This is what the Preferences checkboxes ultimately
+  // do, and what Alt does for one point.
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+
+  const QPointF snapped = h.scene.snapPoint(QPointF(0.4, 0.3));
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::None);
+  QCOMPARE(snapped.x(), 0.4);
+  QCOMPARE(snapped.y(), 0.3);
+
+  h.scene.updateSnapIndicator();
+  const QGraphicsItem* ind = snapIndicator(h.scene);
+  QVERIFY2(!ind || !ind->isVisible(),
+      "snapping is disabled but the canvas still shows a snap marker");
+}
+
+void TestSketchUi::snapPreferencesRoundTripThroughFemmCfg()
+{
+  // femm.cfg is shared with the classic GUI, so this also checks the
+  // thing #19 had to fix there: writing our own keys must not discard
+  // anyone else's lines.
+  const QString cfg = QCoreApplication::applicationDirPath() + "/femm.cfg";
+  const QString backup = cfg + ".snaptest.bak";
+  QFile::remove(backup);
+  const bool hadOne = QFile::exists(cfg);
+  if (hadOne)
+    QVERIFY(QFile::copy(cfg, backup));
+
+  {
+    QFile seed(cfg);
+    QVERIFY(seed.open(QIODevice::WriteOnly | QIODevice::Text));
+    seed.write("<SomeClassicKeyWeDoNotKnow> = 7\n");
+  }
+
+  AppPreferences prefs = AppPreferences::load();
+  const unsigned mask = SnapEngine::SnapEndpoint | SnapEngine::SnapCentre;
+  prefs.snapFlags = mask;
+  QVERIFY(prefs.save());
+
+  const AppPreferences reloaded = AppPreferences::load();
+  QCOMPARE(reloaded.snapFlags, mask);
+
+  QFile check(cfg);
+  QVERIFY(check.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(check.readAll());
+  check.close();
+  QVERIFY2(text.contains("<SomeClassicKeyWeDoNotKnow>"),
+      "saving the Qt-only snap setting dropped a key belonging to the "
+      "classic GUI -- femm.cfg is shared between the two programs");
+
+  QFile::remove(cfg);
+  if (hadOne) {
+    QVERIFY(QFile::copy(backup, cfg));
+    QFile::remove(backup);
+  }
+}
+
+void TestSketchUi::anOutOfRangeSnapMaskFallsBackToTheDefault()
+{
+  // A hand-edited or future-version value must not be able to switch
+  // snapping off entirely or set bits that do not exist. Silently
+  // honouring garbage here would look exactly like the feature being
+  // broken.
+  const QString cfg = QCoreApplication::applicationDirPath() + "/femm.cfg";
+  const QString backup = cfg + ".snaptest2.bak";
+  QFile::remove(backup);
+  const bool hadOne = QFile::exists(cfg);
+  if (hadOne)
+    QVERIFY(QFile::copy(cfg, backup));
+
+  {
+    QFile seed(cfg);
+    QVERIFY(seed.open(QIODevice::WriteOnly | QIODevice::Text));
+    seed.write("<QtSnapFlags> = 999999\n");
+  }
+  QCOMPARE(AppPreferences::load().snapFlags, (unsigned)SnapEngine::SnapDefault);
+
+  {
+    QFile seed(cfg);
+    QVERIFY(seed.open(QIODevice::WriteOnly | QIODevice::Text));
+    seed.write("<QtSnapFlags> = not-a-number\n");
+  }
+  QCOMPARE(AppPreferences::load().snapFlags, (unsigned)SnapEngine::SnapDefault);
+
+  QFile::remove(cfg);
+  if (hadOne) {
+    QVERIFY(QFile::copy(backup, cfg));
+    QFile::remove(backup);
+  }
 }
 
 QTEST_MAIN(TestSketchUi)
