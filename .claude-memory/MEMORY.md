@@ -1,4 +1,4 @@
-- [Push branch policy](push_branch_policy.md) — main is the only branch in femmx (SpgV0/femmx); commit and push directly to main, the new_features/rc flow is retired
+- [Push branch policy](push_branch_policy.md) — as of 2026-09-12 work and push go to new_features, not main; the rule reversed once, so check the file rather than assuming
 - [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA solve opt-in via mi_setgpuaccel; AC/harmonic reliably faster, but DC/real-valued speedup is unconfirmed/conflicting as of 2026-07-20 — verify before citing either number
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time

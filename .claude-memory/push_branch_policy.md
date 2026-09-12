@@ -1,30 +1,37 @@
 ---
 name: push-branch-policy
-description: "In femmx (SpgV0/femmx), main is the only branch — commit and push directly to main; the old new_features -> rc -> main flow is retired"
+description: "In femmx (SpgV0/femmx), work and push go to new_features as of 2026-09-12; main is no longer the working branch"
 metadata: 
   node_type: memory
   type: feedback
   originSessionId: 0645e6ab-f4a7-4004-a39e-44c28675f293
-  modified: 2026-09-09T00:00:00.000Z
+  modified: 2026-09-12T00:00:00.000Z
 ---
 
-**Current rule (2026-09-09): push to `main`, and only `main`.** The user
-collapsed this repo's branch model — `new_features` and `rc` were merged
-into `main` and deleted, locally and on `origin` — and stated directly:
-"From now on, you will be only pushing to main."
+**Current rule (2026-09-12): work on `new_features` and push there.**
+The user reversed the main-only rule with: "Continue work on
+new_features branch instead of main and push changes there from now on."
+`new_features` was recreated from `main` at commit ed2c2ed and pushed;
+local `main` was moved back to `origin/main` so the branch is the only
+place the newer work lives.
 
-**Why:** the three-branch flow (`new_features` -> `rc` -> `main`) existed
-to keep `main` as a clean rehosted upstream baseline pending review. That
-baseline is long gone — `main` has carried the fork's own work through
-v2.1.2 — so the extra branches were pure ceremony: `rc` never held
-anything `main` didn't, and every release merged the same commits twice.
+**Superseded rule (2026-09-09 to 2026-09-12): push to `main` only.** The
+user had collapsed the branch model -- `new_features` and `rc` merged
+into `main` and deleted from `origin` -- saying "From now on, you will be
+only pushing to main." Recorded because it explains why `new_features`
+had to be recreated rather than simply checked out, and because a rule
+that reversed once can reverse again: check this file rather than
+assuming.
 
-**How to apply:** commit finished, verified work straight to `main` and
-push it there. Do not recreate `new_features` or `rc`, and do not invent a
-feature branch as a substitute for the retired flow. Create a
-purpose-named branch only when the user asks for one, or for genuinely
-speculative work that shouldn't sit on `main` (e.g. the surviving
-`csr-spmv-wip`) — and say so rather than doing it silently.
+**Why the original three-branch flow went away:** `new_features` -> `rc`
+-> `main` existed to keep `main` as a clean rehosted upstream baseline
+pending review. That baseline is long gone, so `rc` never held anything
+`main` didn't. `rc` has NOT been recreated and should not be without the
+user asking.
+
+**How to apply:** commit finished, verified work to `new_features` and
+push it there. Leave `main` alone unless the user asks for a merge or a
+release. Do not invent additional feature branches as a substitute.
 
 **Push cadence (carried over, still applies):** push at least once a day
 per working session as a work backup — long sessions otherwise leave many
