@@ -334,8 +334,20 @@ parameter is set to \texttt{"cart"} for Cartesian coordinates or
 \subsection{Object Properties}
 
 \begin{itemize}
-\item \texttt{ci\_getmaterial("materialname")} fetches the material specified by \texttt{materialname} 
+\item \texttt{ci\_getmaterial("materialname")} fetches the material specified by \texttt{materialname}
 from the materials library.
+
+\item \texttt{ci\_getmaterial("materialname", "foldername")} fetches the
+material of that name from the library folder named \texttt{foldername}.
+The shipped libraries contain entries in different folders that share a
+name with a materially different material -- \texttt{Supermalloy} appears
+in both Nickel Alloys and Metals Handbook DC Magnetization Curves with
+relative permeabilities differing by a factor of half a million, and
+\texttt{Ammonia} appears in heatlib.dat as both a saturated liquid and a
+gas. Without a folder the first entry in file order wins and the other
+cannot be reached from a script at all. Any level of the folder path may
+be given. Asking for a folder that holds no such material is an error
+rather than a fallback to the name-only match.
 
 \item \texttt{ci\_addmaterial("materialname", ox, oy, ex, ey, ltx, lty)} adds a new material with
 called \texttt{"materialname"} with the material properties:

@@ -76,21 +76,52 @@ def _write_report():
 
 def parse_library(path, begin="<BeginBlock>", end="<EndBlock>",
                   name_key="<BlockName>"):
-    """[{name, props: {key: value}, curve: [(x, y)], line: int}]
+    """[{name, folder, folders, props: {key: value}, curve, line}]
 
     Deliberately a separate implementation from the C++ one under test.
-    Folders are ignored: they are presentation only, and a material is
-    identified by name regardless of where it sits in the tree.
+
+    Folders used to be skipped here on the grounds that they were
+    presentation only. That stopped being true with #34: two entries in
+    matlib.dat and two in heatlib.dat share a name with a materially
+    different material, and the folder is now what tells them apart --
+    mi_getmaterial takes an optional folder argument for exactly this.
+    So the tree is tracked: `folders` is the full path, `folder` the
+    innermost one.
     """
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         lines = [ln.rstrip("\n").rstrip("\r") for ln in fh]
 
     entries = []
     current = None
+    folder_stack = []
     for idx, raw in enumerate(lines):
         line = raw.strip()
+        low = line.lower()
+
+        # Folder bookkeeping mirrors femm/MaterialFolder.h: a folder is
+        # pushed empty by <BeginFolder> and named by the <FolderName>
+        # that follows, so an unnamed folder still occupies a level and
+        # <EndFolder> pops the right one.
+        if low.startswith("<beginfolder>"):
+            folder_stack.append("")
+            continue
+        if low.startswith("<endfolder>"):
+            if folder_stack:
+                folder_stack.pop()
+            continue
+        if low.startswith("<foldername>") and "=" in line:
+            name = line.split("=", 1)[1].strip().strip('"').strip()
+            if folder_stack:
+                folder_stack[-1] = name
+            else:
+                folder_stack.append(name)
+            continue
+
         if line == begin:
-            current = {"name": None, "props": {}, "curve": [], "line": idx + 1}
+            current = {"name": None, "props": {}, "curve": [],
+                       "line": idx + 1,
+                       "folders": list(folder_stack),
+                       "folder": folder_stack[-1] if folder_stack else None}
             continue
         if line == end:
             if current is not None:
@@ -377,6 +408,103 @@ def test_duplicate_name_resolves_to_the_first_entry():
     assert got_points == len(first["curve"]), (
         "mi_getmaterial returned %d BH points, the first entry has %d"
         % (got_points, len(first["curve"])))
+
+def test_a_folder_makes_the_shadowed_duplicate_reachable():
+    """The fix for #34: an optional folder argument on mi_getmaterial.
+
+    Before it, the second "Supermalloy" could not be selected from a
+    script at all -- name lookup takes the first in file order, and the
+    two differ in relative permeability by a factor of half a million.
+    The GUI's material browser disambiguates by folder; scripting had no
+    way to, so a sweep over materials silently used the same one twice.
+
+    A rename was the alternative and was deliberately not taken: users'
+    existing models reference these entries by name, so renaming one
+    would make some of those models quietly resolve to the other
+    material, which is the failure being fixed.
+    """
+    entries = [e for e in parse_library(MATLIB) if e["name"] == "Supermalloy"]
+    if len(entries) < 2:
+        pytest.skip("matlib.dat no longer has duplicate Supermalloy entries")
+
+    shadowed = entries[1]
+    folder = shadowed.get("folder")
+    if not folder:
+        pytest.skip("the duplicate's folder could not be determined")
+
+    femm.openfemm(1)
+    femm.newdocument(0)
+    femm.mi_probdef(0, "millimeters", "planar", 1e-9, 1, 30)
+    try:
+        femm.callfemm('mi_getmaterial("Supermalloy", "%s")' % folder)
+        loaded, _ = _saved_block_props("duplicate_by_folder")
+    finally:
+        _teardown()
+
+    got = loaded["Supermalloy"]
+    got_mu = _num(got, "<Mu_x>")
+    want_mu = _num(shadowed, "<Mu_x>")
+    _note("    folder-qualified: mi_getmaterial('Supermalloy', %r) -> mu_r=%g "
+          "(the shadowed entry has %g, the first has %g)"
+          % (folder, got_mu, want_mu, _num(entries[0], "<Mu_x>")))
+
+    assert abs(got_mu - want_mu) < 1e-6, (
+        "asking for Supermalloy in folder %r returned mu_r=%g; that folder's "
+        "entry has mu_r=%g. The folder argument did not select it."
+        % (folder, got_mu, want_mu))
+    assert len(got["curve"]) == len(shadowed["curve"]), (
+        "the folder-qualified lookup returned %d BH points, the entry in "
+        "that folder has %d"
+        % (len(got["curve"]), len(shadowed["curve"])))
+
+
+def test_a_folder_argument_does_not_change_the_unqualified_answer():
+    """Additive means additive: one argument behaves exactly as before."""
+    entries = [e for e in parse_library(MATLIB) if e["name"] == "Supermalloy"]
+    if len(entries) < 2:
+        pytest.skip("matlib.dat no longer has duplicate Supermalloy entries")
+
+    femm.openfemm(1)
+    femm.newdocument(0)
+    femm.mi_probdef(0, "millimeters", "planar", 1e-9, 1, 30)
+    try:
+        femm.mi_getmaterial("Supermalloy")
+        loaded, _ = _saved_block_props("unqualified_after_fix")
+    finally:
+        _teardown()
+
+    got_mu = _num(loaded["Supermalloy"], "<Mu_x>")
+    first_mu = _num(entries[0], "<Mu_x>")
+    _note("    unqualified still resolves to the first entry: mu_r=%g" % got_mu)
+    assert abs(got_mu - first_mu) < 1e-6, (
+        "adding the folder argument changed what the ONE-argument form "
+        "returns: got mu_r=%g, the first entry has %g" % (got_mu, first_mu))
+
+
+def test_an_unknown_folder_is_an_error_not_a_silent_fallback():
+    """Asking for a folder that has no such material must fail loudly.
+
+    Falling back to the name-only match would be the worst outcome: the
+    caller asked for a specific entry and would get the other one, which
+    is exactly the behaviour the folder argument exists to escape.
+    """
+    femm.openfemm(1)
+    femm.newdocument(0)
+    femm.mi_probdef(0, "millimeters", "planar", 1e-9, 1, 30)
+    try:
+        raised = None
+        try:
+            femm.callfemm('mi_getmaterial("Supermalloy", "No Such Folder")')
+        except Exception as exc:  # noqa: BLE001
+            raised = str(exc)
+    finally:
+        _teardown()
+
+    _note("    unknown folder -> %s" % ("raised" if raised else "SILENT"))
+    assert raised, (
+        "mi_getmaterial accepted a folder that contains no such material "
+        "and silently fell back to the name-only match")
+
 
 # ---------------------------------------------------------------------------
 # 3. BH curves built by script

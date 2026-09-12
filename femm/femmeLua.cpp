@@ -10,6 +10,7 @@
 
 #include "stdafx.h"
 #include "BitmapCapture.h"
+#include "MaterialFolder.h"
 #include "ScriptGui.h"
 #include "femm.h"
 #include "femmeDoc.h"
@@ -3183,6 +3184,29 @@ int CFemmeDoc::lua_getmaterial(lua_State* L)
   else
     return 0;
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  // optional second argument, a folder name, to disambiguate duplicate
+  // material names (issue #34).
+  //
+  // matlib.dat ships two DIFFERENT materials both called "Supermalloy" --
+  // one in Nickel Alloys with mu_r 529095, one in Metals Handbook DC
+  // Magnetization Curves with mu_r 1 -- and this function matched on name
+  // alone, first in file order. So the Metals Handbook entry could not be
+  // selected from a script at all, and a script asking for "Supermalloy"
+  // silently got the other one. heatlib.dat has the same collision on
+  // "Ammonia": liquid at k=0.546 and gas at k=0.0153, a factor of 36
+  // apart. The GUI's material browser disambiguates by folder; scripting
+  // had no way to.
+  //
+  // Deliberately additive rather than a rename. Renaming an entry in a
+  // library users' existing models already reference by name would make
+  // some of those models silently resolve to the other material, which is
+  // the very failure being fixed. With one argument the behaviour is
+  // unchanged, down to which duplicate wins.
+  CString foldername;
+  if (n > 1)
+    foldername = lua_tostring(L, 2);
+
   CString LibName = thisDoc->BinDir + "matlib.dat";
 
   FILE* fp;
@@ -3200,9 +3224,19 @@ int CFemmeDoc::lua_getmaterial(lua_State* L)
   }
 
   // parse the file
+  // Tracks which folder of the library tree the parser is inside,
+  // so the optional folder argument can pick between two entries
+  // that share a name (issue #34).
+  CStringArray FolderStack;
+
   while (fgets(s, 1024, fp) != NULL) {
     if (sscanf(s, "%s", q) == EOF)
       q[0] = NULL;
+
+    if (TrackMaterialFolder(q, s, FolderStack)) {
+      q[0] = NULL;
+      continue;
+    }
 
     // Block Properties;
     if (_strnicmp(q, "<beginblock>", 12) == 0) {
@@ -3343,7 +3377,10 @@ int CFemmeDoc::lua_getmaterial(lua_State* L)
     }
 
     if (_strnicmp(q, "<endblock>", 9) == 0) {
-      if (MProp.BlockName == matname) {
+      // See the foldername note at the top of this function (issue #34).
+      // With no folder argument this is exactly the old condition.
+      if (MProp.BlockName == matname
+          && (foldername.IsEmpty() || InFolder(FolderStack, foldername))) {
         thisDoc->blockproplist.Add(MProp);
         MProp.BHpoints = 0;
         fclose(fp);

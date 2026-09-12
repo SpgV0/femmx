@@ -736,7 +736,7 @@ Total calls attempted: 561
   [PASS] ci_showmesh
   [PASS] ci_smartmesh
   [PASS] ci_purgemesh
-  [PASS] ci_analyze  (0.1s)
+  [PASS] ci_analyze  (0.2s)
   [PASS] ci_loadsolution
   [PASS] co_numnodes
   [PASS] co_numelements

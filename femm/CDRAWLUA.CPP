@@ -2,6 +2,7 @@
 //
 
 #include "stdafx.h"
+#include "MaterialFolder.h"
 #include "BitmapCapture.h"
 #include "femm.h"
 #include "cdrawDoc.h"
@@ -2604,6 +2605,13 @@ int CcdrawDoc::lua_getmaterial(lua_State* L)
   else
     return 0;
 
+  // Optional folder argument, to disambiguate two library entries
+  // that share a name -- see MaterialFolder.h (issue #34). With one
+  // argument the behaviour is unchanged.
+  CString foldername;
+  if (n > 1)
+    foldername = lua_tostring(L, 2);
+
   CString LibName = thisDoc->BinDir + "condlib.dat";
 
   FILE* fp;
@@ -2621,9 +2629,16 @@ int CcdrawDoc::lua_getmaterial(lua_State* L)
   }
 
   // parse the file
+  CStringArray FolderStack;
+
   while (fgets(s, 1024, fp) != NULL) {
     if (sscanf(s, "%s", q) == EOF)
       q[0] = NULL;
+
+    if (TrackMaterialFolder(q, s, FolderStack)) {
+      q[0] = NULL;
+      continue;
+    }
 
     // Block Properties;
     if (_strnicmp(q, "<beginblock>", 12) == 0) {
@@ -2694,7 +2709,8 @@ int CcdrawDoc::lua_getmaterial(lua_State* L)
     }
 
     if (_strnicmp(q, "<endblock>", 9) == 0) {
-      if (MProp.BlockName == matname) {
+      if (MProp.BlockName == matname
+          && (foldername.IsEmpty() || InFolder(FolderStack, foldername))) {
         thisDoc->blockproplist.Add(MProp);
         fclose(fp);
         return 0;

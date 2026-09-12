@@ -10,6 +10,9 @@ Material library / BH curve checks
     spot checks: Air mu_r=1 sigma=0 | Copper sigma=58 MS/m
     mi_getmaterial: 5 materials, 40 property values and every BH point identical to the library
     duplicate resolution: mi_getmaterial('Supermalloy') -> mu_r=529095 with 12 BH points; candidates [(2964, 529095.0, 12), (5623, 1.0, 34)]
+    folder-qualified: mi_getmaterial('Supermalloy', 'Metals Handbook DC Magnetization Curves') -> mu_r=1 (the shadowed entry has 1, the first has 529095)
+    unqualified still resolves to the first entry: mu_r=529095
+    unknown folder -> raised
     scripted BH curve: 7 points written, 7 after reload
     mi_clearbhpoints: 7 points -> 0
     lamcore: LamType=1 LamFill=0.93999999999999995 d_lam=0.5

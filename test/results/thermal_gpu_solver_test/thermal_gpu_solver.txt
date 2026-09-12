@@ -3,7 +3,7 @@ GPU-accelerated thermal solve: correctness + benchmark
 CUDA-enabled build detected: False
 Probe point: (20, 0)
 
-CPU: T = 2.690557e+01  (time: 0.688s)
-GPU: T = 2.690557e+01  (time: 0.688s)
+CPU: T = 2.690557e+01  (time: 0.687s)
+GPU: T = 2.690557e+01  (time: 0.679s)
 Relative difference: 0.0000%
-Speedup: 1.00x
+Speedup: 1.01x
