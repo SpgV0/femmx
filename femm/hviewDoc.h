@@ -163,6 +163,8 @@ class ChviewDoc : public CDocument {
   static int lua_setgrid(lua_State* L);
   static int lua_getprobleminfo(lua_State* L);
   static int lua_savebitmap(lua_State* L);
+  // ho_savepng, the PNG twin (#33).
+  static int lua_savepng(lua_State* L);
   PBITMAPINFO CreateBitmapInfoStruct(HWND hwnd, HBITMAP hBmp);
   void CreateBMPFile(HWND hwnd, LPTSTR pszFile, PBITMAPINFO pbi, HBITMAP hBMP, HDC hDC);
   static int lua_getcircuitprops(lua_State* L);

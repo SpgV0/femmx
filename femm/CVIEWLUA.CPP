@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include "BitmapCapture.h"
 #include <afx.h>
 #include <afxtempl.h>
@@ -71,6 +72,8 @@ void CcviewDoc::initalise_lua()
   lua_register(lua, "co_shownames", lua_shownames);
   lua_register(lua, "co_getprobleminfo", lua_getprobleminfo);
   lua_register(lua, "co_savebitmap", lua_savebitmap);
+  lua_register(lua, "co_savepng", lua_savepng);
+  lua_register(lua, "co_save_png", lua_savepng);
   lua_register(lua, "co_getconductorproperties", lua_getcircuitprops);
   lua_register(lua, "co_savemetafile", lua_saveWMF);
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-09:
@@ -1079,6 +1082,72 @@ int CcviewDoc::lua_getprobleminfo(lua_State* L)
   lua_pushnumber(L, thisDoc->LengthConv[thisDoc->LengthUnits]);
 
   return 4;
+}
+
+// co_savepng"filename") -- the co twin of mi_savepng.
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+// (issue #33): savepng shipped for magnetics only, so a script
+// working in this physics could produce nothing but BMP or WMF.
+int CcviewDoc::lua_savepng(lua_State* L)
+{
+  CatchNullDocument();
+  CcviewDoc* thisDoc = (CcviewDoc*)pcviewDoc;
+  POSITION pos = thisDoc->GetFirstViewPosition();
+  CcviewView* theView = (CcviewView*)thisDoc->GetNextView(pos);
+
+  CString filename;
+  filename.Format("%s", lua_tostring(L, 1));
+
+  RECT r;
+  theView->GetClientRect(&r);
+  // femmCaptureSize, not the raw rect: a view that has never been
+  // shown -- every COM-automation session -- reports a zero
+  // dimension, and CreateCompatibleBitmap answers that with a 1x1
+  // MONOCHROME bitmap. That is how savepng wrote a valid, useless
+  // 135-byte file and reported success before #19 fixed the
+  // magnetics pair; this one starts out correct.
+  SIZE cap = femmCaptureSize(r);
+  int width = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 2) : (int)cap.cx;
+  int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)cap.cy;
+
+  if (GetScriptGui() == ScriptGui::Qt) {
+    // femmqt is magnetics-only (see issue #35 and its children), so
+    // there is no Qt renderer for this physics to hand the file to.
+    // Refusing beats quietly rendering with the classic GUI instead:
+    // the caller asked for a specific renderer, and silently
+    // substituting the other one produces an image that differs from
+    // the one requested with nothing to say so.
+    CString msg;
+    msg.Format("co_savepng: setgui(\"qt\") selected the Qt GUI, which "
+        "supports magnetics only. Use setgui(\"classic\") to render this "
+        "solution.");
+    lua_error(L, msg.GetBuffer(1));
+    return 0;
+  }
+
+  CDC tempDC;
+  CBitmap bitmap;
+  CDC* pDC = theView->GetDC();
+
+  tempDC.CreateCompatibleDC(pDC);
+  bitmap.CreateCompatibleBitmap(pDC, width, height);
+  CBitmap* oldbitmap = tempDC.SelectObject(&bitmap);
+  tempDC.Rectangle(0, 0, width, height);
+  theView->OnDraw(&tempDC);
+
+  BOOL ok = SaveHBitmapAsPng(HBITMAP(bitmap), filename.GetBuffer(1));
+
+  tempDC.SelectObject(oldbitmap);
+  theView->ReleaseDC(pDC);
+  tempDC.DeleteDC();
+  bitmap.DeleteObject();
+
+  if (!ok) {
+    CString msg;
+    msg.Format("co_savepng: couldn't write \"%s\"", (const char*)filename);
+    lua_error(L, msg.GetBuffer(1));
+  }
+  return 0;
 }
 
 int CcviewDoc::lua_savebitmap(lua_State* L)

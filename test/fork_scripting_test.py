@@ -223,6 +223,10 @@ FORK_ADDED = [
     "mi_setgpuaccel", "ei_setgpuaccel", "hi_setgpuaccel", "ci_setgpuaccel",
     "mi_setredraw", "ei_setredraw", "hi_setredraw", "ci_setredraw",
     "mi_savepng", "mo_savepng",
+    # Added by #33: savepng shipped for magnetics only, so a script in any
+    # other physics could produce nothing but BMP or WMF.
+    "ei_savepng", "hi_savepng", "ci_savepng",
+    "eo_savepng", "ho_savepng", "co_savepng",
 ]
 
 # Those of the above that are editor commands, and so are subject to
@@ -345,9 +349,19 @@ def _manual_listed_commands():
         return None
     end = text.find(r"\section{", start + 10)
     body = text[start:end if end > 0 else len(text)]
-    # \tt names are written with LaTeX-escaped underscores
-    names = re.findall(r"\\tt\s+([A-Za-z0-9_\\]+?)\s*(?:\(|\})", body)
-    return {n.replace(chr(92), "") for n in names}
+    # \tt names are written with LaTeX-escaped underscores. The section
+    # also sets other things in \tt -- program names like femmqt, file
+    # names -- so a bare token is only taken as a command if it is either
+    # written as a call, "name(", or carries one of the four editor /
+    # post-processor prefixes. Without that, prose mentioning femmqt was
+    # read as a command the manual documents but nothing registers.
+    names = set()
+    for raw, follower in re.findall(
+            r"\\tt\s+([A-Za-z0-9_\\]+?)\s*(\(|\})", body):
+        name = raw.replace(chr(92), "")
+        if follower == "(" or re.match(r"^(mi|mo|ei|eo|hi|ho|ci|co)_", name):
+            names.add(name)
+    return names
 
 
 @pytest.mark.static
@@ -753,6 +767,91 @@ def test_savepng_under_qt_renders_through_femmqt():
     assert size[0] >= 64 and size[1] >= 64, (
         "the Qt path rendered a %dx%d PNG -- the size handed to "
         "femmqt --render-png came from an unlaid-out client rect" % size)
+
+
+SAVEPNG_EDITORS = [
+    ("mi", 0, 'mi_probdef(0,"millimeters","planar",1e-8,0,30)'),
+    ("ei", 1, 'ei_probdef("millimeters","planar",1e-8,0,30)'),
+    ("hi", 2, 'hi_probdef("millimeters","planar",1e-8,0,30)'),
+    ("ci", 3, 'ci_probdef("millimeters","planar",1e-8,0,30)'),
+]
+
+
+@pytest.mark.parametrize("prefix,doctype,probdef", SAVEPNG_EDITORS,
+                         ids=[e[0] for e in SAVEPNG_EDITORS])
+def test_every_editor_can_save_a_png(prefix, doctype, probdef):
+    """savepng shipped for magnetics only (#33).
+
+    A script working in electrostatics, heat flow or current flow could
+    produce nothing but BMP or WMF, for no reason other than that the
+    command had never been written for those documents. All four editors
+    now have it, and all four must produce a real image rather than the
+    1x1 monochrome placeholder a degenerate client rect yields.
+    """
+    png = _out("%s_savepng.png" % prefix)
+    if os.path.exists(png):
+        os.remove(png)
+
+    femm.openfemm(1)
+    try:
+        femm.newdocument(doctype)
+        femm.callfemm(probdef)
+        femm.callfemm("%s_addnode(0,0)" % prefix)
+        femm.callfemm("%s_addnode(10,10)" % prefix)
+        femm.callfemm("%s_addsegment(0,0,10,10)" % prefix)
+        femm.callfemm('setgui("classic")')
+        femm.callfemm('%s_savepng("%s")' % (prefix, _save(png)))
+    finally:
+        _teardown()
+
+    assert os.path.exists(png), "%s_savepng wrote no file" % prefix
+    size = _png_size(png)
+    _note("    %s_savepng: %d bytes, %s"
+          % (prefix, os.path.getsize(png), size))
+    assert size is not None, (
+        "%s_savepng wrote a %d-byte file that is not a PNG"
+        % (prefix, os.path.getsize(png)))
+    assert size[0] >= 64 and size[1] >= 64, (
+        "%s_savepng wrote a %dx%d image -- a degenerate client rect fell "
+        "through instead of femmCaptureSize's default" % ((prefix,) + size))
+
+
+@pytest.mark.parametrize("prefix,doctype,probdef", SAVEPNG_EDITORS[1:],
+                         ids=[e[0] for e in SAVEPNG_EDITORS[1:]])
+def test_non_magnetics_savepng_refuses_the_qt_gui(prefix, doctype, probdef):
+    """Refusing beats quietly rendering with the other GUI.
+
+    femmqt supports magnetics only, so there is no Qt renderer for these
+    physics to hand the file to. Silently substituting the classic
+    renderer would produce an image that differs from the one asked for
+    with nothing to say so -- the same shape as every other silent-wrong-
+    output defect in this fork.
+    """
+    png = _out("%s_savepng_qt.png" % prefix)
+    if os.path.exists(png):
+        os.remove(png)
+
+    femm.openfemm(1)
+    try:
+        femm.newdocument(doctype)
+        femm.callfemm(probdef)
+        femm.callfemm("%s_addnode(0,0)" % prefix)
+        femm.callfemm('setgui("qt")')
+        raised = None
+        try:
+            femm.callfemm('%s_savepng("%s")' % (prefix, _save(png)))
+        except Exception as exc:  # noqa: BLE001
+            raised = str(exc)
+    finally:
+        _teardown()
+
+    _note("    %s_savepng under setgui(\"qt\"): %s"
+          % (prefix, "raised" if raised else "SILENT"))
+    assert raised, (
+        "%s_savepng silently accepted setgui(\"qt\") even though femmqt "
+        "cannot render this physics" % prefix)
+    assert "magnetics" in raised.lower(), (
+        "the error does not explain why: %r" % raised)
 
 
 # ---------------------------------------------------------------------------

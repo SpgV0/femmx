@@ -75,12 +75,23 @@ BRIDGES = {
 # that will remove it -- an allowlist with no expiry is just a silenced
 # test. test_the_allowlist_has_not_gone_stale fails when an entry becomes
 # unnecessary, so this cannot quietly outlive its cause.
-KNOWN_MISSING = {
-    "mi_makeABC": "#46",
-    "ei_makeABC": "#46",
-    "hi_makeABC": "#46",
-    "ci_makeABC": "#46",
-}
+KNOWN_MISSING = {}
+
+
+# Commands defined in Lua rather than C++. bin/init.lua is loaded at
+# startup and defines *_drawline, *_drawarc, *_drawrectangle and
+# *_makeABC for all four physics -- they are every bit as real as a
+# lua_register'd command, and a scan that misses them reports working
+# commands as missing.
+#
+# This cost a wrong issue: #46 was filed claiming the Open Boundary
+# Builder was broken because nothing registered mi_makeABC, on the
+# strength of a C++-only scan. It was not broken. Verified directly:
+# mi_makeABC(7, 50, 0, 0, 0) adds 16 arcs, 7 block labels and 7
+# materials, exactly as documented.
+INIT_LUA = os.path.join(REPO_ROOT, "bin", "init.lua")
+LUA_FUNCTION_PATTERN = re.compile(r"^\s*function\s+([A-Za-z_][A-Za-z_0-9]*)\s*\(",
+                                  re.M)
 
 
 def _registered_commands():
@@ -91,6 +102,9 @@ def _registered_commands():
         with open(os.path.join(FEMM_SRC, entry), "r",
                   encoding="utf-8", errors="replace") as fh:
             names.update(REGISTER_PATTERN.findall(fh.read()))
+    if os.path.exists(INIT_LUA):
+        with open(INIT_LUA, "r", encoding="utf-8", errors="replace") as fh:
+            names.update(LUA_FUNCTION_PATTERN.findall(fh.read()))
     return names
 
 

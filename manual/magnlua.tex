@@ -163,9 +163,17 @@ revisions of this list credited only the first two.
 redraws during a scripted sequence of edits. As with every other
 command, the underscore-separated spelling ({\tt mi\_set\_redraw}, and
 so on) works too.
-\item {\tt mi\_savepng("filename")} and {\tt mo\_savepng("filename")}
---- save a PNG screenshot; FEMM 4.2 could only write bitmaps and
-metafiles.
+\item {\tt mi\_savepng("filename")}, {\tt ei\_savepng("filename")},
+{\tt hi\_savepng("filename")} and {\tt ci\_savepng("filename")} in the
+editors, and {\tt mo\_savepng}, {\tt eo\_savepng}, {\tt ho\_savepng} and
+{\tt co\_savepng} in the post-processors --- save a PNG screenshot; FEMM
+4.2 could only write bitmaps and metafiles. The magnetics pair came
+first; the other six were added later, since a script working in any
+other physics could otherwise produce nothing but BMP or WMF. Only the
+magnetics pair honours {\tt setgui("qt")}, because {\tt femmqt} supports
+magnetics only --- the others report that and ask for
+{\tt setgui("classic")} rather than quietly rendering with a different
+GUI than the one requested.
 \end{itemize}
 
 

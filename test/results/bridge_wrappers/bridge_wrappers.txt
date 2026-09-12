@@ -1,15 +1,15 @@
 Scripting bridge wrappers vs registered commands
 ======================================================================
-    mathfemm     442 commands, 4 missing (4 tracked: #46)
-    octavefemm   525 commands, 4 missing (4 tracked: #46)
-    scifemm      511 commands, 4 missing (4 tracked: #46)
-    allowlist: 4 entries, 0 now registered
-    mathfemm    covers 438 of 1042 registered commands (42%)
-    octavefemm  covers 521 of 1042 registered commands (50%)
-    scifemm     covers 507 of 1042 registered commands (49%)
-    mathfemm    exposes 1 of 13 FEMMX-specific commands
-    octavefemm  exposes 9 of 13 FEMMX-specific commands
-    scifemm     exposes 1 of 13 FEMMX-specific commands
+    mathfemm     442 commands, 0 missing (0 tracked: -)
+    octavefemm   525 commands, 0 missing (0 tracked: -)
+    scifemm      511 commands, 0 missing (0 tracked: -)
+    allowlist: 0 entries, 0 now registered
+    mathfemm    covers 442 of 1072 registered commands (41%)
+    octavefemm  covers 525 of 1072 registered commands (49%)
+    scifemm     covers 511 of 1072 registered commands (48%)
+    mathfemm    exposes 1 of 19 FEMMX-specific commands
+    octavefemm  exposes 9 of 19 FEMMX-specific commands
+    scifemm     exposes 1 of 19 FEMMX-specific commands
     octavefemm: exit=0, result='NO_ACTXSERVER'
     manual checklist present, covers scifemm and mathfemm
     current flow    cdrawView.cpp          -> csolv.exe
