@@ -324,19 +324,15 @@ class BlockLabelItem : public QGraphicsPathItem {
 bool arcGeometry(double x0, double y0, double x1, double y1, double arcLengthDeg,
     double& cx, double& cy, double& R, double& startAngleDeg)
 {
-  double dx = x1 - x0, dy = y1 - y0;
-  double d = std::hypot(dx, dy);
-  if (d <= 0)
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #77): this used to be its own copy of the centre/radius math,
+  // carrying the major-arc sign error #25 fixed in FemmProblemEdit and
+  // ONLY in FemmProblemEdit. A major arc was therefore drawn against the
+  // minor arc's circle for as long as #25 was believed fixed. The copy
+  // is gone; the angle conversion below is the only part that is
+  // genuinely specific to this call site.
+  if (!FemmProblemEdit::circleFromArcPoints(x0, y0, x1, y1, arcLengthDeg, cx, cy, R))
     return false;
-  double tta = arcLengthDeg * M_PI / 180.0;
-  double s = std::sin(tta / 2.0);
-  if (std::abs(s) < 1e-12)
-    return false;
-  R = d / (2.0 * s);
-  double tx = dx / d, ty = dy / d;
-  double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
-  cx = x0 + (d / 2.0 * tx - h * ty);
-  cy = y0 + (d / 2.0 * ty + h * tx);
   // Qt's QPainterPath::arcTo measures angles with the y-axis effectively
   // negated relative to plain math atan2/cos/sin (its documented example:
   // 0 deg = 3 o'clock, 90 deg = 12 o'clock, even though scene y increases

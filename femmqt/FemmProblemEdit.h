@@ -171,6 +171,45 @@ bool createRadius(FemmProblem& p, int nodeIndex, double r);
 // endpoints, or a ~0/~360 degree included angle).
 bool circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R);
 
+// The same thing from raw coordinates, for the call sites that have the
+// two endpoints and an included angle but no FemmProblem to index into
+// (rendering, meshing, the solution viewer).
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+// (issue #77). These three had their OWN copies of this formula, each
+// carrying the major-arc sign error that #25 fixed here and only here
+// -- so a major arc was drawn, meshed and post-processed against the
+// wrong circle for as long as #25 was believed fixed. The meshing one
+// decided the geometry the solver actually saw.
+//
+// One definition now, four call sites. The duplicates existed on the
+// reasoning that a shared utility "would mostly just be this one
+// function"; that reasoning is what let a fix apply to a quarter of the
+// code that needed it.
+bool circleFromArcPoints(double x0, double y0, double x1, double y1,
+    double arcLengthDeg, double& cx, double& cy, double& R);
+
+// Construction geometry (issue #31) -- entities that exist to be
+// constrained against and must never reach the mesher or the solver.
+//
+// hasConstruction is the cheap check that lets every caller skip the
+// copy below in the case that is almost always true.
+bool hasConstruction(const FemmProblem& p);
+
+// A copy of `p` with every construction entity removed and the node,
+// segment and arc indices renumbered to match -- which is what the .fem
+// and the .femx have to contain.
+//
+// A construction NODE survives if any kept segment or arc still needs
+// it: a node shared between a centreline and a real edge belongs to
+// both, and dropping it would leave the real edge with a dangling
+// endpoint. Constraints and dimensions are remapped by the same rules as
+// a deletion (see remapSketchReferences), so anything referring to
+// geometry that is gone is dropped rather than left pointing somewhere
+// arbitrary -- the returned copy is for WRITING, and its sketch layer is
+// not the one the editor goes on using.
+FemmProblem withoutConstruction(const FemmProblem& p);
+
 // Reflects point (x,y) across the line through (x0,y0) with unit direction
 // (ux,uy), in place.
 void reflectPoint(double& x, double& y, double x0, double y0, double ux, double uy);

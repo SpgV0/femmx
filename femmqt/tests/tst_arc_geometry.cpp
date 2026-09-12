@@ -19,7 +19,10 @@
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
+#include "MeshBuilder.h"
 
+#include <QDir>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 
 #include <cmath>
@@ -82,6 +85,9 @@ private slots:
   void mirrorLeavesAPartiallySelectedArcAlone();
 
   void arcsSurviveDxfExportAndImport();
+
+  void theMesherDiscretisesAMajorArcAlongTheRightCircle();
+  void noFileKeepsItsOwnCopyOfTheArcCentreFormula();
 };
 
 // ---------------------------------------------------------------------------
@@ -390,6 +396,135 @@ void TestArcGeometry::arcsSurviveDxfExportAndImport()
                      .arg(after.radius).arg(before.radius)));
   QVERIFY(std::fabs(after.centre.real() - before.centre.real()) < 1e-6);
   QVERIFY(std::fabs(after.centre.imag() - before.centre.imag()) < 1e-6);
+}
+
+// ---------------------------------------------------------------------------
+// The fix that only reached one of four places (issue #77)
+// ---------------------------------------------------------------------------
+//
+// #25 fixed the major-arc centre in FemmProblemEdit::circleFromArc. The
+// mesher, the canvas and the solution viewer each had their OWN copy of
+// the same formula, still carrying the sign error, so an arc of more
+// than 180 degrees went on being meshed and drawn against the minor
+// arc's circle after #25 was closed.
+//
+// Nothing above this point could have caught that, because every case
+// above goes through the shared function -- which was correct. The two
+// checks below cover the gap from both ends: one measures the MESHER's
+// actual output, and one asserts that the formula exists in exactly one
+// place, so the next copy cannot quietly reintroduce it.
+
+void TestArcGeometry::theMesherDiscretisesAMajorArcAlongTheRightCircle()
+{
+  // A 270-degree arc from (0,-1) to (0,1). Its true centre is (1,0);
+  // the broken formula puts it at (-1,0) -- a mirror image, same radius,
+  // which is why nothing downstream noticed.
+  FemmProblem p;
+  p.problemType = FemmCoordinateType::Planar;
+  const int n0 = FemmProblemEdit::addNode(p, 0, -1);
+  const int n1 = FemmProblemEdit::addNode(p, 0, 1);
+  FemmProblemEdit::addArcSegment(p, n0, n1, 270.0, 5.0);
+
+  // The expected circle is derived HERE, from the definition, and
+  // deliberately NOT from circleFromArc.
+  //
+  // Written the obvious way -- ask circleFromArc for the centre and
+  // check the mesher's points against it -- this test passed while the
+  // defect was reintroduced, because the mesher and the expectation were
+  // then reading the same broken function and agreed with each other.
+  // That is #25's own trap verbatim, and this file's header warns about
+  // it.
+  //
+  // The definition: an arc sweeps counterclockwise from n0 to n1 through
+  // its included angle. The radius has no sign ambiguity, and of the two
+  // points at that radius from both endpoints, the centre is whichever
+  // one rotating n0 about it by the included angle carries to n1.
+  const std::complex<double> a(0, -1), b(0, 1);
+  const double sweepRad = 270.0 * M_PI / 180.0;
+  const double R = std::abs(b - a) / (2.0 * std::sin(sweepRad / 2.0));
+  const std::complex<double> mid = 0.5 * (a + b);
+  const std::complex<double> perp =
+      std::complex<double>(0, 1) * (b - a) / std::abs(b - a);
+  const double half = std::sqrt(std::max(0.0, R * R - std::norm(b - a) / 4.0));
+  std::complex<double> centre;
+  bool foundCentre = false;
+  for (const std::complex<double>& cand : { mid + half * perp, mid - half * perp }) {
+    const std::complex<double> swept =
+        cand + std::polar(1.0, sweepRad) * (a - cand);
+    if (std::abs(swept - b) < 1e-9) {
+      centre = cand;
+      foundCentre = true;
+    }
+  }
+  QVERIFY2(foundCentre, "the test could not derive the arc's centre from its "
+                        "own definition, so it cannot judge the mesher");
+
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  const QString root = dir.path() + "/majorarc";
+  QString error;
+  QVERIFY2(MeshBuilder::writePolyAndPbc(p, root, error), qPrintable(error));
+
+  QFile poly(root + ".poly");
+  QVERIFY(poly.open(QIODevice::ReadOnly | QIODevice::Text));
+  QTextStream in(&poly);
+  const QStringList header = in.readLine().trimmed().split(QRegularExpression("\\s+"));
+  QVERIFY(header.size() >= 1);
+  const int count = header[0].toInt();
+  QVERIFY2(count > 2, "the arc was not discretised into intermediate points at all, "
+                      "so this cannot tell which circle it followed");
+
+  // Every point the mesher emitted must sit on the arc's real circle.
+  // Under the old formula they sit on the mirrored one instead, so the
+  // measured radius comes out around 2*|centre| off.
+  double worst = 0;
+  for (int i = 0; i < count; i++) {
+    const QStringList f = in.readLine().trimmed().split(QRegularExpression("\\s+"));
+    QVERIFY(f.size() >= 3);
+    const std::complex<double> pt(f[1].toDouble(), f[2].toDouble());
+    worst = std::max(worst, std::fabs(std::abs(pt - centre) - R));
+  }
+  QVERIFY2(worst < 1e-6,
+      qPrintable(QStringLiteral("a meshed point is %1 away from the arc's own circle "
+                                "(centre %2,%3 radius %4) -- the mesher followed a "
+                                "different circle than the one the arc describes, so "
+                                "the region boundary handed to the solver is not the "
+                                "one that was drawn")
+                     .arg(worst).arg(centre.real()).arg(centre.imag()).arg(R)));
+}
+
+void TestArcGeometry::noFileKeepsItsOwnCopyOfTheArcCentreFormula()
+{
+  // The behavioural check above covers the mesher. It cannot cover the
+  // canvas or the solution viewer without a running GUI, and it cannot
+  // cover the copy somebody adds next week at all.
+  //
+  // So: the expression itself is the thing being guarded. It belongs in
+  // FemmProblemEdit.cpp and nowhere else. A text scan is a blunt
+  // instrument, but this defect was a blunt one -- the same twelve
+  // characters, pasted into three files, each of which then missed a
+  // fix applied to the original.
+  QDir dir(QStringLiteral(FEMMQT_SOURCE_DIR));
+  const QStringList sources = dir.entryList(QStringList() << "*.cpp", QDir::Files);
+  QVERIFY2(!sources.isEmpty(), "found no sources to scan");
+
+  QStringList offenders;
+  for (const QString& name : sources) {
+    QFile f(dir.filePath(name));
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+      continue;
+    const QString text = QString::fromUtf8(f.readAll());
+    // The broken form specifically: a positive square root of
+    // R*R - d*d/4, which is |R cos(theta/2)| and drops the sign.
+    if (text.contains(QRegularExpression("sqrt\\s*\\(\\s*std::max\\s*\\(\\s*0(\\.0)?\\s*,\\s*R \\* R - d \\* d / 4")))
+      offenders << name;
+  }
+  QVERIFY2(offenders.isEmpty(),
+      qPrintable(QStringLiteral("these files compute an arc centre with the "
+                                "always-positive square root that #25 fixed, so major "
+                                "arcs get the minor arc's circle there: %1. Call "
+                                "FemmProblemEdit::circleFromArcPoints instead.")
+                     .arg(offenders.join(", "))));
 }
 
 QTEST_GUILESS_MAIN(TestArcGeometry)

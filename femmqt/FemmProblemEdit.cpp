@@ -701,41 +701,57 @@ void FemmProblemEdit::translateCopySelected(FemmProblem& p, double dx, double dy
 // GeometryScene.cpp's own local arcGeometry(), just returning center+
 // radius as a Complex/double pair instead of also computing a start
 // angle (createRadius has no use for one).
-bool FemmProblemEdit::circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R)
+bool FemmProblemEdit::circleFromArcPoints(double x0, double y0, double x1, double y1,
+    double arcLengthDeg, double& cx, double& cy, double& R)
 {
-  double x0 = p.nodes[arc.n0].x, y0 = p.nodes[arc.n0].y;
-  double x1 = p.nodes[arc.n1].x, y1 = p.nodes[arc.n1].y;
   double dx = x1 - x0, dy = y1 - y0;
   double d = std::hypot(dx, dy);
   if (d <= 0)
     return false;
-  double tta = arc.arcLength * M_PI / 180.0;
+  double tta = arcLengthDeg * M_PI / 180.0;
   double s = std::sin(tta / 2.0);
   if (std::abs(s) < 1e-12)
     return false;
   R = d / (2.0 * s);
   double tx = dx / d, ty = dy / d;
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
-  // (issue #25): this was
+  // Issue #25: this was
   //     h = sqrt(max(0, R*R - d*d/4))
   // which is |R cos(theta/2)| -- always positive, so the centre was
   // always placed on the SAME side of the chord. For a major arc (more
   // than 180 degrees) the centre is on the other side, and taking the
   // positive root silently returned the minor arc's circle instead.
   //
-  // Measured: a 270-degree arc from (0,-1) to (0,1) came back with
+  // Measured then: a 270-degree arc from (0,-1) to (0,1) came back with
   // centre (-1,0) and R=1.4142 -- identical to the 90-degree arc on the
   // same chord. Rotating n0 about that centre by the arc's own included
   // angle did not land on n1, which is the definition the rest of the
-  // editor relies on. Everything downstream inherited it: rendering,
-  // hit-testing, the Radius dimension, meshing and DXF export.
+  // editor relies on.
   //
   // R*cos(theta/2) is the same magnitude with the sign the geometry
   // actually has -- cos goes negative past 180 degrees, which is exactly
   // where the centre crosses the chord. Identical to the old expression
   // for every arc up to 180 degrees.
+  //
+  // The math lives HERE, in the raw-coordinate form, and circleFromArc
+  // below calls it. Issue #77: three other files had their own copies of
+  // the broken version and did not get this fix, so a major arc went on
+  // being drawn, MESHED and post-processed against the wrong circle
+  // after #25 was closed. The meshing one decided what the solver saw.
   double h = R * std::cos(tta / 2.0);
-  c = std::complex<double>(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
+  cx = x0 + (d / 2.0 * tx - h * ty);
+  cy = y0 + (d / 2.0 * ty + h * tx);
+  return true;
+}
+
+bool FemmProblemEdit::circleFromArc(const FemmProblem& p, const FemmArcSegment& arc, std::complex<double>& c, double& R)
+{
+  if (arc.n0 < 0 || arc.n0 >= p.nodes.size() || arc.n1 < 0 || arc.n1 >= p.nodes.size())
+    return false;
+  double cx = 0, cy = 0;
+  if (!circleFromArcPoints(p.nodes[arc.n0].x, p.nodes[arc.n0].y,
+          p.nodes[arc.n1].x, p.nodes[arc.n1].y, arc.arcLength, cx, cy, R))
+    return false;
+  c = std::complex<double>(cx, cy);
   return true;
 }
 
@@ -1075,4 +1091,99 @@ bool FemmProblemEdit::createRadius(FemmProblem& p, int n, double r)
   }
 
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Construction geometry (issue #31)
+// ---------------------------------------------------------------------------
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12.
+
+bool FemmProblemEdit::hasConstruction(const FemmProblem& p)
+{
+  for (const FemmSegment& s : p.segments)
+    if (s.isConstruction)
+      return true;
+  for (const FemmArcSegment& a : p.arcSegments)
+    if (a.isConstruction)
+      return true;
+  for (const FemmNode& n : p.nodes)
+    if (n.isConstruction)
+      return true;
+  return false;
+}
+
+FemmProblem FemmProblemEdit::withoutConstruction(const FemmProblem& p)
+{
+  FemmProblem out = p;
+  out.nodes.clear();
+  out.segments.clear();
+  out.arcSegments.clear();
+
+  // Which nodes the surviving geometry still needs. A construction node
+  // that a real edge ends on belongs to the real edge too -- dropping it
+  // would leave that edge pointing at a node index that no longer
+  // exists, which is not a broken drawing but a corrupt file.
+  QVector<bool> needed(p.nodes.size(), false);
+  for (const FemmSegment& s : p.segments) {
+    if (s.isConstruction)
+      continue;
+    if (s.n0 >= 0 && s.n0 < needed.size())
+      needed[s.n0] = true;
+    if (s.n1 >= 0 && s.n1 < needed.size())
+      needed[s.n1] = true;
+  }
+  for (const FemmArcSegment& a : p.arcSegments) {
+    if (a.isConstruction)
+      continue;
+    if (a.n0 >= 0 && a.n0 < needed.size())
+      needed[a.n0] = true;
+    if (a.n1 >= 0 && a.n1 < needed.size())
+      needed[a.n1] = true;
+  }
+
+  QVector<int> nodeMap(p.nodes.size(), -1);
+  for (int i = 0; i < p.nodes.size(); i++) {
+    if (p.nodes[i].isConstruction && !needed[i])
+      continue;
+    nodeMap[i] = out.nodes.size();
+    FemmNode n = p.nodes[i];
+    n.isConstruction = false; // nothing downstream of here knows the flag
+    out.nodes.push_back(n);
+  }
+
+  QVector<int> segmentMap(p.segments.size(), -1);
+  for (int i = 0; i < p.segments.size(); i++) {
+    const FemmSegment& s = p.segments[i];
+    if (s.isConstruction)
+      continue;
+    if (s.n0 < 0 || s.n0 >= nodeMap.size() || s.n1 < 0 || s.n1 >= nodeMap.size())
+      continue;
+    if (nodeMap[s.n0] < 0 || nodeMap[s.n1] < 0)
+      continue;
+    segmentMap[i] = out.segments.size();
+    FemmSegment copy = s;
+    copy.n0 = nodeMap[s.n0];
+    copy.n1 = nodeMap[s.n1];
+    out.segments.push_back(copy);
+  }
+
+  QVector<int> arcMap(p.arcSegments.size(), -1);
+  for (int i = 0; i < p.arcSegments.size(); i++) {
+    const FemmArcSegment& a = p.arcSegments[i];
+    if (a.isConstruction)
+      continue;
+    if (a.n0 < 0 || a.n0 >= nodeMap.size() || a.n1 < 0 || a.n1 >= nodeMap.size())
+      continue;
+    if (nodeMap[a.n0] < 0 || nodeMap[a.n1] < 0)
+      continue;
+    arcMap[i] = out.arcSegments.size();
+    FemmArcSegment copy = a;
+    copy.n0 = nodeMap[a.n0];
+    copy.n1 = nodeMap[a.n1];
+    out.arcSegments.push_back(copy);
+  }
+
+  remapSketchReferences(out, nodeMap, segmentMap, arcMap);
+  return out;
 }

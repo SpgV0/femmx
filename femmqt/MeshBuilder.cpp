@@ -3,6 +3,7 @@
 #include "MeshBuilder.h"
 
 #include "FemmProblem.h"
+#include "FemmProblemEdit.h"
 
 #include <QFile>
 #include <QTextStream>
@@ -32,28 +33,24 @@ struct WorkSegment {
   int marker = 0; // 0 = none, else already the .poly-encoded -(index+2) value
 };
 
-// Mirrors CFemmeDoc::GetCircle (femm/FemmeDoc.cpp) -- also duplicated (in
-// the same, deliberately small form) in GeometryScene.cpp for rendering;
-// kept as two small copies rather than a shared header since each call
-// site's surrounding code differs enough that a shared utility would
-// mostly just be this one function.
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+// (issue #77). This was a private copy of the centre/radius math, and it
+// still carried the major-arc sign error that #25 fixed in
+// FemmProblemEdit::circleFromArc and nowhere else -- so an arc of more
+// than 180 degrees was DISCRETISED ALONG THE WRONG CIRCLE here, and the
+// region boundary handed to triangle was not the one the user drew. A
+// wrong answer that looks like an answer.
+//
+// The comment that used to stand here justified the duplication: "kept
+// as two small copies rather than a shared header since each call site's
+// surrounding code differs enough that a shared utility would mostly
+// just be this one function." That reasoning is precisely what let a fix
+// apply to a quarter of the code needing it -- and there were three
+// copies by then, not two.
 bool arcCircle(double x0, double y0, double x1, double y1, double arcLengthDeg,
     double& cx, double& cy, double& R)
 {
-  double dx = x1 - x0, dy = y1 - y0;
-  double d = std::hypot(dx, dy);
-  if (d <= 0)
-    return false;
-  double tta = arcLengthDeg * M_PI / 180.0;
-  double s = std::sin(tta / 2.0);
-  if (std::abs(s) < 1e-12)
-    return false;
-  R = d / (2.0 * s);
-  double tx = dx / d, ty = dy / d;
-  double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
-  cx = x0 + (d / 2.0 * tx - h * ty);
-  cy = y0 + (d / 2.0 * ty + h * tx);
-  return true;
+  return FemmProblemEdit::circleFromArcPoints(x0, y0, x1, y1, arcLengthDeg, cx, cy, R);
 }
 
 } // namespace
