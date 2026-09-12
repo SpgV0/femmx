@@ -343,6 +343,77 @@ def test_scilab_and_mathematica_have_a_manual_checklist():
     _note("    manual checklist present, covers scifemm and mathfemm")
 
 
+# ---------------------------------------------------------------------------
+# Documentation that names binaries
+# ---------------------------------------------------------------------------
+
+# Which solver each problem type is actually handed to, read out of the
+# GUI's own invocation sites rather than out of prose. Added for #45: the
+# README claimed fkn solved current flow and csolv solved electrostatics,
+# two of four wrong, and it had already misled work in this repo -- #3's
+# scope described belasolv as a Kelvin belt solver on the strength of that
+# sentence. Wiring solver dispatch from a wrong table fails in the worst
+# way available, by producing plausible numbers instead of an error.
+SOLVER_CALL_SITES = {
+    "magnetics": ("femm/FemmeView.cpp", "fkn.exe"),
+    "electrostatics": ("femm/beladrawView.cpp", "belasolv.exe"),
+    "heat flow": ("femm/hdrawView.cpp", "hsolv.exe"),
+    "current flow": ("femm/cdrawView.cpp", "csolv.exe"),
+}
+
+
+@pytest.mark.static
+def test_each_editor_invokes_its_own_solver():
+    """The mapping the README documents, checked against the source.
+
+    Each of the four editors must name exactly one solver, and it must be
+    the one for its physics. An editor naming two would mean the table
+    cannot be stated at all.
+    """
+    # No \b before the name: the call sites build the command line as
+    # sprintf(..., "\"%scsolv.exe\" %s", ...) -- the solver name is
+    # preceded by the %s that carries the bin directory, so the character
+    # before it is 's', a word character, and a leading word boundary
+    # matches nothing at all. The ".exe" suffix is what makes these
+    # unambiguous anyway.
+    exe_pattern = re.compile(r"(fkn|belasolv|hsolv|csolv)\.exe")
+    for physics, (relpath, expected) in sorted(SOLVER_CALL_SITES.items()):
+        path = os.path.join(REPO_ROOT, relpath.replace("/", os.sep))
+        assert os.path.exists(path), "%s is missing" % relpath
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            named = set(m.group(0) for m in exe_pattern.finditer(fh.read()))
+        _note("    %-15s %-22s -> %s"
+              % (physics, relpath.split("/")[-1], ", ".join(sorted(named))))
+        assert named == {expected}, (
+            "%s (%s) invokes %r; the README's solver table says %r"
+            % (relpath, physics, sorted(named), expected))
+
+
+@pytest.mark.static
+def test_the_readme_solver_table_matches_the_source():
+    """Prose about which binary does what is worth exactly as much as it
+    is accurate, and nothing keeps it accurate on its own."""
+    readme = os.path.join(REPO_ROOT, "README.md")
+    if not os.path.exists(readme):
+        pytest.skip("no README.md")
+    with open(readme, "r", encoding="utf-8", errors="replace") as fh:
+        text = fh.read()
+
+    wrong = []
+    for physics, (_relpath, expected) in sorted(SOLVER_CALL_SITES.items()):
+        # find the table row naming this physics, if any
+        for line in text.splitlines():
+            if physics.lower() in line.lower() and "|" in line:
+                if expected not in line:
+                    wrong.append((physics, expected, line.strip()))
+                break
+    _note("    README solver table: %d row(s) disagree with the source"
+          % len(wrong))
+    assert not wrong, (
+        "the README names the wrong solver for these problem types: %r"
+        % wrong)
+
+
 @pytest.mark.static
 def test_write_report():
     os.makedirs(OUTPUT_DIR, exist_ok=True)

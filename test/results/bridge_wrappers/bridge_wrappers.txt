@@ -12,3 +12,8 @@ Scripting bridge wrappers vs registered commands
     scifemm     exposes 1 of 13 FEMMX-specific commands
     octavefemm: exit=0, result='NO_ACTXSERVER'
     manual checklist present, covers scifemm and mathfemm
+    current flow    cdrawView.cpp          -> csolv.exe
+    electrostatics  beladrawView.cpp       -> belasolv.exe
+    heat flow       hdrawView.cpp          -> hsolv.exe
+    magnetics       FemmeView.cpp          -> fkn.exe
+    README solver table: 0 row(s) disagree with the source

@@ -12,10 +12,21 @@ problems in:
 * Current flow (DC conduction)
 
 Problems are built and meshed in a native MFC editor (`femmx.exe`), solved by
-one of four solver executables (`fkn.exe` for magnetics/current-flow,
-`csolv.exe` for electrostatics, `hsolv.exe` for heat flow, `belasolv.exe` for
-a Kelvin-transformation belt-solver variant), and results are inspected in a
-built-in post-processor. Problems can also be driven entirely by script via
+one of four solver executables — one per problem type — and results are
+inspected in a built-in post-processor.
+
+| Problem type | Solver | Invoked from |
+|---|---|---|
+| Magnetics | `fkn.exe` | `femm/FemmeView.cpp` |
+| Electrostatics | `belasolv.exe` | `femm/beladrawView.cpp` |
+| Heat flow | `hsolv.exe` | `femm/hdrawView.cpp` |
+| Current flow | `csolv.exe` | `femm/cdrawView.cpp` |
+
+(`belasolv` is BELA, FEMM's electrostatics companion program. The Kelvin
+transformation is a modelling technique for open boundaries, available across
+problem types — not a solver of its own.)
+
+Problems can also be driven entirely by script via
 Lua (built in), Octave/Matlab (`octavefemm`), Mathematica (`mathfemm`),
 Scilab (`scifemm`), or Python ([`pyfemm`](https://www.femm.info/wiki/pyFEMM),
 via the `femm.ActiveFEMM` COM automation server).
