@@ -32,10 +32,12 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "postprocess_parity")
-FEMMQT = os.path.join(REPO_ROOT, "bin", "plain", "femmqt.exe")
+FEMMQT = os.path.join(femmx_paths.BIN_DIR, "femmqt.exe")
 
 # The .ans stores B to 17 significant digits, and both sides derive the
 # element field from the same nodal A, so agreement should be close to

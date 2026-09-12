@@ -10,8 +10,8 @@ Total calls attempted: 561
   IEC [KNOWN ISSUE]: name 'exp' is not defined
 
 --- SKIP details ---
-  prompt: opens a blocking modal dialog; cannot run unattended
   messagebox: opens a blocking modal dialog; cannot run unattended
+  prompt: opens a blocking modal dialog; cannot run unattended
   create: opens a blocking modal dialog; cannot run unattended
   mi_moverotate2: not exposed by pyfemm
   mi_setfocus: requires an already-open document's exact window title; not attempted
@@ -233,8 +233,8 @@ Total calls attempted: 561
   [PASS] main_restore
   [PASS] main_minimize
   [PASS] main_restore
-  [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] messagebox  (opens a blocking modal dialog; cannot run unattended)
+  [SKIP] prompt  (opens a blocking modal dialog; cannot run unattended)
   [SKIP] create  (opens a blocking modal dialog; cannot run unattended)
   [PASS] mi_probdef
   [PASS] mi_getmaterial
@@ -736,7 +736,7 @@ Total calls attempted: 561
   [PASS] ci_showmesh
   [PASS] ci_smartmesh
   [PASS] ci_purgemesh
-  [PASS] ci_analyze  (0.2s)
+  [PASS] ci_analyze  (0.1s)
   [PASS] ci_loadsolution
   [PASS] co_numnodes
   [PASS] co_numelements

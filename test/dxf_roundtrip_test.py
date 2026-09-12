@@ -30,12 +30,14 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 FIXTURE_DIR = os.path.join(SCRIPT_DIR, "fixtures", "dxf")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "dxf_roundtrip")
 
-FEMMQT = os.path.join(REPO_ROOT, "bin", "plain", "femmqt.exe")
+FEMMQT = os.path.join(femmx_paths.BIN_DIR, "femmqt.exe")
 
 POS_TOL = 1e-6
 

@@ -38,6 +38,8 @@ import subprocess
 
 import pytest
 
+import femmx_paths
+
 try:
     from PIL import Image
 except ImportError:  # pragma: no cover - reported as a skip below
@@ -50,7 +52,7 @@ FIXTURE_DIR = os.path.join(SCRIPT_DIR, "fixtures", "render")
 GOLDEN_DIR = os.path.join(FIXTURE_DIR, "golden")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "render_golden")
 
-FEMMQT = os.path.join(REPO_ROOT, "bin", "plain", "femmqt.exe")
+FEMMQT = os.path.join(femmx_paths.BIN_DIR, "femmqt.exe")
 MODEL_FEM = os.path.join(FIXTURE_DIR, "render_fixture.fem")
 MODEL_ANS = os.path.join(FIXTURE_DIR, "render_fixture.ans")
 

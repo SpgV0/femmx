@@ -24,12 +24,16 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "material_library")
 
 # The libraries the installer ships (script.nsi installs bin/*.dat).
-LIB_DIR = os.path.join(REPO_ROOT, "bin")
+# The shipped .dat libraries live beside the binaries after a wrapper
+# build, and directly in bin/ after a bare build.ps1 run (#24).
+LIB_DIR = femmx_paths.BIN_DIR
 MATLIB = os.path.join(LIB_DIR, "matlib.dat")
 HEATLIB = os.path.join(LIB_DIR, "heatlib.dat")
 STATLIB = os.path.join(LIB_DIR, "statlib.dat")

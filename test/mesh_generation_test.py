@@ -32,6 +32,8 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "mesh_generation")
 
@@ -433,7 +435,7 @@ def test_triangle_build_variant_is_recorded():
     so this records what was actually exercised rather than pretending to
     a comparison it cannot make. See test/README.md.
     """
-    bin_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "bin", "plain")
+    bin_dir = femmx_paths.BIN_DIR
     exe = os.path.join(bin_dir, "triangle.exe")
     if not os.path.exists(exe):
         pytest.skip("no triangle.exe at %s" % exe)

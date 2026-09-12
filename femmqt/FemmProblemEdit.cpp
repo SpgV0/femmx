@@ -554,6 +554,39 @@ void FemmProblemEdit::mirrorSelected(FemmProblem& p, double x0, double y0, doubl
   for (FemmBlockLabel& b : p.blockLabels)
     if (b.isSelected)
       reflectPoint(b.x, b.y, x0, y0, ux, uy);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #25): arcs have a handedness and reflection reverses it.
+  //
+  // An arc is stored as two endpoints plus an included angle, and it
+  // always sweeps COUNTERCLOCKWISE from n0 to n1. Reflecting the
+  // endpoints alone leaves that rule saying "counterclockwise" about a
+  // shape that is now the mirror image, so the arc bulges the other way
+  // -- it becomes a different arc entirely, not a mirrored one.
+  //
+  // Measured before this fix: a quarter arc from (1,0) to (0,1) centred
+  // on the origin, mirrored about the x axis, came back with its centre
+  // at (1,-1) instead of staying at the origin. Nothing complained; the
+  // model just had the wrong geometry in it, and mirroring is how half
+  // of a symmetric machine gets built.
+  //
+  // Swapping the endpoints restores the handedness, which is exactly
+  // what the classic GUI does -- femm/MOVECOPY.CPP's MirrorSelected
+  // reads `n0 = nodelist[arclist[i].n1]; n1 = nodelist[arclist[i].n0];`
+  // for precisely this reason.
+  //
+  // Only arcs with BOTH endpoints reflected are swapped: an arc with one
+  // endpoint inside the selection and one outside has been stretched
+  // across the mirror line rather than mirrored, and there is no
+  // orientation fix that makes that meaningful.
+  for (FemmArcSegment& a : p.arcSegments) {
+    if (a.n0 < 0 || a.n0 >= p.nodes.size())
+      continue;
+    if (a.n1 < 0 || a.n1 >= p.nodes.size())
+      continue;
+    if (p.nodes[a.n0].isSelected && p.nodes[a.n1].isSelected)
+      std::swap(a.n0, a.n1);
+  }
 }
 
 namespace {
@@ -682,7 +715,26 @@ bool FemmProblemEdit::circleFromArc(const FemmProblem& p, const FemmArcSegment& 
     return false;
   R = d / (2.0 * s);
   double tx = dx / d, ty = dy / d;
-  double h = std::sqrt(std::max(0.0, R * R - d * d / 4.0));
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #25): this was
+  //     h = sqrt(max(0, R*R - d*d/4))
+  // which is |R cos(theta/2)| -- always positive, so the centre was
+  // always placed on the SAME side of the chord. For a major arc (more
+  // than 180 degrees) the centre is on the other side, and taking the
+  // positive root silently returned the minor arc's circle instead.
+  //
+  // Measured: a 270-degree arc from (0,-1) to (0,1) came back with
+  // centre (-1,0) and R=1.4142 -- identical to the 90-degree arc on the
+  // same chord. Rotating n0 about that centre by the arc's own included
+  // angle did not land on n1, which is the definition the rest of the
+  // editor relies on. Everything downstream inherited it: rendering,
+  // hit-testing, the Radius dimension, meshing and DXF export.
+  //
+  // R*cos(theta/2) is the same magnitude with the sign the geometry
+  // actually has -- cos goes negative past 180 degrees, which is exactly
+  // where the centre crosses the chord. Identical to the old expression
+  // for every arc up to 180 degrees.
+  double h = R * std::cos(tta / 2.0);
   c = std::complex<double>(x0 + (d / 2.0 * tx - h * ty), y0 + (d / 2.0 * ty + h * tx));
   return true;
 }

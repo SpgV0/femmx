@@ -3,7 +3,7 @@ GPU-accelerated solve: correctness + benchmark
 CUDA-enabled build detected: False
 Probe point: (20, 0)
 
-CPU: |B| = 1.000462e-04 T  (time: 1.182s)
-GPU: |B| = 1.000462e-04 T  (time: 1.180s)
+CPU: |B| = 1.000462e-04 T  (time: 1.157s)
+GPU: |B| = 1.000462e-04 T  (time: 1.139s)
 Relative difference: 0.0000%
-Speedup: 1.00x
+Speedup: 1.02x

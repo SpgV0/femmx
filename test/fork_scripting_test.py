@@ -383,7 +383,16 @@ def test_the_manual_lists_every_fork_added_command():
         "registers them: %r" % phantom)
 
 
-MANUAL_TEX_MAIN = os.path.join(REPO_ROOT, "manual", "manual.tex")
+# manual.tex is GENERATED from manual.tex.in by manual/CMakeLists.txt's
+# configure_file, and that directory is only configured when the LaTeX
+# build is enabled -- which CI disables. So the generated file does not
+# exist there and this test silently skipped on the one machine that
+# runs it unattended. The .in file is the tracked source and carries
+# the same Revision History chapter, so read that and fall back to the
+# generated copy (#24).
+MANUAL_TEX_MAIN = os.path.join(REPO_ROOT, "manual", "manual.tex.in")
+if not os.path.exists(MANUAL_TEX_MAIN):
+    MANUAL_TEX_MAIN = os.path.join(REPO_ROOT, "manual", "manual.tex")
 CHANGELOG = os.path.join(REPO_ROOT, "CHANGELOG.md")
 
 

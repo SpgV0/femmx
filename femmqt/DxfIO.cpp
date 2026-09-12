@@ -2,6 +2,8 @@
 
 #include "DxfIO.h"
 
+#include "FemmProblemEdit.h"
+
 #include <QFileInfo>
 
 #include <cmath>
@@ -643,18 +645,25 @@ bool DxfIO::exportDxf(const QString& path, const FemmProblem& problem, QString& 
       continue;
     const FemmNode& a = problem.nodes[arc.n0];
     const FemmNode& b = problem.nodes[arc.n1];
-    // Circle center/radius from the two endpoints + included angle
-    // (femm/MOVECOPY.CPP's GetCircle, ported inline -- solves for the
-    // center by rotating the chord's perpendicular bisector).
     Complex p0(a.x, a.y), p1(b.x, b.y);
-    double halfAngle = arc.arcLength * M_PI / 360.0;
-    Complex mid = (p0 + p1) / 2.0;
-    Complex chord = p1 - p0;
-    double chordLen = std::abs(chord);
-    double R = (chordLen / 2.0) / std::sin(halfAngle);
-    double h = R * std::cos(halfAngle);
-    Complex perp = Complex(0, 1) * (chord / (chordLen != 0 ? chordLen : 1.0));
-    Complex c = mid - perp * h;
+
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+    // (issue #25): this used to re-derive the centre inline, and did it
+    // with the perpendicular offset's sign the other way round from
+    // FemmProblemEdit::circleFromArc -- so it exported the REFLECTED
+    // circle. Measured: a 90-degree arc from (1,0) to (0,1) about the
+    // origin was written out centred on (1,1), i.e. the complementary
+    // 270-degree arc bulging the opposite way, which the importer then
+    // split in two because it exceeds 180 degrees. A DXF exported from
+    // femmqt and opened anywhere -- including back in femmqt -- had the
+    // wrong geometry in it.
+    //
+    // Two implementations of one formula is what let the sign drift
+    // apart unnoticed, so there is one now.
+    Complex c;
+    double R = 0;
+    if (!FemmProblemEdit::circleFromArc(problem, arc, c, R))
+      continue;
 
     double x0 = std::arg(p0 - c) * 180.0 / M_PI;
     double x1 = std::arg(p1 - c) * 180.0 / M_PI;
