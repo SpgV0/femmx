@@ -57,10 +57,23 @@ qt_standard_project_setup()
 # MeshBuilder) has no GUI dependency and is directly unit-testable once
 # it is reachable from something other than main().
 #
-# icons.qrc lives in the LIBRARY rather than the executable: Qt6 emits the
-# resource-initialiser for a qt_add_library target and links it in
-# automatically, so both femmqt.exe and the test binary get the icons
-# without a manual Q_INIT_RESOURCE call in each.
+# Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+# icons.qrc is NOT in this library. It used to be, with the comment
+# "Qt6 emits the resource-initialiser for a qt_add_library target and
+# links it in automatically, so both femmqt.exe and the test binary get
+# the icons without a manual Q_INIT_RESOURCE call in each."
+#
+# That is false for a STATIC library, and it is the reason every toolbar
+# button rendered as bare text (issue #57). AUTORCC compiled the .qrc
+# into a qrc_icons.cpp inside this archive, and the linker then discarded
+# that object because nothing references its initialiser -- so ":/icons/"
+# simply did not exist at runtime. Measured with a test that links this
+# library and asks Qt: 53 of 53 icons absent.
+#
+# The resource now belongs to each binary that needs it (femmqt below,
+# and femmqt_icon_tests), where an executable's own resources are always
+# initialised. Compiling it into two separate executables is not
+# duplication in any harmful sense -- they are separate images.
 qt_add_library(femmqt_core STATIC
   MainWindow.h
   MainWindow.cpp
@@ -158,7 +171,6 @@ qt_add_library(femmqt_core STATIC
   ContourPlotOptionsDialog.cpp
   PlotXYChartWidget.h
   PlotXYChartWidget.cpp
-  icons.qrc
 )
 
 target_include_directories(femmqt_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -167,6 +179,8 @@ target_link_libraries(femmqt_core PUBLIC Qt6::Widgets Qt6::Svg Qt6::PrintSupport
 
 qt_add_executable(femmqt WIN32
   main.cpp
+  # Here, not in femmqt_core -- see the note above the library (#57).
+  icons.qrc
 )
 
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
@@ -255,7 +269,34 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_snap_tests
     tests/tst_snap_engine.cpp
   )
-  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests femmqt_snap_tests)
+  # The toolbar icon resource. Every button rendered as bare text and
+  # nothing said why, because an empty QIcon draws exactly like a
+  # deliberately text-only button.
+  qt_add_executable(femmqt_icon_tests
+    tests/tst_icons.cpp
+    # The resource under test. Linked into this binary for the same
+    # reason femmqt.exe links it: a static library's copy gets
+    # discarded (#57).
+    icons.qrc
+  )
+  # Every test target, named once. These used to be two hand-kept
+  # lists and they drifted: the Qt-deployment loop below still named
+  # only the original four, so every target added since ran on
+  # whatever DLLs happened to be left in the directory -- and a new
+  # one failed to start at all, with exit 127 and no message.
+  set(FEMMQT_TEST_TARGETS
+    femmqt_tests
+    femmqt_constraint_tests
+    femmqt_geometry_tests
+    femmqt_gui_switch_tests
+    femmqt_create_radius_tests
+    femmqt_arc_tests
+    femmqt_sketch_ui_tests
+    femmqt_sketch_persistence_tests
+    femmqt_snap_tests
+    femmqt_icon_tests
+  )
+  foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
     target_link_libraries(${_femmqt_test} PRIVATE femmqt_core Qt6::Test)
     # Fixtures live in the repo's test/ tree, two levels up. Passed as a
@@ -263,10 +304,14 @@ if(TARGET Qt6::Test)
     # build tree and the app directory and would not look there.
     target_compile_definitions(${_femmqt_test} PRIVATE
       FEMMQT_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../test/fixtures")
+    # tst_icons.cpp scans icons.qrc and MainWindow.cpp as TEXT, so it
+    # needs the source directory as well as the fixture one.
+    target_compile_definitions(${_femmqt_test} PRIVATE
+      FEMMQT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   endforeach()
 
   # Never installed and never packaged: this is a build-tree artefact.
-  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests femmqt_snap_tests PROPERTIES
+  set_target_properties(${FEMMQT_TEST_TARGETS} PROPERTIES
     WIN32_EXECUTABLE OFF          # console apps, so QTest output reaches ctest
     EXCLUDE_FROM_ALL OFF
   )
@@ -280,12 +325,13 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_sketch_ui COMMAND femmqt_sketch_ui_tests)
   add_test(NAME femmqt_sketch_persistence COMMAND femmqt_sketch_persistence_tests)
   add_test(NAME femmqt_snap COMMAND femmqt_snap_tests)
+  add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap femmqt_icons PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )
@@ -329,7 +375,7 @@ if(TARGET Qt6::Test)
         "ctest timeout rather than fail. Install the Qt kit's platform "
         "plugins, or pass -DFEMMQT_QT6_DIR=<a complete Qt6 MSVC kit>.")
     endif()
-    foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests)
+    foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
       add_custom_command(TARGET ${_femmqt_test} POST_BUILD
         COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:${_femmqt_test}>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
