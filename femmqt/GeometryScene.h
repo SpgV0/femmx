@@ -5,6 +5,7 @@
 #include <QVector>
 
 #include "ConstraintSolver.h"
+#include "SnapEngine.h"
 #include "MeshOverlay.h"
 
 struct FemmProblem;
@@ -210,6 +211,35 @@ class GeometryScene : public QGraphicsScene {
   void setGridSize(double size);
   double gridSize() const { return m_gridSize; }
   QPointF snapPoint(QPointF p) const;
+  // Grid snap alone, with no geometry considered -- what snapPoint() used
+  // to be, kept for the case where there is no problem to snap against.
+  QPointF snapToGridOnly(QPointF p) const;
+
+  // Object snapping (issue #28). snapPoint() applies these on top of the
+  // grid, trying geometry first and falling back to the grid where there
+  // is none in range -- so grid-only behaviour is what you get by
+  // disabling every other bit.
+  void setSnapFlags(unsigned flags) { m_snapFlags = flags; }
+  unsigned snapFlags() const { return m_snapFlags; }
+
+  // Held down (Alt, wired in GeometryView) to place one point exactly
+  // where the cursor is, without changing any setting.
+  void setSnapSuspended(bool suspended) { m_snapSuspended = suspended; }
+  bool snapSuspended() const { return m_snapSuspended; }
+
+  // Where the current drawing operation started. Perpendicular and
+  // tangent snaps have nothing to measure from without it, and are
+  // skipped while it is unset.
+  void setSnapReference(QPointF p)
+  {
+    m_snapReference = p;
+    m_snapReferenceValid = true;
+  }
+  void clearSnapReference() { m_snapReferenceValid = false; }
+
+  // What the last snapPoint() call actually matched, for the on-canvas
+  // indicator and the status bar.
+  const SnapEngine::SnapResult& lastSnap() const { return m_lastSnap; }
 
   void setShowBlockNames(bool show);
   bool showBlockNames() const { return m_showBlockNames; }
@@ -524,6 +554,21 @@ class GeometryScene : public QGraphicsScene {
   bool m_showGrid = false;
   bool m_snapToGrid = false;
   double m_gridSize = 1.0;
+
+  // Object snapping (#28). Defaults to the useful set: the two that
+  // need a reference point are off until a drawing operation supplies
+  // one.
+  unsigned m_snapFlags = SnapEngine::SnapDefault;
+  bool m_snapSuspended = false;
+  QPointF m_snapReference;
+  bool m_snapReferenceValid = false;
+  // mutable: snapPoint() is const -- it is called from item itemChange
+  // handlers -- but recording what it matched is how the indicator and
+  // the status bar find out.
+  mutable SnapEngine::SnapResult m_lastSnap;
+  // Capture distance in PIXELS, converted to model units per call so
+  // the feel is the same at every zoom.
+  static constexpr double kSnapCapturePixels = 12.0;
 
   bool m_showBlockNames = false;
   QHash<int, QGraphicsItem*> m_blockNameItems; // block label index -> its name text item

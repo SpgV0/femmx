@@ -93,6 +93,8 @@ qt_add_library(femmqt_core STATIC
   FileRouting.cpp
   SketchFileIO.h
   SketchFileIO.cpp
+  SnapEngine.h
+  SnapEngine.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -248,7 +250,12 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_sketch_persistence_tests
     tests/tst_sketch_persistence.cpp
   )
-  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests)
+  # Snap target resolution -- mostly about PRIORITY, which is the part
+  # that decides whether specific targets are reachable at all (#28).
+  qt_add_executable(femmqt_snap_tests
+    tests/tst_snap_engine.cpp
+  )
+  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests femmqt_snap_tests)
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
     target_link_libraries(${_femmqt_test} PRIVATE femmqt_core Qt6::Test)
     # Fixtures live in the repo's test/ tree, two levels up. Passed as a
@@ -259,7 +266,7 @@ if(TARGET Qt6::Test)
   endforeach()
 
   # Never installed and never packaged: this is a build-tree artefact.
-  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests PROPERTIES
+  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests femmqt_arc_tests femmqt_sketch_ui_tests femmqt_sketch_persistence_tests femmqt_snap_tests PROPERTIES
     WIN32_EXECUTABLE OFF          # console apps, so QTest output reaches ctest
     EXCLUDE_FROM_ALL OFF
   )
@@ -272,12 +279,13 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_arcs COMMAND femmqt_arc_tests)
   add_test(NAME femmqt_sketch_ui COMMAND femmqt_sketch_ui_tests)
   add_test(NAME femmqt_sketch_persistence COMMAND femmqt_sketch_persistence_tests)
+  add_test(NAME femmqt_snap COMMAND femmqt_snap_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )

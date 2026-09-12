@@ -2531,9 +2531,55 @@ void GeometryScene::resetViewBackgroundCache()
 
 QPointF GeometryScene::snapPoint(QPointF p) const
 {
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  // object snapping (issue #28). This was grid-only, which meant a
+  // segment could not be started exactly on an existing node unless that
+  // node happened to sit on the grid -- so users placed it approximately
+  // and repaired it with a Coincident constraint, and geometry that only
+  // LOOKS joined does not mesh as a bounded region.
+  //
+  // Grid snap is unchanged and still applies wherever no geometry is in
+  // range: SnapEngine tries it last rather than instead (see its
+  // priority comment).
+  m_lastSnap = SnapEngine::SnapResult();
+
+  if (!m_problem)
+    return snapToGridOnly(p);
+
+  unsigned flags = m_snapFlags;
+  if (m_snapSuspended)
+    flags = SnapEngine::SnapNone;
+  if (!m_snapToGrid)
+    flags &= ~(unsigned)SnapEngine::SnapGrid;
+  if (flags == SnapEngine::SnapNone)
+    return p;
+
+  // The capture radius is specified in PIXELS and converted here, so the
+  // distance that feels right on screen stays the same at every zoom.
+  // The conversion lives at this call site rather than inside
+  // SnapEngine, which has no business knowing about views.
+  double radius = 0.0;
+  if (!views().isEmpty()) {
+    const qreal scale = views().first()->transform().m11();
+    if (scale > 0)
+      radius = kSnapCapturePixels / scale;
+  }
+
+  const SnapEngine::SnapResult r = SnapEngine::findSnap(*m_problem,
+      p.x(), p.y(), radius, flags, m_gridSize,
+      m_snapReferenceValid, m_snapReference.x(), m_snapReference.y());
+  m_lastSnap = r;
+  if (!r.snapped())
+    return p;
+  return QPointF(r.x, r.y);
+}
+
+QPointF GeometryScene::snapToGridOnly(QPointF p) const
+{
   if (!m_snapToGrid || m_gridSize <= 0)
     return p;
-  return QPointF(std::round(p.x() / m_gridSize) * m_gridSize, std::round(p.y() / m_gridSize) * m_gridSize);
+  return QPointF(std::round(p.x() / m_gridSize) * m_gridSize,
+      std::round(p.y() / m_gridSize) * m_gridSize);
 }
 
 void GeometryScene::setShowBlockNames(bool show)
