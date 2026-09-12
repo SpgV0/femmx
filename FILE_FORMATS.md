@@ -103,7 +103,32 @@ degrees), `<LamType>` (0=none/in-plane, 1=x-laminated, 2=y-laminated,
 
 **`[CircuitProps]`** (`<BeginCircuit>`): `<CircuitName>`,
 `<TotalAmps_re>`/`<TotalAmps_im>`, `<CircuitType>` (0=parallel,
-1=series).
+1=series), and optionally `<VoltGradient_re>`/`<VoltGradient_im>`.
+
+`<CircuitType>` selects how the circuit is driven. 0 is a *parallel*
+circuit: the whole region carries `TotalAmps`, and the solver finds the
+current density that delivers it. 1 is a *series* circuit: every turn
+carries `TotalAmps`, so the region's current density is scaled by the
+block label's `<Turns>` count.
+
+`<VoltGradient_re>`/`<VoltGradient_im>` prescribe a voltage gradient
+along the circuit instead of a current, and are read into
+`CCircuit::dVolts_re/im` by every magnetics solve path
+([`fkn/femmedoccore.cpp:965`](fkn/femmedoccore.cpp#L965), used in
+`prob1big.cpp` through `prob4big.cpp`). They default to 0 and are written
+only when non-zero, so a model that does not use them is byte-identical
+to one written before they were supported.
+
+> **This field is inert in the shipped solver.** `LoadCircuits` rewrites
+> every `CircuitType` of 1 to 0 just before the solve
+> ([`fkn/femmedoccore.cpp:1100`](fkn/femmedoccore.cpp#L1100)) — "now, all
+> circuits look like parallel circuits" — and the branch that reads
+> `dVolts` runs only for a non-zero type. So no `.fem` can currently
+> reach it. Both editors nevertheless parse and preserve the tags,
+> because until they did, a hand-authored or third-party file carrying a
+> voltage-driven circuit lost it silently on its next save. Documented
+> here as what it is rather than left out: an undocumented field that a
+> published format spec omits is how the loss went unnoticed.
 
 ### Geometry sections (in this order)
 

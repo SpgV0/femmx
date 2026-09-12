@@ -22,7 +22,15 @@ constexpr int kPathLen = 260;
 constexpr int kCommentLen = 512;
 constexpr int kMagDirFctnLen = 256;
 constexpr int kMaxBhPoints = 256;
-constexpr uint32_t kFemxVersion = 2;
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+// 2 -> 3 for the two voltage-gradient fields on FemxCircuitPropRecord.
+//
+// This constant and every struct below exist TWICE, here and in the
+// other GUI's copy of this file, and they have to stay byte-identical.
+// A change to one and not the other is not a build error: it is a reader
+// confidently parsing the wrong offsets. femmqt/tests/tst_femx_parity.cpp
+// compares the two files and fails if they drift.
+constexpr uint32_t kFemxVersion = 3;
 
 #pragma pack(push, 1)
 struct FemxHeader {
@@ -72,6 +80,14 @@ struct FemxCircuitPropRecord {
   char name[kNameLen];
   double ampsRe, ampsIm;
   int32_t circType;
+  // Appended for the <voltgradient> fix. fkn parses these from the .fem
+  // and no writer emitted them, so they were lost on save; .femx is
+  // defined as holding exactly what re-parsing the .fem gives, so
+  // leaving them out here would lose them again on every cache hit.
+  //
+  // A layout change, so kFemxVersion goes to 3 -- and it goes to 3 in
+  // BOTH copies of this file. See the note there.
+  double voltGradientRe, voltGradientIm;
 };
 
 struct FemxNodeRecord {
@@ -298,6 +314,7 @@ bool FemxFileIO::readFemx(const char* femxPath, CFemmeDoc& doc)
     cp.CircName = getFixed(rec.name, kNameLen);
     cp.Amps = CComplex(rec.ampsRe, rec.ampsIm);
     cp.CircType = rec.circType;
+    cp.dVolts = CComplex(rec.voltGradientRe, rec.voltGradientIm);
     doc.circproplist.Add(cp);
   }
 
@@ -534,6 +551,8 @@ bool FemxFileIO::writeFemx(const char* femxPath, const char* femPath, CFemmeDoc&
     rec.ampsRe = cp.Amps.re;
     rec.ampsIm = cp.Amps.im;
     rec.circType = cp.CircType;
+    rec.voltGradientRe = cp.dVolts.re;
+    rec.voltGradientIm = cp.dVolts.im;
     if (fwrite(&rec, 1, sizeof(rec), fp) != sizeof(rec)) {
       fclose(fp);
       return false;

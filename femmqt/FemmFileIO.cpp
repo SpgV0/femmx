@@ -287,6 +287,12 @@ bool FemmFileIO::readFem(const QString& path, FemmProblem& problem, QString& err
             c.ampsIm = v2.toDouble();
           else if (t2 == "CircuitType")
             c.circType = v2.toInt();
+          // Parsed so a file carrying them survives a save -- see
+          // FemmCircuitProp::voltGradientRe.
+          else if (t2 == "VoltGradient_re")
+            c.voltGradientRe = v2.toDouble();
+          else if (t2 == "VoltGradient_im")
+            c.voltGradientIm = v2.toDouble();
         }
         problem.circuitProps.push_back(c);
       }
@@ -518,6 +524,14 @@ bool writeFemStripped(const QString& path, const FemmProblem& p, QString& errorM
     out << "    <TotalAmps_re> = " << g17(c.ampsRe) << "\n";
     out << "    <TotalAmps_im> = " << g17(c.ampsIm) << "\n";
     out << "    <CircuitType> = " << c.circType << "\n";
+    // Written only when non-zero, so every model that does not use a
+    // voltage gradient -- which is all of them, since the solver path is
+    // currently unreachable -- produces byte-identical output to before.
+    // A file that does carry one keeps it.
+    if (c.voltGradientRe != 0 || c.voltGradientIm != 0) {
+      out << "    <VoltGradient_re> = " << g17(c.voltGradientRe) << "\n";
+      out << "    <VoltGradient_im> = " << g17(c.voltGradientIm) << "\n";
+    }
     out << "  <EndCircuit>\n";
   }
 

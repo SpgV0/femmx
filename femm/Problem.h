@@ -196,6 +196,13 @@ class CCircuit {
   CString CircName;
   CComplex Amps;
   int CircType;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12.
+  // fkn reads <VoltGradient_re>/<_im> into its own CCircuit::dVolts_re/im
+  // and drives a circuit at a prescribed voltage gradient with them
+  // (fkn/femmedoccore.cpp:965). This editor neither parsed nor wrote
+  // them, so a .fem carrying a voltage-driven circuit lost it on the
+  // next save, silently. Held here so it round-trips.
+  CComplex dVolts;
 
   private:
 };

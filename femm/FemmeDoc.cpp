@@ -2290,6 +2290,25 @@ BOOL CFemmeDoc::OnOpenDocument(LPCTSTR lpszPathName)
       q[0] = NULL;
     }
 
+    // Parsed so a file carrying them survives a save -- fkn has read
+    // these since before the fork and nothing here preserved them. See
+    // CCircuit::dVolts (Problem.h).
+    if (_strnicmp(q, "<voltgradient_re>", 17) == 0) {
+      v = StripKey(s);
+      double t = 0;
+      sscanf(v, "%lf", &t);
+      CProp.dVolts.re = t;
+      q[0] = NULL;
+    }
+
+    if (_strnicmp(q, "<voltgradient_im>", 17) == 0) {
+      v = StripKey(s);
+      double t = 0;
+      sscanf(v, "%lf", &t);
+      CProp.dVolts.im = t;
+      q[0] = NULL;
+    }
+
     if (_strnicmp(q, "<endcircuit>", 12) == 0) {
       circproplist.Add(CProp);
       q[0] = NULL;
@@ -2625,6 +2644,13 @@ BOOL CFemmeDoc::OnSaveDocument(LPCTSTR lpszPathName)
     fprintf(fp, "    <TotalAmps_re> = %.17g\n", circproplist[i].Amps.Re());
     fprintf(fp, "    <TotalAmps_im> = %.17g\n", circproplist[i].Amps.Im());
     fprintf(fp, "    <CircuitType> = %i\n", circproplist[i].CircType);
+    // Only when set, so a model that does not use a voltage gradient --
+    // which is every model, since the solver path is currently
+    // unreachable -- writes byte-identically to before.
+    if (circproplist[i].dVolts.re != 0 || circproplist[i].dVolts.im != 0) {
+      fprintf(fp, "    <VoltGradient_re> = %.17g\n", circproplist[i].dVolts.re);
+      fprintf(fp, "    <VoltGradient_im> = %.17g\n", circproplist[i].dVolts.im);
+    }
     fprintf(fp, "  <EndCircuit>\n");
   }
 

@@ -57,6 +57,20 @@ struct FemmCircuitProp {
   QString name;
   double ampsRe = 0, ampsIm = 0;
   int circType = 0; // 0 = parallel, 1 = series
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (the <voltgradient> ticket). fkn reads <VoltGradient_re>/<_im> into
+  // CCircuit::dVolts_re/im and drives a circuit at a prescribed voltage
+  // gradient with them (fkn/femmedoccore.cpp:965, prob1big.cpp:97 and
+  // its three siblings). Neither GUI wrote them or parsed them, so a
+  // hand-authored or third-party .fem carrying a voltage-driven circuit
+  // lost it silently on the next save.
+  //
+  // Carried here so it round-trips. NOT currently reachable in the
+  // solver: LoadCircuits rewrites every CircType 1 to 0 before the solve
+  // (fkn/femmedoccore.cpp:1100), so the branch that reads dVolts never
+  // runs. Preserving the value is still right -- losing a field a user
+  // deliberately set is a bug whether or not the solver acts on it yet.
+  double voltGradientRe = 0, voltGradientIm = 0;
 };
 
 struct FemmNode {

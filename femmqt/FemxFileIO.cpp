@@ -30,7 +30,15 @@ constexpr int kMagDirFctnLen = 256;
 // corrupt every field after materials (circuits, nodes, segments, arcs,
 // block labels).
 constexpr int kMaxBhPoints = 256;
-constexpr uint32_t kFemxVersion = 2;
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+// 2 -> 3 for the two voltage-gradient fields on FemxCircuitPropRecord.
+//
+// This constant and every struct below exist TWICE, here and in the
+// other GUI's copy of this file, and they have to stay byte-identical.
+// A change to one and not the other is not a build error: it is a reader
+// confidently parsing the wrong offsets. femmqt/tests/tst_femx_parity.cpp
+// compares the two files and fails if they drift.
+constexpr uint32_t kFemxVersion = 3;
 
 #pragma pack(push, 1)
 struct FemxHeader {
@@ -83,6 +91,14 @@ struct FemxCircuitPropRecord {
   char name[kNameLen];
   double ampsRe, ampsIm;
   int32_t circType;
+  // Appended for the <voltgradient> fix. fkn parses these from the .fem
+  // and no writer emitted them, so they were lost on save; .femx is
+  // defined as holding exactly what re-parsing the .fem gives, so
+  // leaving them out here would lose them again on every cache hit.
+  //
+  // A layout change, so kFemxVersion goes to 3 -- and it goes to 3 in
+  // BOTH copies of this file. See the note there.
+  double voltGradientRe, voltGradientIm;
 };
 
 struct FemxNodeRecord {
@@ -333,7 +349,9 @@ bool writeFemxStripped(const QString& femxPath, const QString& sourceFemPath,
     rec.ampsRe = c.ampsRe;
     rec.ampsIm = c.ampsIm;
     rec.circType = c.circType;
-    if (!writeArray(file, &rec, 1, errorMessage, "circuit property data"))
+        rec.voltGradientRe = c.voltGradientRe;
+    rec.voltGradientIm = c.voltGradientIm;
+if (!writeArray(file, &rec, 1, errorMessage, "circuit property data"))
       return false;
   }
 
@@ -488,6 +506,8 @@ bool FemxFileIO::readFemx(const QString& femxPath, FemmProblem& p, QString& erro
     c.ampsRe = r.ampsRe;
     c.ampsIm = r.ampsIm;
     c.circType = r.circType;
+    c.voltGradientRe = r.voltGradientRe;
+    c.voltGradientIm = r.voltGradientIm;
     p.circuitProps.push_back(c);
   }
 
