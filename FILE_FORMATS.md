@@ -22,6 +22,7 @@ consumer (GUI or solver) owns its own reader/writer for these formats.
    .ans  (.fem's own header, plus the solved mesh, text)
 
    .femx = binary cache of .fem, regenerated whenever stale
+   .fes  = femmqt's sketch layer for .fem -- NOT a cache, see below
    .ansx = binary cache of .ans's MESH data only, regenerated whenever stale
 ```
 
@@ -314,3 +315,33 @@ records.
   `CFemmviewDoc::GetJA()`'s return value is scaled to A/m² internally
   (despite its own comment claiming MA/m²) — the writer divides by 1e6
   to match every other current-density field's actual MA/m² units.
+
+## `.fes` — the sketch sidecar (femmqt only)
+
+`foo.fes` holds the constraints and dimensions femmqt's CAD sketch layer
+attaches to `foo.fem`. Added for issue #27; before it, the sketch was
+session-only and closing the file discarded every constraint.
+
+It is **not a cache**. `.femx`/`.ansx` are regenerable from their source
+and are rewritten whenever they go stale; `.fes` is the only copy of what
+it holds, which is exactly why it could not live inside `.femx` — sketch
+data there would be destroyed the first time anyone touched the `.fem` in
+the classic editor, or copied only the `.fem` somewhere else.
+
+- Plain text, versioned by a `<Format>` line, so it diffs and can be
+  repaired by hand like `.fem` itself.
+- **Nothing about the `.fem` changes.** A `.fem` written by femmqt with a
+  sketch is byte-identical to one written without, so it stays readable
+  by the classic MFC editor and all four solvers, none of which know
+  anything about constraints.
+- Safe to delete. A model with no `.fes` loads as an unconstrained
+  sketch, which is what every model predating the feature is.
+- Each reference is stored with a geometric fingerprint (a node's
+  coordinates, an edge's two endpoints) as well as its index, because
+  indices shift under insert and delete. On load the stored index is
+  accepted only if the entity there still matches; otherwise the
+  fingerprint finds it. If nothing matches, or several do, the constraint
+  is **dropped and reported** rather than attached to whatever now
+  occupies that index.
+- Written best-effort, like the caches: a read-only directory never fails
+  the save the user asked for. Unlike a cache, the failure is reported.

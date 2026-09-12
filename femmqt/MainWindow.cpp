@@ -16,6 +16,7 @@
 #include "FemmFileIO.h"
 #include "FemmProblemEdit.h"
 #include "FemxFileIO.h"
+#include "SketchFileIO.h"
 #include "GuiSwitch.h"
 #include "HoverTooltip.h"
 #include "IconTheme.h"
@@ -778,6 +779,31 @@ void MainWindow::openFile(const QString& path)
     FemxFileIO::writeFemx(femxPath, femPath, problem, writeError);
   }
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  // restore the sketch layer from its sidecar (issue #27). Done here
+  // rather than inside either file reader because the sketch belongs to
+  // the MODEL, not to whichever of .fem/.femx happened to supply the
+  // geometry -- and .femx is a regenerable cache, so it cannot be the
+  // sketch's home (see SketchFileIO.h).
+  //
+  // References are re-resolved against the geometry that just loaded.
+  // Anything that no longer matches is dropped and reported rather than
+  // applied to whatever now occupies its index.
+  QStringList sketchReport;
+  QString sketchError;
+  if (!SketchFileIO::readSketch(femPath, problem, sketchReport, sketchError)) {
+    QMessageBox::warning(this, "Sketch Not Loaded",
+        QStringLiteral("The model opened, but its constraints and dimensions "
+                       "did not:\n\n%1")
+            .arg(sketchError));
+  } else if (!sketchReport.isEmpty()) {
+    QMessageBox::information(this, "Sketch Partly Restored",
+        QStringLiteral("The model opened. Some constraints or dimensions "
+                       "could not be reattached to the geometry and were "
+                       "dropped:\n\n%1")
+            .arg(sketchReport.join("\n")));
+  }
+
   m_problem = problem;
   m_currentPath = femPath;
   m_scene->setProblem(&m_problem);
@@ -836,6 +862,21 @@ bool MainWindow::saveAs(const QString& path)
   QString femxPath = pathInfo.absolutePath() + "/" + pathInfo.completeBaseName() + ".femx";
   QString femxError;
   FemxFileIO::writeFemx(femxPath, path, m_problem, femxError);
+
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
+  // the sketch layer goes to its own sidecar (issue #27). Best-effort in
+  // the same sense as the .femx cache above -- a read-only directory must
+  // not fail the save the user asked for -- but unlike the cache this is
+  // the ONLY copy, so a failure is worth saying out loud rather than
+  // swallowing. writeSketch removes the sidecar when the sketch is empty,
+  // so deleting the last constraint persists too.
+  QString sketchError;
+  if (!SketchFileIO::writeSketch(path, m_problem, sketchError)
+      && !(m_problem.constraints.isEmpty() && m_problem.dimensions.isEmpty())) {
+    statusBar()->showMessage(
+        QStringLiteral("Saved %1, but its constraints and dimensions were "
+                       "not: %2").arg(path, sketchError));
+  }
 
   m_currentPath = path;
   m_dirty = false;
