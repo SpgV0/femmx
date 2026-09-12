@@ -2,8 +2,8 @@ File-format round-trip checks
 ======================================================================
     parsed 18 scalars, 8 property blocks, 5 geometry tables
     first-vs-second save: 3 difference(s), 0 outside the known derived arc column
-    .femx v2 header=952B records source size=3561 mtime=1789197227; .fem on disk is size=3561 mtime=1789197227
+    .femx v2 header=952B records source size=3561 mtime=1789197985; .fem on disk is size=3561 mtime=1789197985
     cache-path vs text-path re-save: 0 difference(s)
-    stale cache claims size=3561 mtime=1789197227; .fem is now size=3541 mtime=1789197229
+    stale cache claims size=3561 mtime=1789197986; .fem is now size=3541 mtime=1789197987
     .ansx v3 records 9469 nodes / 18697 elements; post-processor reports 9469 / 18697
     cached vs text .ans load: worst relative field difference 0

@@ -43,11 +43,16 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "solver_regression")
 REFERENCE_PATH = os.path.join(SCRIPT_DIR, "solver_references.json")
-BIN_DIR = os.path.join(REPO_ROOT, "bin", "plain")
+# Resolved rather than hardcoded: CI builds into bin/ while the local
+# wrapper scripts move everything into bin/plain, and ten modules that
+# assumed bin/plain silently SKIPPED on CI (#24).
+BIN_DIR = femmx_paths.BIN_DIR
 
 # Per-quantity relative tolerance. Tight on purpose: the point is to catch
 # a systematic shift, and a band wide enough to be comfortable is a band

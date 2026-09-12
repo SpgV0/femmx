@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QVector>
+
 #include <complex>
 
 struct FemmProblem;
@@ -39,6 +41,29 @@ int addBlockLabel(FemmProblem& p, double x, double y);
 // QVector::remove call at the GeometryScene layer.
 void deleteNode(FemmProblem& p, int nodeIndex);
 void deleteSegment(FemmProblem& p, int segmentIndex);
+
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+// (issue #24): the renumbering above used to stop at segments and arcs.
+// Constraints and dimensions also hold node/segment/arc INDICES
+// (FemmProblem.h documents which field means what per type), and nothing
+// updated them -- so deleting any entity silently repointed every
+// constraint and dimension above it onto a different entity, and one
+// referencing the deleted entity pointed at whatever took its slot.
+// Silent because a stale index is still a valid index: the sketch went on
+// solving, just against the wrong geometry.
+//
+// Create Radius is how this was found -- it deletes the corner node as
+// part of the fillet -- but it applies to every deletion path.
+//
+// Maps are old index -> new index, with -1 meaning "removed"; a
+// constraint or dimension with any removed reference is dropped, because
+// there is no meaningful repair for "make this parallel to a line that no
+// longer exists". Public so a caller doing a bulk edit can build the maps
+// once rather than paying the cascade per entity.
+void remapSketchReferences(FemmProblem& p,
+    const QVector<int>& nodeMap,
+    const QVector<int>& segmentMap,
+    const QVector<int>& arcMap);
 // Modified by Claude (Anthropic), noreply@anthropic.com: unlike
 // deleteNode/deleteSegment/deleteArcSegment/deleteBlockLabel above,
 // nothing else in FemmProblem ever references a dimension or constraint BY

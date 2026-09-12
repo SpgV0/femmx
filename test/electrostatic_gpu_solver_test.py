@@ -45,6 +45,8 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, "results", "electrostatic_gpu_solver_test")
 RESULTS_PATH = os.path.join(RESULTS_DIR, "electrostatic_gpu_solver.txt")
@@ -60,7 +62,10 @@ MAX_RELATIVE_DIFFERENCE_PCT = 0.1  # CPU vs GPU results must agree this closely
 
 # Heuristic for "this build actually has CUDA support": the runtime DLLs
 # belasolv/CMakeLists.txt bundles when built with -DENABLE_CUDA_SOLVER=ON.
-BIN_DIR = os.path.join(SCRIPT_DIR, "..", "bin")
+# Resolved rather than hardcoded: CI builds into bin/ while the local
+# wrapper scripts move everything into bin/plain, and ten modules that
+# assumed bin/plain silently SKIPPED on CI (#24).
+BIN_DIR = femmx_paths.BIN_DIR
 
 
 def _cuda_build_available():

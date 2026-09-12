@@ -122,13 +122,143 @@ int FemmProblemEdit::addBlockLabel(FemmProblem& p, double x, double y)
   return p.blockLabels.size() - 1;
 }
 
+namespace {
+
+// old index -> new index for a list where exactly one entry is removed.
+QVector<int> mapAfterRemovingOne(int count, int removed)
+{
+  QVector<int> map(count);
+  for (int i = 0; i < count; i++)
+    map[i] = (i == removed) ? -1 : (i > removed ? i - 1 : i);
+  return map;
+}
+
+// Identity map: nothing in this list changed.
+QVector<int> identityMap(int count)
+{
+  QVector<int> map(count);
+  for (int i = 0; i < count; i++)
+    map[i] = i;
+  return map;
+}
+
+int mapped(const QVector<int>& map, int index)
+{
+  if (index < 0)
+    return -1;
+  return (index < map.size()) ? map[index] : -1;
+}
+
+} // namespace
+
+void FemmProblemEdit::remapSketchReferences(FemmProblem& p,
+    const QVector<int>& nodeMap,
+    const QVector<int>& segmentMap,
+    const QVector<int>& arcMap)
+{
+  QVector<FemmConstraint> keptConstraints;
+  keptConstraints.reserve(p.constraints.size());
+  for (const FemmConstraint& c : p.constraints) {
+    FemmConstraint n = c;
+    bool ok = true;
+    // Which list each ref indexes depends on the constraint type; the
+    // authority is the comment above FemmConstraint in FemmProblem.h.
+    switch (c.type) {
+    case ConstraintType::Coincident:
+      n.refA = mapped(nodeMap, c.refA);
+      n.refB = mapped(nodeMap, c.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case ConstraintType::Horizontal:
+    case ConstraintType::Vertical:
+      n.refA = mapped(segmentMap, c.refA);
+      ok = n.refA >= 0;
+      break;
+    case ConstraintType::Parallel:
+    case ConstraintType::Perpendicular:
+      n.refA = mapped(segmentMap, c.refA);
+      n.refB = mapped(segmentMap, c.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case ConstraintType::Equal:
+      // isArcPair says which list both refs index.
+      n.refA = mapped(c.isArcPair ? arcMap : segmentMap, c.refA);
+      n.refB = mapped(c.isArcPair ? arcMap : segmentMap, c.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case ConstraintType::Tangent:
+      // refA is a segment or an arc (firstIsArc); refB is always an arc.
+      n.refA = mapped(c.firstIsArc ? arcMap : segmentMap, c.refA);
+      n.refB = mapped(arcMap, c.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case ConstraintType::Concentric:
+      n.refA = mapped(arcMap, c.refA);
+      n.refB = mapped(arcMap, c.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case ConstraintType::Symmetric:
+      n.refA = mapped(nodeMap, c.refA);
+      n.refB = mapped(nodeMap, c.refB);
+      n.refC = mapped(segmentMap, c.refC);
+      ok = n.refA >= 0 && n.refB >= 0 && n.refC >= 0;
+      break;
+    }
+    if (ok)
+      keptConstraints.push_back(n);
+  }
+  p.constraints = keptConstraints;
+
+  QVector<FemmDimension> keptDimensions;
+  keptDimensions.reserve(p.dimensions.size());
+  for (const FemmDimension& d : p.dimensions) {
+    FemmDimension n = d;
+    bool ok = true;
+    switch (d.type) {
+    case DimensionType::Distance:
+    case DimensionType::HorizontalDistance:
+    case DimensionType::VerticalDistance:
+      n.refA = mapped(nodeMap, d.refA);
+      n.refB = mapped(nodeMap, d.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    case DimensionType::Radius:
+      n.refA = mapped(arcMap, d.refA);
+      ok = n.refA >= 0;
+      break;
+    case DimensionType::Angle:
+      n.refA = mapped(nodeMap, d.refA);
+      n.refB = mapped(nodeMap, d.refB);
+      n.refC = mapped(nodeMap, d.refC);
+      ok = n.refA >= 0 && n.refB >= 0 && n.refC >= 0;
+      break;
+    case DimensionType::AngleLines:
+      n.refA = mapped(segmentMap, d.refA);
+      n.refB = mapped(segmentMap, d.refB);
+      ok = n.refA >= 0 && n.refB >= 0;
+      break;
+    }
+    if (ok)
+      keptDimensions.push_back(n);
+  }
+  p.dimensions = keptDimensions;
+}
+
 void FemmProblemEdit::deleteNode(FemmProblem& p, int nodeIndex)
 {
   if (nodeIndex < 0 || nodeIndex >= p.nodes.size())
     return;
 
+  // Segments and arcs are renumbered AND some are removed outright (a
+  // segment cannot exist with a dangling endpoint), so the sketch layer
+  // needs maps for all three lists, not just for nodes.
+  const QVector<int> nodeMap = mapAfterRemovingOne(p.nodes.size(), nodeIndex);
+  QVector<int> segmentMap(p.segments.size(), -1);
+  QVector<int> arcMap(p.arcSegments.size(), -1);
+
   QVector<FemmSegment> keptSegments;
-  for (const FemmSegment& s : p.segments) {
+  for (int i = 0; i < p.segments.size(); i++) {
+    const FemmSegment& s = p.segments[i];
     if (s.n0 == nodeIndex || s.n1 == nodeIndex)
       continue;
     FemmSegment s2 = s;
@@ -136,12 +266,14 @@ void FemmProblemEdit::deleteNode(FemmProblem& p, int nodeIndex)
       s2.n0--;
     if (s2.n1 > nodeIndex)
       s2.n1--;
+    segmentMap[i] = keptSegments.size();
     keptSegments.push_back(s2);
   }
   p.segments = keptSegments;
 
   QVector<FemmArcSegment> keptArcs;
-  for (const FemmArcSegment& a : p.arcSegments) {
+  for (int i = 0; i < p.arcSegments.size(); i++) {
+    const FemmArcSegment& a = p.arcSegments[i];
     if (a.n0 == nodeIndex || a.n1 == nodeIndex)
       continue;
     FemmArcSegment a2 = a;
@@ -149,25 +281,36 @@ void FemmProblemEdit::deleteNode(FemmProblem& p, int nodeIndex)
       a2.n0--;
     if (a2.n1 > nodeIndex)
       a2.n1--;
+    arcMap[i] = keptArcs.size();
     keptArcs.push_back(a2);
   }
   p.arcSegments = keptArcs;
 
   p.nodes.remove(nodeIndex);
+
+  remapSketchReferences(p, nodeMap, segmentMap, arcMap);
 }
 
 void FemmProblemEdit::deleteSegment(FemmProblem& p, int segmentIndex)
 {
   if (segmentIndex < 0 || segmentIndex >= p.segments.size())
     return;
+  const QVector<int> segmentMap =
+      mapAfterRemovingOne(p.segments.size(), segmentIndex);
   p.segments.remove(segmentIndex);
+  remapSketchReferences(p, identityMap(p.nodes.size()), segmentMap,
+      identityMap(p.arcSegments.size()));
 }
 
 void FemmProblemEdit::deleteArcSegment(FemmProblem& p, int arcIndex)
 {
   if (arcIndex < 0 || arcIndex >= p.arcSegments.size())
     return;
+  const QVector<int> arcMap =
+      mapAfterRemovingOne(p.arcSegments.size(), arcIndex);
   p.arcSegments.remove(arcIndex);
+  remapSketchReferences(p, identityMap(p.nodes.size()),
+      identityMap(p.segments.size()), arcMap);
 }
 
 void FemmProblemEdit::deleteDimension(FemmProblem& p, int dimensionIndex)

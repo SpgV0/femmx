@@ -225,7 +225,12 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_gui_switch_tests
     tests/tst_gui_switch.cpp
   )
-  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests)
+  # Create Radius rewrites topology rather than moving entities about, so
+  # it fails differently from everything tst_geometry_edit covers (#24).
+  qt_add_executable(femmqt_create_radius_tests
+    tests/tst_create_radius.cpp
+  )
+  foreach(_femmqt_test femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests)
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
     target_link_libraries(${_femmqt_test} PRIVATE femmqt_core Qt6::Test)
     # Fixtures live in the repo's test/ tree, two levels up. Passed as a
@@ -236,7 +241,7 @@ if(TARGET Qt6::Test)
   endforeach()
 
   # Never installed and never packaged: this is a build-tree artefact.
-  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests PROPERTIES
+  set_target_properties(femmqt_tests femmqt_constraint_tests femmqt_geometry_tests femmqt_gui_switch_tests femmqt_create_radius_tests PROPERTIES
     WIN32_EXECUTABLE OFF          # console apps, so QTest output reaches ctest
     EXCLUDE_FROM_ALL OFF
   )
@@ -245,12 +250,13 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_constraints COMMAND femmqt_constraint_tests)
   add_test(NAME femmqt_geometry COMMAND femmqt_geometry_tests)
   add_test(NAME femmqt_gui_switch COMMAND femmqt_gui_switch_tests)
+  add_test(NAME femmqt_create_radius COMMAND femmqt_create_radius_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )

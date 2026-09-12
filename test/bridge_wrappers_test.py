@@ -25,11 +25,16 @@ import subprocess
 
 import pytest
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "bridge_wrappers")
 FEMM_SRC = os.path.join(REPO_ROOT, "femm")
-BIN_DIR = os.path.join(REPO_ROOT, "bin", "plain")
+# Resolved rather than hardcoded: CI builds into bin/ while the local
+# wrapper scripts move everything into bin/plain, and ten modules that
+# assumed bin/plain silently SKIPPED on CI (#24).
+BIN_DIR = femmx_paths.BIN_DIR
 
 _REPORT = []
 

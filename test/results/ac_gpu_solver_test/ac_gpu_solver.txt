@@ -4,7 +4,7 @@ CUDA-enabled build detected: False
 Frequency: 60.0 Hz
 Probe point: (5, 0)
 
-CPU: |B| = 5.237603e-04 T  (time: 3.274s)
-GPU: |B| = 5.237603e-04 T  (time: 3.268s)
+CPU: |B| = 5.237603e-04 T  (time: 3.228s)
+GPU: |B| = 5.237603e-04 T  (time: 3.399s)
 Relative difference: 0.0000%
-Speedup: 1.00x
+Speedup: 0.95x

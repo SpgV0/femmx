@@ -29,10 +29,15 @@ import pytest
 
 import femm
 
+import femmx_paths
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "fork_scripting")
-BIN_DIR = os.path.join(REPO_ROOT, "bin", "plain")
+# Resolved rather than hardcoded: CI builds into bin/ while the local
+# wrapper scripts move everything into bin/plain, and ten modules that
+# assumed bin/plain silently SKIPPED on CI (#24).
+BIN_DIR = femmx_paths.BIN_DIR
 FEMM_SRC = os.path.join(REPO_ROOT, "femm")
 MANUAL_TEX = os.path.join(REPO_ROOT, "manual", "magnlua.tex")
 
@@ -453,7 +458,18 @@ def _read_cfg():
 
 @pytest.fixture
 def preserved_cfg():
-    """femm.cfg is the user's own preferences file; put it back."""
+    """femm.cfg is the user's own preferences file; put it back.
+
+    Skips rather than erroring when the binary directory does not exist:
+    these two tests write a femm.cfg next to femmx.exe, and opening it
+    for writing raises FileNotFoundError when the directory is missing --
+    which is what happened on the fast lane's first run, where the
+    hardcoded bin/plain did not exist at all. femmx_paths resolves that
+    correctly now, but a test that needs a directory should say so rather
+    than failing with an errno.
+    """
+    if not os.path.isdir(BIN_DIR):
+        pytest.skip("no built binary directory at %s" % BIN_DIR)
     backup = _read_cfg() if os.path.exists(CFG_PATH) else None
     try:
         yield

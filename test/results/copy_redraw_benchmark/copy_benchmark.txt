@@ -4,14 +4,14 @@ Base model size:           1601 block labels
 Copy actions per run:      30 (separate mi_copytranslate calls)
 Trials per side:           3 (best of, interleaved)
 
-A) Baseline (redraw after every copy):      0.457 s  (15.2 ms/copy)
+A) Baseline (redraw after every copy):      0.453 s  (15.1 ms/copy)
 B) mi_setredraw(0)/(1) around the batch:    0.017 s  (0.6 ms/copy)
 
-Speedup: 26.34x
+Speedup: 25.90x
 
 All trials (s):
-  baseline:   0.460, 0.457, 0.457   (spread 1%)
-  suppressed: 0.020, 0.018, 0.017   (spread 18%)
+  baseline:   0.453, 0.462, 0.471   (spread 4%)
+  suppressed: 0.023, 0.017, 0.018   (spread 33%)
 
 The timings above are trend data, not a pass/fail SLA -- see the
 comment on MAX_ACCEPTABLE_SLOWDOWN. The machine-readable copy is
