@@ -26,6 +26,7 @@
 #include "MeshOverlay.h"
 #include "MoveCopyDialog.h"
 #include "NodePropDialog.h"
+#include "ConstructionGeometry.h"
 #include "OffsetChamfer.h"
 #include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
@@ -66,6 +67,7 @@
 #include <QScrollBar>
 #include <QSet>
 #include <QSettings>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QUrl>
@@ -581,6 +583,27 @@ MainWindow::MainWindow(QWidget* parent)
   toolsMenu->addAction(m_trimToolAction);
   toolsMenu->addAction(m_extendToolAction);
   toolsMenu->addAction(m_splitToolAction);
+
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31). A submenu rather than five more toolbar buttons: these
+  // are occasional, and the toolbar is already dense enough that #57's
+  // missing icons went unnoticed until a user reported them.
+  QMenu* constructionMenu = toolsMenu->addMenu("Construction Geometry");
+  constructionMenu->setToolTipsVisible(true);
+  QAction* toConstruction = constructionMenu->addAction("Convert Selection to Construction");
+  toConstruction->setToolTip("Construction geometry is drawn dashed, is never meshed or "
+                             "solved, and is not written to the .fem -- but constraints "
+                             "and dimensions may reference it, which is the point of it.");
+  connect(toConstruction, &QAction::triggered, this, [this]() { convertSelectionConstruction(true); });
+  QAction* toReal = constructionMenu->addAction("Convert Selection to Real Geometry");
+  connect(toReal, &QAction::triggered, this, [this]() { convertSelectionConstruction(false); });
+  constructionMenu->addSeparator();
+  connect(constructionMenu->addAction("Centreline..."), &QAction::triggered,
+      this, &MainWindow::onAddCentrelineTriggered);
+  connect(constructionMenu->addAction("Bolt Circle..."), &QAction::triggered,
+      this, &MainWindow::onAddBoltCircleTriggered);
+  connect(constructionMenu->addAction("Reference Rectangle..."), &QAction::triggered,
+      this, &MainWindow::onAddReferenceRectangleTriggered);
   toolsMenu->addSeparator();
   toolsMenu->addAction(m_addDimensionDistanceToolAction);
   toolsMenu->addAction(m_addDimensionRadiusToolAction);
@@ -1386,6 +1409,147 @@ void MainWindow::onOffsetTriggered()
   // What was created, and what was deliberately not carried over. In the
   // status bar rather than a dialog: it is a report, not a question.
   statusBar()->showMessage(r.message, 10000);
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#31).
+//
+// All four share one shape: try it, and only take an undo snapshot if it
+// is going to do something. A command that refuses must not consume an
+// undo step -- see GeometryScene::handleTrimExtendClick (#29) for why
+// that is a data-loss issue rather than a nuisance.
+void MainWindow::applyConstructionResult(const QString& title,
+    const ConstructionGeometry::Result& r)
+{
+  if (!r.ok) {
+    QMessageBox::information(this, title, r.message);
+    return;
+  }
+  m_scene->rebuild();
+  markEdited();
+  statusBar()->showMessage(r.message, 8000);
+}
+
+void MainWindow::convertSelectionConstruction(bool toConstruction)
+{
+  m_scene->syncSelectionToProblem();
+  FemmProblem trial = m_problem;
+  const ConstructionGeometry::Result probe =
+      ConstructionGeometry::setSelectedConstruction(trial, toConstruction);
+  if (!probe.ok) {
+    QMessageBox::information(this, "Construction Geometry", probe.message);
+    return;
+  }
+  snapshotForUndo();
+  applyConstructionResult("Construction Geometry",
+      ConstructionGeometry::setSelectedConstruction(m_problem, toConstruction));
+}
+
+void MainWindow::onAddCentrelineTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Centreline");
+  auto* form = new QFormLayout;
+  const QString units = lengthUnitsName(m_problem.lengthUnits);
+
+  // Prefilled with the axis, because in an axisymmetric model that is
+  // the centreline nearly every time and r=0 is not part of the drawn
+  // geometry.
+  auto* x0 = new QLineEdit("0", &dlg);
+  auto* y0 = new QLineEdit("0", &dlg);
+  auto* x1 = new QLineEdit("0", &dlg);
+  auto* y1 = new QLineEdit("100", &dlg);
+  for (QLineEdit* e : { x0, y0, x1, y1 })
+    e->setValidator(new QDoubleValidator(-1e12, 1e12, 12, e));
+  form->addRow(QString("From x (%1):").arg(units), x0);
+  form->addRow(QString("From y (%1):").arg(units), y0);
+  form->addRow(QString("To x (%1):").arg(units), x1);
+  form->addRow(QString("To y (%1):").arg(units), y1);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  snapshotForUndo();
+  applyConstructionResult("Centreline",
+      ConstructionGeometry::addCentreline(m_problem, x0->text().toDouble(),
+          y0->text().toDouble(), x1->text().toDouble(), y1->text().toDouble()));
+}
+
+void MainWindow::onAddBoltCircleTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Bolt Circle");
+  auto* form = new QFormLayout;
+  const QString units = lengthUnitsName(m_problem.lengthUnits);
+
+  auto* cx = new QLineEdit("0", &dlg);
+  auto* cy = new QLineEdit("0", &dlg);
+  auto* radius = new QLineEdit("50", &dlg);
+  auto* start = new QLineEdit("0", &dlg);
+  for (QLineEdit* e : { cx, cy, radius, start })
+    e->setValidator(new QDoubleValidator(-1e12, 1e12, 12, e));
+  auto* count = new QSpinBox(&dlg);
+  count->setRange(1, 1000);
+  count->setValue(6);
+
+  form->addRow(QString("Centre x (%1):").arg(units), cx);
+  form->addRow(QString("Centre y (%1):").arg(units), cy);
+  form->addRow(QString("Radius (%1):").arg(units), radius);
+  form->addRow("Positions:", count);
+  form->addRow("First position at (degrees):", start);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  snapshotForUndo();
+  applyConstructionResult("Bolt Circle",
+      ConstructionGeometry::addBoltCircle(m_problem, cx->text().toDouble(),
+          cy->text().toDouble(), radius->text().toDouble(), count->value(),
+          start->text().toDouble()));
+}
+
+void MainWindow::onAddReferenceRectangleTriggered()
+{
+  QDialog dlg(this);
+  dlg.setWindowTitle("Reference Rectangle");
+  auto* form = new QFormLayout;
+  const QString units = lengthUnitsName(m_problem.lengthUnits);
+
+  auto* x0 = new QLineEdit("0", &dlg);
+  auto* y0 = new QLineEdit("0", &dlg);
+  auto* x1 = new QLineEdit("100", &dlg);
+  auto* y1 = new QLineEdit("60", &dlg);
+  for (QLineEdit* e : { x0, y0, x1, y1 })
+    e->setValidator(new QDoubleValidator(-1e12, 1e12, 12, e));
+  form->addRow(QString("Corner x (%1):").arg(units), x0);
+  form->addRow(QString("Corner y (%1):").arg(units), y0);
+  form->addRow(QString("Opposite x (%1):").arg(units), x1);
+  form->addRow(QString("Opposite y (%1):").arg(units), y1);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
+  snapshotForUndo();
+  applyConstructionResult("Reference Rectangle",
+      ConstructionGeometry::addReferenceRectangle(m_problem, x0->text().toDouble(),
+          y0->text().toDouble(), x1->text().toDouble(), y1->text().toDouble()));
 }
 
 void MainWindow::onCreateOpenBoundaryTriggered()

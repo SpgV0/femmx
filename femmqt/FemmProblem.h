@@ -74,6 +74,11 @@ struct FemmNode {
   int pointPropIndex = 0;
   int inGroup = 0;
   bool isSelected = false;
+  // See FemmSegment::isConstruction (issue #31). A node is only dropped
+  // from the exported .fem if nothing surviving still references it: a
+  // node shared between a centreline and a real edge has to be written,
+  // or the real edge loses an endpoint.
+  bool isConstruction = false;
 };
 
 struct FemmSegment {
@@ -83,6 +88,17 @@ struct FemmSegment {
   bool hidden = false;
   int inGroup = 0;
   bool isSelected = false;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31): construction geometry -- a centreline, a bolt circle, a
+  // reference rectangle. It exists to be constrained and dimensioned
+  // against and NEVER reaches the mesher or the solver: it is excluded
+  // from the .fem and the .femx, and lives only in the .fes sidecar.
+  //
+  // A flag rather than a separate list, because constraints and
+  // dimensions reference geometry by index into these lists -- that is
+  // the whole point of the feature, and a parallel list would mean a
+  // second index space for every reference to be ambiguous between.
+  bool isConstruction = false;
 };
 
 struct FemmArcSegment {
@@ -94,6 +110,17 @@ struct FemmArcSegment {
   int inGroup = 0;
   double mySideLength = 1;
   bool isSelected = false;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31): construction geometry -- a centreline, a bolt circle, a
+  // reference rectangle. It exists to be constrained and dimensioned
+  // against and NEVER reaches the mesher or the solver: it is excluded
+  // from the .fem and the .femx, and lives only in the .fes sidecar.
+  //
+  // A flag rather than a separate list, because constraints and
+  // dimensions reference geometry by index into these lists -- that is
+  // the whole point of the feature, and a parallel list would mean a
+  // second index space for every reference to be ambiguous between.
+  bool isConstruction = false;
 };
 
 // A block label with blockTypeIndex < 0 is a hole ("<No Mesh>" in the .fem

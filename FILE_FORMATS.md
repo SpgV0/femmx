@@ -345,3 +345,41 @@ the classic editor, or copied only the `.fem` somewhere else.
   occupies that index.
 - Written best-effort, like the caches: a read-only directory never fails
   the save the user asked for. Unlike a cache, the failure is reported.
+
+### Format 2 — construction geometry (issue #31)
+
+`<Format> = 2` adds three sections, written **before** the constraints
+because a constraint may reference what they define and references are
+resolved as the file is read:
+
+```
+<NumConstructionNodes> = 1
+cnode 5 0 0
+<NumConstructionSegments> = 1
+cseg 5 -2 5 12 0
+<NumConstructionArcs> = 0
+```
+
+- `cnode x y group`
+- `cseg x0 y0 x1 y1 group`
+- `carc x0 y0 x1 y1 includedAngleDeg group`
+
+Construction geometry is a centreline, a bolt circle, a reference
+rectangle — something to constrain and dimension the real geometry
+against. It is **excluded from the `.fem` and the `.femx`** and is never
+meshed, so the `.fes` is its only copy; that is why these sections carry
+the geometry itself rather than a flag.
+
+Endpoints are stored by **coordinate, not index**, because these entities
+do not exist in the `.fem` at all and so have no index there to survive
+as. On load each endpoint finds the node already at that position or
+creates one — finding it is the normal case and the important one, since
+a centreline endpoint that coincides with a real corner is exactly what
+it was drawn against.
+
+A format-1 file simply has no construction sections, which reads as "no
+construction geometry" — the state every model written before this is in.
+
+Keeping it out of the `.fem` is what makes it safe: a centreline written
+into the model would be a material boundary, splitting the region it runs
+through, meshed and solved like any other edge.

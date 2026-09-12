@@ -6,6 +6,7 @@
 #include <QVector>
 
 #include "FemmProblem.h"
+#include "ConstructionGeometry.h"
 #include "GeometryScene.h"
 #include "GeometryView.h"
 
@@ -60,6 +61,10 @@ class MainWindow : public QMainWindow {
   void onCreateRadiusTriggered();
   void onChamferTriggered();
   void onOffsetTriggered();
+  // Construction geometry (#31).
+  void onAddCentrelineTriggered();
+  void onAddBoltCircleTriggered();
+  void onAddReferenceRectangleTriggered();
   void onImportDxfTriggered();
   void onExportDxfTriggered();
   void onPrintTriggered();
@@ -166,6 +171,12 @@ class MainWindow : public QMainWindow {
   // refreshToolbarIcons() can re-tint it after a theme change, and sets
   // an explicit tooltip (shown after a 2-second hover via HoverTooltip,
   // installed separately once a toolbar's buttons are all in place).
+  // #31. Not slots: called from the Construction Geometry submenu's own
+  // lambdas, which supply the direction.
+  void convertSelectionConstruction(bool toConstruction);
+  void applyConstructionResult(const QString& title,
+      const ConstructionGeometry::Result& r);
+
   QAction* addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)());
 
   GeometryScene* m_scene = nullptr;

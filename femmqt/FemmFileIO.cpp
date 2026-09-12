@@ -3,6 +3,7 @@
 #include "FemmFileIO.h"
 
 #include "FemmProblem.h"
+#include "FemmProblemEdit.h"
 
 #include <QFile>
 #include <QRegularExpression>
@@ -389,7 +390,29 @@ bool FemmFileIO::readFem(const QString& path, FemmProblem& problem, QString& err
   return true;
 }
 
+namespace {
+bool writeFemStripped(const QString& path, const FemmProblem& p, QString& errorMessage);
+}
+
 bool FemmFileIO::writeFem(const QString& path, const FemmProblem& p, QString& errorMessage)
+{
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31): construction geometry never leaves femmqt. It is
+  // stripped HERE rather than at the call sites, because there are
+  // several of them and forgetting one would write a centreline into a
+  // model as a material boundary -- geometry the solver would happily
+  // mesh and solve around, producing a wrong answer that looks like an
+  // answer. The check is cheap, so the copy only happens for the
+  // models that actually have any.
+  if (FemmProblemEdit::hasConstruction(p)) {
+    const FemmProblem forExport = FemmProblemEdit::withoutConstruction(p);
+    return writeFemStripped(path, forExport, errorMessage);
+  }
+  return writeFemStripped(path, p, errorMessage);
+}
+
+namespace {
+bool writeFemStripped(const QString& path, const FemmProblem& p, QString& errorMessage)
 {
   QFile file(path);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -545,3 +568,4 @@ bool FemmFileIO::writeFem(const QString& path, const FemmProblem& p, QString& er
 
   return true;
 }
+} // namespace

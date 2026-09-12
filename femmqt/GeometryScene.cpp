@@ -1274,6 +1274,28 @@ void GeometryScene::addNodeItem(int index)
   m_nodeItems[index] = item;
 }
 
+namespace {
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#31).
+//
+// Construction geometry must be unmistakable on the canvas, because the
+// difference between it and real geometry is the difference between a
+// line that is solved and one that is not. Dashed AND dimmed, not one or
+// the other: dashing alone reads as a hidden edge (which femmqt already
+// has, FemmSegment::hidden), and dimming alone reads as a deselected or
+// out-of-group edge.
+void applyConstructionStyle(QPen& pen)
+{
+  QColor c = pen.color();
+  c.setAlphaF(0.55f);
+  pen.setColor(c);
+  // In pen-width units, and the pen is cosmetic, so the dashes stay the
+  // same length on screen at every zoom.
+  pen.setDashPattern({ 6.0, 4.0 });
+}
+
+} // namespace
+
 void GeometryScene::addSegmentItem(int index)
 {
   const FemmSegment& s = m_problem->segments[index];
@@ -1286,6 +1308,8 @@ void GeometryScene::addSegmentItem(int index)
   QPen pen(statusColor.isValid() ? statusColor : (s.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::segmentColor()));
   pen.setCosmetic(true);
   pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
+  if (s.isConstruction)
+    applyConstructionStyle(pen);
   auto* item = new SegmentItem(QLineF());
   item->setPen(pen);
   addItem(item);
@@ -1307,6 +1331,8 @@ void GeometryScene::addArcItem(int index)
   QPen pen(statusColor.isValid() ? statusColor : (a.boundaryMarker != 0 ? AppTheme::boundaryEdgeColor() : AppTheme::arcColor()));
   pen.setCosmetic(true);
   pen.setWidth(0); // see addNodeItem's comment on width 0 vs the QPen(color) ctor's default of 1
+  if (a.isConstruction)
+    applyConstructionStyle(pen);
   auto* item = new ArcItem(QPainterPath());
   item->setPen(pen);
   addItem(item);

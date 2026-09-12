@@ -112,6 +112,8 @@ qt_add_library(femmqt_core STATIC
   TrimExtend.cpp
   OffsetChamfer.h
   OffsetChamfer.cpp
+  ConstructionGeometry.h
+  ConstructionGeometry.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h
@@ -290,6 +292,13 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_offset_tests
     tests/tst_offset_chamfer.cpp
   )
+
+  # Construction geometry (#31). Written from the outside in: not "the
+  # flag is set" but "the bytes that leave this program do not contain
+  # it", for all three exits -- the .fem, the .femx cache and the .poly.
+  qt_add_executable(femmqt_construction_tests
+    tests/tst_construction.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -317,6 +326,7 @@ if(TARGET Qt6::Test)
     femmqt_snap_tests
     femmqt_trim_tests
     femmqt_offset_tests
+    femmqt_construction_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -350,6 +360,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_snap COMMAND femmqt_snap_tests)
   add_test(NAME femmqt_trim COMMAND femmqt_trim_tests)
   add_test(NAME femmqt_offset COMMAND femmqt_offset_tests)
+  add_test(NAME femmqt_construction COMMAND femmqt_construction_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without

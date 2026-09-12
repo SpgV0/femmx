@@ -1,6 +1,7 @@
 #include "SketchFileIO.h"
 
 #include "FemmProblem.h"
+#include "FemmProblemEdit.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -13,7 +14,10 @@ namespace {
 // Text, not binary, and deliberately: .fem is text, the whole toolchain
 // is diffable by hand, and a sketch file a user can read and repair in a
 // text editor is worth more than a few saved bytes.
-constexpr int kSketchVersion = 1;
+// Bumped to 2 for construction geometry (issue #31). A version-1 file
+// simply has no construction sections, which reads as "no construction
+// geometry" -- which is exactly what every model written before this is.
+constexpr int kSketchVersion = 2;
 
 // Fingerprints are compared at this absolute tolerance, in the model's
 // own length units. Generous on purpose: the point is to recognise the
@@ -214,6 +218,38 @@ Fingerprint fingerprintFromFields(const QStringList& fields, int at)
   return f;
 }
 
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#31).
+//
+// Construction geometry is stored by coordinate, so restoring it means
+// finding the node already at that spot or making one. Finding it
+// matters more than making it: a centreline endpoint that coincides with
+// a real corner is the normal case -- that is what it was drawn against
+// -- and inventing a second node on top of the corner would leave the
+// sketch looking joined while meshing as two separate things.
+//
+// The tolerance is relative to the model's own extent for the usual
+// reason: these coordinates are written with 17 significant digits and
+// come back exact, but a model drawn in metres and one drawn in
+// millimetres cannot share an absolute epsilon.
+int findOrAddNode(FemmProblem& p, double x, double y)
+{
+  double scale = 1.0;
+  for (const FemmNode& n : p.nodes)
+    scale = std::max(scale, std::max(std::abs(n.x), std::abs(n.y)));
+  const double tol = 1e-12 * scale;
+
+  for (int i = 0; i < p.nodes.size(); i++) {
+    if (std::abs(p.nodes[i].x - x) <= tol && std::abs(p.nodes[i].y - y) <= tol)
+      return i;
+  }
+  FemmNode n;
+  n.x = x;
+  n.y = y;
+  p.nodes.push_back(n);
+  return p.nodes.size() - 1;
+}
+
 } // namespace
 
 QString SketchFileIO::sidecarPathFor(const QString& modelPath)
@@ -233,7 +269,18 @@ bool SketchFileIO::writeSketch(const QString& modelPath, const FemmProblem& p,
     return false;
   }
 
-  if (p.constraints.isEmpty() && p.dimensions.isEmpty()) {
+  // Construction geometry lives ONLY here (issue #31) -- it is stripped
+  // from the .fem and the .femx -- so a model with a centreline and no
+  // constraints at all still needs a sidecar.
+  bool anyConstruction = false;
+  for (const FemmSegment& seg : p.segments)
+    anyConstruction = anyConstruction || seg.isConstruction;
+  for (const FemmArcSegment& arc : p.arcSegments)
+    anyConstruction = anyConstruction || arc.isConstruction;
+  for (const FemmNode& n : p.nodes)
+    anyConstruction = anyConstruction || n.isConstruction;
+
+  if (p.constraints.isEmpty() && p.dimensions.isEmpty() && !anyConstruction) {
     // Deleting the last constraint has to persist too. Leaving the old
     // file would resurrect the sketch on the next open.
     if (QFile::exists(path) && !QFile::remove(path)) {
@@ -256,6 +303,58 @@ bool SketchFileIO::writeSketch(const QString& modelPath, const FemmProblem& p,
   out << "# an unconstrained sketch. See femmqt/SketchFileIO.h.\n";
   out << "<Format> = " << kSketchVersion << "\n";
   out << "<Model> = \"" << QFileInfo(modelPath).fileName() << "\"\n";
+  // Construction geometry comes FIRST, because the constraint and
+  // dimension references below may point at it and are resolved as they
+  // are read. Stored by COORDINATE rather than by index: these entities
+  // are not in the .fem at all, so there is no index for them to survive
+  // as, and the fingerprint machinery this file already has is built on
+  // coordinates for the same reason.
+  int cNodes = 0, cSegs = 0, cArcs = 0;
+  for (const FemmNode& n : p.nodes)
+    if (n.isConstruction)
+      cNodes++;
+  for (const FemmSegment& seg : p.segments)
+    if (seg.isConstruction)
+      cSegs++;
+  for (const FemmArcSegment& arc : p.arcSegments)
+    if (arc.isConstruction)
+      cArcs++;
+
+  out << "<NumConstructionNodes> = " << cNodes << "\n";
+  for (const FemmNode& n : p.nodes) {
+    if (!n.isConstruction)
+      continue;
+    out << "cnode " << QString::number(n.x, 'g', 17) << " "
+        << QString::number(n.y, 'g', 17) << " " << n.inGroup << "\n";
+  }
+
+  out << "<NumConstructionSegments> = " << cSegs << "\n";
+  for (const FemmSegment& seg : p.segments) {
+    if (!seg.isConstruction)
+      continue;
+    if (seg.n0 < 0 || seg.n0 >= p.nodes.size() || seg.n1 < 0 || seg.n1 >= p.nodes.size())
+      continue;
+    out << "cseg " << QString::number(p.nodes[seg.n0].x, 'g', 17) << " "
+        << QString::number(p.nodes[seg.n0].y, 'g', 17) << " "
+        << QString::number(p.nodes[seg.n1].x, 'g', 17) << " "
+        << QString::number(p.nodes[seg.n1].y, 'g', 17) << " "
+        << seg.inGroup << "\n";
+  }
+
+  out << "<NumConstructionArcs> = " << cArcs << "\n";
+  for (const FemmArcSegment& arc : p.arcSegments) {
+    if (!arc.isConstruction)
+      continue;
+    if (arc.n0 < 0 || arc.n0 >= p.nodes.size() || arc.n1 < 0 || arc.n1 >= p.nodes.size())
+      continue;
+    out << "carc " << QString::number(p.nodes[arc.n0].x, 'g', 17) << " "
+        << QString::number(p.nodes[arc.n0].y, 'g', 17) << " "
+        << QString::number(p.nodes[arc.n1].x, 'g', 17) << " "
+        << QString::number(p.nodes[arc.n1].y, 'g', 17) << " "
+        << QString::number(arc.arcLength, 'g', 17) << " "
+        << arc.inGroup << "\n";
+  }
+
   out << "<NumConstraints> = " << p.constraints.size() << "\n";
 
   for (const FemmConstraint& c : p.constraints) {
@@ -302,6 +401,11 @@ bool SketchFileIO::readSketch(const QString& modelPath, FemmProblem& p,
   report.clear();
   p.constraints.clear();
   p.dimensions.clear();
+  // #31: construction geometry lives only in this file, so re-reading it
+  // has to start from the state the .fem describes. Without this a
+  // second read would stack a duplicate centreline on the first.
+  if (FemmProblemEdit::hasConstruction(p))
+    p = FemmProblemEdit::withoutConstruction(p);
 
   const QString path = sidecarPathFor(modelPath);
   if (path.isEmpty() || !QFile::exists(path))
@@ -340,6 +444,54 @@ bool SketchFileIO::readSketch(const QString& modelPath, FemmProblem& p,
     const QStringList f = line.split(' ', Qt::SkipEmptyParts);
     if (f.isEmpty())
       continue;
+
+    // Construction geometry (#31). These appear before any constraint in
+    // the file, which matters: a constraint may reference one of them,
+    // and references are resolved as they are read.
+    if (f[0] == "cnode" && f.size() >= 3) {
+      const int n = findOrAddNode(p, f[1].toDouble(), f[2].toDouble());
+      p.nodes[n].isConstruction = true;
+      if (f.size() >= 4)
+        p.nodes[n].inGroup = f[3].toInt();
+      continue;
+    }
+
+    if (f[0] == "cseg" && f.size() >= 5) {
+      const int a = findOrAddNode(p, f[1].toDouble(), f[2].toDouble());
+      const int b = findOrAddNode(p, f[3].toDouble(), f[4].toDouble());
+      if (a == b) {
+        report << QStringLiteral("dropped a construction line: both ends "
+                                 "resolved to the same point");
+        continue;
+      }
+      FemmSegment seg;
+      seg.n0 = a;
+      seg.n1 = b;
+      seg.isConstruction = true;
+      if (f.size() >= 6)
+        seg.inGroup = f[5].toInt();
+      p.segments.push_back(seg);
+      continue;
+    }
+
+    if (f[0] == "carc" && f.size() >= 6) {
+      const int a = findOrAddNode(p, f[1].toDouble(), f[2].toDouble());
+      const int b = findOrAddNode(p, f[3].toDouble(), f[4].toDouble());
+      if (a == b) {
+        report << QStringLiteral("dropped a construction arc: both ends "
+                                 "resolved to the same point");
+        continue;
+      }
+      FemmArcSegment arc;
+      arc.n0 = a;
+      arc.n1 = b;
+      arc.arcLength = f[5].toDouble();
+      arc.isConstruction = true;
+      if (f.size() >= 7)
+        arc.inGroup = f[6].toInt();
+      p.arcSegments.push_back(arc);
+      continue;
+    }
 
     if (f[0] == "constraint" && f.size() >= 4 + 3 * 5) {
       FemmConstraint c;

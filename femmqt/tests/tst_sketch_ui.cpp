@@ -34,11 +34,13 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QGraphicsItem>
+#include <QGraphicsLineItem>
 #include <QGraphicsRectItem>
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
 #include <QSignalSpy>
+#include <QPen>
 #include <QSet>
 
 #include <algorithm>
@@ -154,6 +156,8 @@ private slots:
   void trimmingFromTheCanvasRemovesThePickedPiece();
   void trimClicksPickTheLineNotTheNodeMarkerOnTopOfIt();
   void aRefusedTrimCostsNoUndoStep();
+
+  void constructionGeometryIsDrawnUnmistakablyDifferently();
 };
 
 // ---------------------------------------------------------------------------
@@ -998,6 +1002,54 @@ void TestSketchUi::aRefusedTrimCostsNoUndoStep()
 
   clickAt(h.scene, QPointF(5, 0)); // a real trim
   QCOMPARE(edits.count(), 1);
+}
+
+void TestSketchUi::constructionGeometryIsDrawnUnmistakablyDifferently()
+{
+  // Issue #31. Construction geometry is not meshed and not solved, so
+  // telling it apart from real geometry on the canvas is not decoration
+  // -- it is the difference between a line that is part of the model and
+  // one that is not. Two signals, because either alone is ambiguous:
+  // dashing on its own reads as a hidden edge (femmqt already has those,
+  // FemmSegment::hidden) and dimming on its own reads as deselected or
+  // out of group.
+  FemmProblem p;
+  p.problemType = FemmCoordinateType::Planar;
+  const int a = FemmProblemEdit::addNode(p, 0, 0);
+  const int b = FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addSegment(p, a, b); // real
+  const int c = FemmProblemEdit::addNode(p, 0, 5);
+  const int d = FemmProblemEdit::addNode(p, 10, 5);
+  const int con = FemmProblemEdit::addSegment(p, c, d);
+  p.segments[con].isConstruction = true;
+
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.rebuild();
+
+  QPen realPen, constructionPen;
+  bool sawReal = false, sawConstruction = false;
+  for (QGraphicsItem* item : h.scene.items()) {
+    const KindIndex ki = readKindIndex(item);
+    if (!ki.present || ki.kind != (int)FemmItemKind::Segment)
+      continue;
+    auto* line = dynamic_cast<QGraphicsLineItem*>(item);
+    QVERIFY(line);
+    if (ki.index == con) {
+      constructionPen = line->pen();
+      sawConstruction = true;
+    } else {
+      realPen = line->pen();
+      sawReal = true;
+    }
+  }
+  QVERIFY2(sawReal && sawConstruction, "the scene did not draw both segments");
+
+  QVERIFY2(constructionPen.style() != realPen.style(),
+      "the construction line is drawn with the same stroke as real geometry, so "
+      "nothing on screen says it will not be meshed or solved");
+  QVERIFY2(constructionPen.color().alphaF() < realPen.color().alphaF(),
+      "the construction line is drawn at the same weight as real geometry");
 }
 
 QTEST_MAIN(TestSketchUi)

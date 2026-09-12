@@ -55,7 +55,28 @@ bool arcCircle(double x0, double y0, double x1, double y1, double arcLengthDeg,
 
 } // namespace
 
+namespace {
+bool writePolyAndPbcStripped(const FemmProblem& p, const QString& rootPath, QString& errorMessage);
+}
+
 bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath, QString& errorMessage)
+{
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31). Construction geometry -- a centreline, a bolt circle --
+  // exists to be constrained against and must never become a material
+  // boundary. Stripped at the entry point rather than inside the four
+  // loops below, so a fifth loop added later cannot forget: a centreline
+  // that reached the mesher would cut the region it runs through in two
+  // and be solved as a real interface.
+  if (FemmProblemEdit::hasConstruction(p)) {
+    const FemmProblem forMesh = FemmProblemEdit::withoutConstruction(p);
+    return writePolyAndPbcStripped(forMesh, rootPath, errorMessage);
+  }
+  return writePolyAndPbcStripped(p, rootPath, errorMessage);
+}
+
+namespace {
+bool writePolyAndPbcStripped(const FemmProblem& p, const QString& rootPath, QString& errorMessage)
 {
   QVector<WorkNode> nodes;
   QVector<WorkSegment> segments;
@@ -244,3 +265,4 @@ bool MeshBuilder::writePolyAndPbc(const FemmProblem& p, const QString& rootPath,
 
   return true;
 }
+} // namespace

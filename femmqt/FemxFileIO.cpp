@@ -1,6 +1,7 @@
 #include "FemxFileIO.h"
 
 #include "FemmProblem.h"
+#include "FemmProblemEdit.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -192,7 +193,32 @@ bool FemxFileIO::isUpToDate(const QString& femxPath, const QString& femPath)
   return (uint64_t)femInfo.size() == header.sourceFemSize && (uint64_t)femInfo.lastModified().toSecsSinceEpoch() == header.sourceFemMtimeSecs;
 }
 
+namespace {
+bool writeFemxStripped(const QString& femxPath, const QString& sourceFemPath,
+    const FemmProblem& p, QString& errorMessage);
+}
+
 bool FemxFileIO::writeFemx(const QString& femxPath, const QString& sourceFemPath,
+    const FemmProblem& p, QString& errorMessage)
+{
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
+  // (issue #31). .femx is defined as a CACHE of the .fem -- it must hold
+  // exactly what re-parsing the text file would give. Construction
+  // geometry is stripped from the .fem, so leaving it in the cache would
+  // make the two disagree, and the disagreement would be invisible:
+  // opening the model would give one set of geometry when the cache is
+  // fresh and a different one after anybody touched the .fem. The
+  // construction entities would come back with no flag, silently
+  // promoted to real geometry.
+  if (FemmProblemEdit::hasConstruction(p)) {
+    const FemmProblem forCache = FemmProblemEdit::withoutConstruction(p);
+    return writeFemxStripped(femxPath, sourceFemPath, forCache, errorMessage);
+  }
+  return writeFemxStripped(femxPath, sourceFemPath, p, errorMessage);
+}
+
+namespace {
+bool writeFemxStripped(const QString& femxPath, const QString& sourceFemPath,
     const FemmProblem& p, QString& errorMessage)
 {
   QFileInfo femInfo(sourceFemPath);
@@ -358,6 +384,7 @@ bool FemxFileIO::writeFemx(const QString& femxPath, const QString& sourceFemPath
 
   return true;
 }
+} // namespace
 
 bool FemxFileIO::readFemx(const QString& femxPath, FemmProblem& p, QString& errorMessage)
 {
