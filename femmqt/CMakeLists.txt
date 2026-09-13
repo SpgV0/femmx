@@ -134,6 +134,8 @@ qt_add_library(femmqt_core STATIC
   SolutionIntegrals.cpp
   SolutionAdapter.h
   SolutionAdapter.cpp
+  ConductorAnalysis.h
+  ConductorAnalysis.cpp
   PropertyEditDialog.h
   PropertyEditDialog.cpp
   FemxFileIO.h

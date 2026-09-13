@@ -24,6 +24,7 @@
 
 #include "FemmProblem.h"
 #include "MeshSolution.h"
+#include "ConductorAnalysis.h"
 #include "SolutionAdapter.h"
 #include "SolutionIntegrals.h"
 
@@ -93,6 +94,11 @@ class TestSolutionIntegrals : public QObject
 
   void theAdapterGivesAUniformFieldAUniformRange();
   void theAdapterCarriesThePotentialAndTheFieldOntoTheRenderersShape();
+
+  void aConductorReportsItsEquipotentialValue();
+  void aConductorReportsTheFluxLeavingItsSurface();
+  void anUntaggedConductorIsAbsentNotZero();
+  void conductorQuantitiesAreNamedPerPhysicsAndAbsentForMagnetics();
 };
 
 // ---------------------------------------------------------------------------
@@ -432,6 +438,131 @@ void TestSolutionIntegrals::theAdapterCarriesThePotentialAndTheFieldOntoTheRende
   // And the centroid is the average of the corners.
   QVERIFY(close(adapted.elements[0].ctrX, 1.0 / 3.0, 1e-12));
   QVERIFY(close(adapted.elements[0].ctrY, 1.0 / 3.0, 1e-12));
+}
+
+// ---------------------------------------------------------------------------
+// Conductors (issue #83)
+// ---------------------------------------------------------------------------
+//
+// The conductor counterpart of CircuitAnalysis. Magnetics drives a
+// region with a circuit; the other three hold a surface at a potential
+// with a conductor, and the questions are the mirror image -- what is it
+// sitting at, and what is crossing it.
+
+namespace {
+
+// One triangle whose (0,0)-(1,0) edge is tagged as conductor 1, in a
+// uniform field. Both endpoints of that edge carry the tag, so it is the
+// conductor's surface; no other edge qualifies.
+SolvedMesh taggedEdge(double potentialAtX1, int tag)
+{
+  SolvedMesh m;
+  SolutionNode n;
+  n.x = 0; n.y = 0; n.potentialRe = 0; n.conductor = tag;              m.nodes << n;
+  n.x = 1; n.y = 0; n.potentialRe = 0; n.conductor = tag;              m.nodes << n;
+  n.x = 0; n.y = 1; n.potentialRe = potentialAtX1; n.conductor = 0;    m.nodes << n;
+
+  SolutionElement e;
+  e.p0 = 0; e.p1 = 1; e.p2 = 2; e.label = 0;
+  m.elements << e;
+  return m;
+}
+
+} // namespace
+
+void TestSolutionIntegrals::aConductorReportsItsEquipotentialValue()
+{
+  SolvedMesh m = taggedEdge(50.0, 1);
+  // Put both tagged nodes at the same potential, as a real conductor is.
+  m.nodes[0].potentialRe = 7.0;
+  m.nodes[1].potentialRe = 7.0;
+
+  FemmProblem p = squareProblem(FemmProblemKind::HeatFlow);
+  FemmHtMaterialProp mat;
+  mat.Kx = 1.0; mat.Ky = 1.0;
+  p.htMaterialProps << mat;
+  FemmConductorProp c;
+  c.name = "sink";
+  p.conductorProps << c;
+
+  const auto r = ConductorAnalysis::analyse(m, p, 1);
+  QVERIFY(r.ok);
+  QCOMPARE(r.name, QStringLiteral("sink"));
+  QCOMPARE(r.nodeCount, 2);
+  QVERIFY(close(r.potentialRe, 7.0));
+  // A real conductor is an equipotential, so the spread is the check on
+  // whether the tag actually describes one.
+  QVERIFY2(close(r.potentialSpread, 0.0, 1e-12) || r.potentialSpread == 0.0,
+      qPrintable(QString::number(r.potentialSpread)));
+
+  // And a tag spanning nodes at different potentials reports the spread
+  // rather than hiding it in an average.
+  m.nodes[1].potentialRe = 9.0;
+  const auto r2 = ConductorAnalysis::analyse(m, p, 1);
+  QVERIFY(close(r2.potentialRe, 8.0));
+  QVERIFY2(close(r2.potentialSpread, 2.0),
+      "a conductor spanning two potentials should report the spread");
+}
+
+void TestSolutionIntegrals::aConductorReportsTheFluxLeavingItsSurface()
+{
+  // T = 0 along y = 0 and 100 at (0,1), so grad T is (0, 100) K/m over a
+  // 1 m triangle, and the heat flux is -k*grad T = (0, -100) W/m^2 with
+  // k = 1. The tagged edge is the bottom, whose OUTWARD normal (away
+  // from the element's centroid, which is above it) is (0, -1). So the
+  // flux out is (0,-100) . (0,-1) * 1 m = +100 W/m.
+  const SolvedMesh m = taggedEdge(100.0, 1);
+  FemmProblem p = squareProblem(FemmProblemKind::HeatFlow);
+  FemmHtMaterialProp mat;
+  mat.Kx = 1.0; mat.Ky = 1.0;
+  p.htMaterialProps << mat;
+  FemmConductorProp c;
+  p.conductorProps << c;
+
+  const auto r = ConductorAnalysis::analyse(m, p, 1);
+  QVERIFY(r.ok);
+  QVERIFY2(close(r.surfaceLength, 1.0),
+      qPrintable(QStringLiteral("expected a 1 m surface, got %1").arg(r.surfaceLength)));
+  QVERIFY2(close(r.fluxRe, 100.0, 1e-9),
+      qPrintable(QStringLiteral("expected +100 W/m leaving the surface, got %1")
+                     .arg(r.fluxRe, 0, 'g', 10)));
+}
+
+void TestSolutionIntegrals::anUntaggedConductorIsAbsentNotZero()
+{
+  // Asking about a conductor no node carries is not an error and is not
+  // a reading of zero -- it is simply not in this solution, and a
+  // caller must be able to tell those apart.
+  const SolvedMesh m = taggedEdge(100.0, 1);
+  FemmProblem p = squareProblem(FemmProblemKind::HeatFlow);
+  FemmHtMaterialProp mat;
+  p.htMaterialProps << mat;
+
+  const auto r = ConductorAnalysis::analyse(m, p, 4);
+  QVERIFY2(!r.ok, "a conductor no node carries reported a result");
+  QCOMPARE(r.nodeCount, 0);
+
+  // 0 means "no conductor" in the file format and is never a valid tag.
+  QVERIFY(!ConductorAnalysis::analyse(m, p, 0).ok);
+}
+
+void TestSolutionIntegrals::conductorQuantitiesAreNamedPerPhysicsAndAbsentForMagnetics()
+{
+  QCOMPARE(ConductorAnalysis::fluxQuantity(FemmProblemKind::Electrostatics).unit,
+      QStringLiteral("C/m"));
+  QCOMPARE(ConductorAnalysis::fluxQuantity(FemmProblemKind::HeatFlow).unit,
+      QStringLiteral("W/m"));
+  QCOMPARE(ConductorAnalysis::fluxQuantity(FemmProblemKind::CurrentFlow).unit,
+      QStringLiteral("A/m"));
+  QCOMPARE(ConductorAnalysis::potentialQuantity(FemmProblemKind::HeatFlow).unit,
+      QStringLiteral("K"));
+
+  // Magnetics has circuits, not conductors. Offering it an empty-named
+  // conductor readout is how a UI ends up showing a blank panel instead
+  // of the circuit one it should.
+  QVERIFY2(ConductorAnalysis::fluxQuantity(FemmProblemKind::Magnetics).name.isEmpty(),
+      "magnetics was given a conductor quantity");
+  QVERIFY(ConductorAnalysis::potentialQuantity(FemmProblemKind::Magnetics).name.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestSolutionIntegrals)
