@@ -30,6 +30,7 @@
 #include "ProblemKind.h"
 #include "MaterialLibraryIO.h"
 #include "PropertyFields.h"
+#include "SolveRunner.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -134,6 +135,10 @@ class TestProblemKinds : public QObject
   void everyShippedMaterialLibraryLoads_data();
   void heatLibraryKeepsItsFoldersAndItsConductivityCurve();
   void importingFromALibraryDisambiguatesTheName();
+
+  void heatFlowExitCodesDoNotMatchTheOtherThreeSolvers();
+  void theOtherThreeSolversShareOneExitCodeTable();
+  void anUnknownExitCodeSaysSoRatherThanGuessing();
 };
 
 // ---------------------------------------------------------------------------
@@ -1202,6 +1207,80 @@ void TestProblemKinds::importingFromALibraryDisambiguatesTheName()
   // And the values actually came across, into the right list.
   QVERIFY(p.cfMaterialProps[first].ox > 0);
   QCOMPARE(p.cfMaterialProps[first].ox, p.cfMaterialProps[second].ox);
+}
+
+// ---------------------------------------------------------------------------
+// Solver exit codes (issue #82)
+// ---------------------------------------------------------------------------
+//
+// #82 said to verify each solver's codes against its own main.cpp rather
+// than assume they match fkn's. They do not, and these cases pin the
+// difference down so it cannot quietly be "simplified" back into one
+// table later.
+
+void TestProblemKinds::heatFlowExitCodesDoNotMatchTheOtherThreeSolvers()
+{
+  // From hsolv/main.cpp: 2 mesh, 3 previous-solution load (silent there),
+  // 4 renumber, 5 allocate, 6 solve, 7 input file OR write failure.
+  // Every code from 3 up means something different than it does in the
+  // other three solvers.
+  const QString mesh = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 2);
+  QVERIFY2(mesh.contains("mesh"), qPrintable(mesh));
+
+  const QString prev = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 3);
+  QVERIFY2(prev.contains("previous solution"),
+      qPrintable(QStringLiteral("hsolv's 3 is a failed previous-solution load, "
+                                "not a renumbering failure; got: %1").arg(prev)));
+
+  const QString renumber = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 4);
+  QVERIFY2(renumber.contains("renumber"), qPrintable(renumber));
+
+  const QString allocate = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 5);
+  QVERIFY2(allocate.contains("allocate"), qPrintable(allocate));
+
+  const QString solve = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 6);
+  QVERIFY2(solve.contains("solve"), qPrintable(solve));
+
+  // The one genuinely ambiguous code in any of the four: hsolv exits 7
+  // both for a bad .feh and for a failed write. Saying so is better than
+  // picking one and being wrong half the time.
+  const QString seven = SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 7);
+  QVERIFY2(seven.contains("feh") && seven.contains("write"),
+      qPrintable(QStringLiteral("hsolv's 7 has two meanings and the message should "
+                                "carry both; got: %1").arg(seven)));
+
+  // And the contrast that makes the whole case worth having: the same
+  // code means something else everywhere else.
+  QVERIFY2(SolveRunner::exitMessage(FemmProblemKind::HeatFlow, 5)
+          != SolveRunner::exitMessage(FemmProblemKind::Magnetics, 5),
+      "heat flow and magnetics were given the same meaning for code 5, which "
+      "is exactly the mistake #82 warned about");
+}
+
+void TestProblemKinds::theOtherThreeSolversShareOneExitCodeTable()
+{
+  // fkn, belasolv and csolv really do agree, so they share a table --
+  // asserted rather than assumed, since that is the half of the claim
+  // that justifies not writing three more tables.
+  for (int code = 1; code <= 7; code++) {
+    const QString mag = SolveRunner::exitMessage(FemmProblemKind::Magnetics, code);
+    QCOMPARE(SolveRunner::exitMessage(FemmProblemKind::Electrostatics, code), mag);
+    QCOMPARE(SolveRunner::exitMessage(FemmProblemKind::CurrentFlow, code), mag);
+    QVERIFY2(!mag.isEmpty(), "an exit code came back with no explanation at all");
+  }
+}
+
+void TestProblemKinds::anUnknownExitCodeSaysSoRatherThanGuessing()
+{
+  for (FemmProblemKind kind : { FemmProblemKind::Magnetics,
+           FemmProblemKind::Electrostatics, FemmProblemKind::HeatFlow,
+           FemmProblemKind::CurrentFlow }) {
+    const QString msg = SolveRunner::exitMessage(kind, 99);
+    QVERIFY2(msg.contains("99"),
+        qPrintable(QStringLiteral("an unrecognised code should be reported with its "
+                                  "number rather than mapped to the nearest known "
+                                  "failure; got: %1").arg(msg)));
+  }
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)

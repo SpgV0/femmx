@@ -3,6 +3,7 @@
 #include <QString>
 
 struct FemmProblem;
+enum class FemmProblemKind;
 
 // Drives the same external two-stage solve pipeline the existing MFC GUI
 // uses (femm/FemmeView.cpp:2743-2825): triangle.exe (mesh generation, via
@@ -29,5 +30,14 @@ bool solve(const FemmProblem& problem, const QString& filePath, QString& errorMe
 // rootPath.node/.edge/.ele on disk for a caller to read (see
 // MeshOverlay::load).
 bool mesh(const FemmProblem& problem, const QString& filePath, QString& errorMessage);
+
+// What a solver's non-zero exit code means, for this kind's solver.
+//
+// Published rather than private because it is the one piece of #82 worth
+// testing on its own: the four solvers do NOT agree on their codes.
+// hsolv's are shifted by one from 3 upward and it reuses 7 for two
+// different failures, so using fkn's table for heat flow mislabels every
+// failure it can have.
+QString exitMessage(FemmProblemKind kind, int code);
 
 }

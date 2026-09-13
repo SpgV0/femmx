@@ -1,6 +1,7 @@
 #include "SolveRunner.h"
 
 #include "FemmProblem.h"
+#include "ProblemKind.h"
 #include "MeshBuilder.h"
 
 #include <QCoreApplication>
@@ -73,6 +74,67 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
   return true;
 }
 
+namespace {
+
+// What each solver's exit codes MEAN, taken from each one's own main.cpp
+// rather than assumed to match fkn's -- which #82 asked for, and which
+// turned out to matter.
+//
+// fkn, belasolv and csolv agree:
+//     2 mesh   3 renumber   4 allocate   5 solve   6 write   7 input file
+//
+// hsolv DOES NOT. Its codes are shifted by one from 3 upward, it has an
+// extra failure of its own, and it reuses 7:
+//     2 mesh
+//     3 could not load the previous solution   <- hsolv only, and silent
+//     4 renumber
+//     5 allocate
+//     6 solve
+//     7 input file OR could not write results  <- two meanings
+//
+// Using fkn's table for heat flow would therefore mislabel every failure
+// from code 3 up: a heat-flow run that ran out of memory would report
+// "couldn't solve the problem", and one that could not write its results
+// would report "problem loading the .feh file".
+} // namespace
+
+QString SolveRunner::exitMessage(FemmProblemKind kind, int code)
+{
+  if (kind == FemmProblemKind::HeatFlow) {
+    switch (code) {
+    case 2: return QStringLiteral("problem loading mesh");
+    case 3:
+      // hsolv exits here without a message of its own when LoadPrev()
+      // fails, which is the <PrevSoln> file named in the .feh.
+      return QStringLiteral("couldn't load the previous solution named by this "
+                            "problem (check <PrevSoln>)");
+    case 4: return QStringLiteral("problem renumbering nodes");
+    case 5: return QStringLiteral("couldn't allocate enough space for matrices");
+    case 6: return QStringLiteral("couldn't solve the problem");
+    case 7:
+      // The one genuinely ambiguous code in any of the four.
+      return QStringLiteral("problem loading the .feh file, or couldn't write "
+                            "results to disk -- hsolv reports both as 7");
+    default: break;
+    }
+    return QStringLiteral("exited with unrecognized code %1").arg(code);
+  }
+
+  switch (code) {
+  // No solver actually emits 1; the classic GUI maps it, so it is kept
+  // for parity with what a user of femmx.exe would have seen.
+  case 1: return QStringLiteral("material properties have not been defined for all regions");
+  case 2: return QStringLiteral("problem loading mesh");
+  case 3: return QStringLiteral("problem renumbering node points");
+  case 4: return QStringLiteral("couldn't allocate enough space for matrices");
+  case 5: return QStringLiteral("couldn't solve the problem");
+  case 6: return QStringLiteral("couldn't write results to disk");
+  case 7: return QStringLiteral("problem loading input file");
+  default: break;
+  }
+  return QStringLiteral("exited with unrecognized code %1").arg(code);
+}
+
 bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QString& errorMessage)
 {
   QFileInfo fi(filePath);
@@ -82,30 +144,49 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QSt
   if (!mesh(problem, filePath, errorMessage))
     return false;
 
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #82): the solver that matches the problem, not fkn.exe.
+  const QString exeName = ProblemKind::solverExecutable(problem.kind);
+  const QString exePath = solverDir() + "/" + exeName;
+
+  // Checked before starting, so a missing or unbuilt solver says which
+  // binary is missing and where it was looked for. QProcess's own
+  // failure for a non-existent program is a generic start failure that
+  // names neither.
+  if (!QFileInfo::exists(exePath)) {
+    errorMessage = QStringLiteral(
+        "The %1 solver \"%2\" was not found in \"%3\". It ships with FEMMX; "
+        "if this is a development build, it may not have been built.")
+                       .arg(ProblemKind::displayName(problem.kind), exeName, solverDir());
+    return false;
+  }
+
   QProcess solver;
   solver.setWorkingDirectory(workingDir);
-  solver.start(solverDir() + "/fkn.exe", QStringList{ rootPath });
+  // Same argument convention as the classic GUI: the root path with no
+  // extension, and nothing else.
+  //
+  // The classic call sites append "bLinehook" when their load monitor is
+  // open, which makes the solver report progress back through a hook.
+  // femmqt's Load Monitor samples the process from outside instead (see
+  // LoadMonitorDialog), so it does not need the solver's cooperation and
+  // the argument is deliberately not passed.
+  solver.start(exePath, QStringList{ rootPath });
   if (!solver.waitForStarted(10000)) {
-    errorMessage = "Problem executing the solver.";
+    errorMessage = QStringLiteral("Could not start the %1 solver \"%2\".")
+                       .arg(ProblemKind::displayName(problem.kind), exeName);
     return false;
   }
   waitPumpingEvents(solver);
 
   if (solver.exitStatus() != QProcess::NormalExit) {
-    errorMessage = "fkn.exe terminated abnormally.";
+    errorMessage = QStringLiteral("%1 terminated abnormally.").arg(exeName);
     return false;
   }
 
-  // Exit code mapping mirrors femm/FemmeView.cpp:2804-2817 exactly.
-  switch (solver.exitCode()) {
-  case 0: return true;
-  case 1: errorMessage = "Material properties have not been defined for all regions"; return false;
-  case 2: errorMessage = "problem loading mesh"; return false;
-  case 3: errorMessage = "problem renumbering node points"; return false;
-  case 4: errorMessage = "couldn't allocate enough space for matrices"; return false;
-  case 5: errorMessage = "Couldn't solve the problem"; return false;
-  case 6: errorMessage = "couldn't write results to disk"; return false;
-  case 7: errorMessage = "problem loading input file"; return false;
-  default: errorMessage = QStringLiteral("fkn.exe exited with unrecognized code %1").arg(solver.exitCode()); return false;
-  }
+  const int code = solver.exitCode();
+  if (code == 0)
+    return true;
+  errorMessage = QStringLiteral("%1: %2").arg(exeName, SolveRunner::exitMessage(problem.kind, code));
+  return false;
 }

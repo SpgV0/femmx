@@ -1130,9 +1130,31 @@ void MainWindow::onSolveTriggered()
     return;
   }
 
-  QString ansPath = QFileInfo(m_currentPath).absolutePath() + "/" + QFileInfo(m_currentPath).completeBaseName() + ".ans";
-  statusBar()->showMessage(QString("Solved -- see %1").arg(ansPath));
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #82): each solver writes its own solution format -- .ans,
+  // .res, .anh, .anc -- so the path follows the document's kind rather
+  // than always saying .ans.
+  const QString solutionPath = QFileInfo(m_currentPath).absolutePath() + "/"
+      + QFileInfo(m_currentPath).completeBaseName() + "."
+      + ProblemKind::solutionExtension(m_problem.kind);
+  statusBar()->showMessage(QString("Solved -- see %1").arg(solutionPath));
 
+  // The Solution Viewer reads the magnetics .ans format only; teaching it
+  // the other three is #83. Opening it on a .res/.anh/.anc would not fail
+  // cleanly -- it would parse a different format's records as magnetics
+  // ones and draw a plausible, wrong picture. So the solve is reported as
+  // the success it is, and the viewer is simply not opened.
+  if (m_problem.kind != FemmProblemKind::Magnetics) {
+    QMessageBox::information(this, "Solved",
+        QStringLiteral("The %1 solve finished and wrote:\n\n%2\n\nfemmqt's "
+                       "Solution Viewer reads magnetics solutions only for now, so "
+                       "it has not been opened. The file can be viewed in the "
+                       "classic GUI.")
+            .arg(ProblemKind::displayName(m_problem.kind), solutionPath));
+    return;
+  }
+
+  const QString ansPath = solutionPath;
   if (!m_solutionWindow)
     m_solutionWindow = new SolutionWindow();
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20:
