@@ -4,6 +4,8 @@
 #include <QTextStream>
 
 #include "AnsFileIO.h"
+#include "SolutionFileIO.h"
+#include "ProblemKind.h"
 #include "AnsxFileIO.h"
 #include "AppPreferences.h"
 #include "AppTheme.h"
@@ -156,6 +158,24 @@ int probeAnsCli(const QString& ansPath, const QString& csvPath,
 
 int convertAnsxCli(const QString& ansPath)
 {
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #83): .ansx is the MAGNETICS mesh cache, exactly as .femx is
+  // the magnetics model cache (see FILE_FORMATS.md for why that scoping
+  // is deliberate). Handed a .res/.anh/.anc this would read it with the
+  // magnetics parser, which finds none of its own node columns, and then
+  // write a cache of the wrong mesh -- silently, since every step
+  // "succeeds".
+  FemmProblemKind solutionKind = FemmProblemKind::Magnetics;
+  if (SolutionFileIO::kindForSolutionPath(ansPath, solutionKind)
+      && solutionKind != FemmProblemKind::Magnetics) {
+    fprintf(stderr,
+        "--convert-ansx: .ansx caches magnetics solutions only; \"%s\" is a %s "
+        "solution. Nothing to convert.\n",
+        qPrintable(QFileInfo(ansPath).fileName()),
+        qPrintable(ProblemKind::displayName(solutionKind)));
+    return 1;
+  }
+
   FemmProblem problem;
   MeshSolution solution;
   QString error;
@@ -273,7 +293,10 @@ int main(int argc, char* argv[])
     if (isSolution) {
       SolutionWindow window;
       window.resize(w, h);
-      window.openAnsFile(in);
+      // #83: openSolutionFile routes .ans/.ansx down the unchanged
+      // magnetics path and .res/.anh/.anc through the shared reader, so
+      // --render-png works for every solver's output.
+      window.openSolutionFile(in);
       // Modified by Claude (Anthropic), noreply@anthropic.com: found while
       // trying to visually verify an unrelated density-plot fix -- this
       // call was never here. selectDensityPlot() existed and --density

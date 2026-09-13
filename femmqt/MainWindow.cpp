@@ -1139,21 +1139,7 @@ void MainWindow::onSolveTriggered()
       + ProblemKind::solutionExtension(m_problem.kind);
   statusBar()->showMessage(QString("Solved -- see %1").arg(solutionPath));
 
-  // The Solution Viewer reads the magnetics .ans format only; teaching it
-  // the other three is #83. Opening it on a .res/.anh/.anc would not fail
-  // cleanly -- it would parse a different format's records as magnetics
-  // ones and draw a plausible, wrong picture. So the solve is reported as
-  // the success it is, and the viewer is simply not opened.
-  if (m_problem.kind != FemmProblemKind::Magnetics) {
-    QMessageBox::information(this, "Solved",
-        QStringLiteral("The %1 solve finished and wrote:\n\n%2\n\nfemmqt's "
-                       "Solution Viewer reads magnetics solutions only for now, so "
-                       "it has not been opened. The file can be viewed in the "
-                       "classic GUI.")
-            .arg(ProblemKind::displayName(m_problem.kind), solutionPath));
-    return;
-  }
-
+  // #83: the viewer reads all four now, so every kind opens it.
   const QString ansPath = solutionPath;
   if (!m_solutionWindow)
     m_solutionWindow = new SolutionWindow();
@@ -1166,7 +1152,7 @@ void MainWindow::onSolveTriggered()
   m_solutionWindow->show();
   m_solutionWindow->raise();
   m_solutionWindow->activateWindow();
-  m_solutionWindow->openAnsFile(ansPath);
+  m_solutionWindow->openSolutionFile(ansPath);
 }
 
 void MainWindow::onViewResultsTriggered()

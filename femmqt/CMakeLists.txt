@@ -130,6 +130,10 @@ qt_add_library(femmqt_core STATIC
   SolutionFileIO.cpp
   SolutionField.h
   SolutionField.cpp
+  SolutionIntegrals.h
+  SolutionIntegrals.cpp
+  SolutionAdapter.h
+  SolutionAdapter.cpp
   PropertyEditDialog.h
   PropertyEditDialog.cpp
   FemxFileIO.h
@@ -355,6 +359,13 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_solution_field_tests
     tests/tst_solution_field.cpp
   )
+
+  # Point, line and block integrals (#83), every expected number from a
+  # closed form rather than a previous run -- an integral wrong by a
+  # constant still looks like a number.
+  qt_add_executable(femmqt_solution_integral_tests
+    tests/tst_solution_integrals.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -388,6 +399,7 @@ if(TARGET Qt6::Test)
     femmqt_problem_kind_tests
     femmqt_solution_format_tests
     femmqt_solution_field_tests
+    femmqt_solution_integral_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -427,6 +439,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_problem_kinds COMMAND femmqt_problem_kind_tests)
   add_test(NAME femmqt_solution_formats COMMAND femmqt_solution_format_tests)
   add_test(NAME femmqt_solution_field COMMAND femmqt_solution_field_tests)
+  add_test(NAME femmqt_solution_integrals COMMAND femmqt_solution_integral_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without

@@ -252,12 +252,16 @@ void TestGuiSwitch::solutionFilesRouteToTheSolutionViewer_data()
   QTest::newRow("dxf") << "model.dxf" << false;
   QTest::newRow("no suffix") << "model" << false;
   QTest::newRow("empty") << QString() << false;
-  // Not a solution: the other three physics have their own solution
-  // extensions (.res/.anh/.anc) and femmqt has no viewer for them yet, so
-  // they must not be silently opened as if they were magnetics.
-  QTest::newRow("res") << "model.res" << false;
-  QTest::newRow("anh") << "model.anh" << false;
-  QTest::newRow("anc") << "model.anc" << false;
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #83). These three were false until the viewer could read
+  // them: routing a .anh to the editor instead is not a clean failure,
+  // because a solution file IS its input file with a section appended,
+  // so it opens as a perfectly valid UNSOLVED heat-flow model with the
+  // solution silently dropped.
+  QTest::newRow("res") << "model.res" << true;
+  QTest::newRow("anh") << "model.anh" << true;
+  QTest::newRow("anc") << "model.anc" << true;
+  QTest::newRow("ANH uppercase") << "MODEL.ANH" << true;
   // A near-miss that must not match a startsWith-style check
   QTest::newRow("answers") << "model.answers" << false;
 }

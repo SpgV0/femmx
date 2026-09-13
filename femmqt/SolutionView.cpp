@@ -1,5 +1,9 @@
 #define _USE_MATH_DEFINES
 #include "SolutionView.h"
+#include "SolutionFileIO.h"
+#include "SolutionField.h"
+#include "SolutionAdapter.h"
+#include "ProblemKind.h"
 
 #include "AnsFileIO.h"
 #include "AppPreferences.h"
@@ -746,6 +750,11 @@ void MeshSolutionItem::legendRange(double& lo, double& hi) const
 
 QString MeshSolutionItem::legendTitle(DensityQuantity q) const
 {
+  // #83: a non-magnetics solution renders its own field through the same
+  // machinery, so the only thing that can be wrong is the label.
+  if (!m_fieldLabelOverride.isEmpty())
+    return m_fieldLabelOverride;
+
   switch (q) {
   case DensityQuantity::BMag: return "|B|, Tesla";
   case DensityQuantity::BReMag: return "|B_re|, Tesla";
@@ -2102,6 +2111,109 @@ void SolutionWindow::onOpenTriggered()
   openAnsFile(path);
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#83).
+//
+// Turns whatever is now in m_solution into a rendered scene. Extracted
+// from openAnsFile so openSolutionFile can reuse it for the other three
+// physics rather than growing a second copy -- duplicated scene setup is
+// how one path quietly stops getting a fix the other one got, which this
+// repository has already paid for twice (#77's arc centre, .femx's two
+// readers).
+//
+// Everything here is physics-independent: it paints a scalar per element
+// and a potential per node, and which scalar that is was decided before
+// this is called.
+QRectF SolutionWindow::rebuildSceneForSolution()
+{
+  m_spatialIndexBuilt = false; // m_solution just got replaced -- see buildSpatialIndex()'s comment
+  m_scene->clear();
+  m_contourVisual = nullptr; // clear() above already deleted it
+  m_contourPoints.clear();
+  m_item = new MeshSolutionItem(&m_solution);
+  m_item->setProblemGeometry(&m_problemGeometry);
+  m_scene->setProblemGeometry(&m_problemGeometry);
+  m_scene->addItem(m_item);
+  const QRectF itemBounds = m_item->boundingRect();
+
+  // Pan margin: sized to the content rather than a huge constant -- see
+  // the long note that used to live here, now just below in openAnsFile's
+  // caller comment. A margin of a few times the model keeps the scrollbar
+  // thumb proportional while putting the pan limit far past anywhere
+  // worth looking.
+  constexpr double kPanMarginFactor = 3.0;
+  const double margin =
+      kPanMarginFactor * std::max(itemBounds.width(), itemBounds.height());
+  m_scene->setSceneRect(itemBounds.adjusted(-margin, -margin, margin, margin));
+
+  m_view->fitInViewSafe(itemBounds);
+  m_scene->setGridSize(niceIntegerGridSize(itemBounds));
+  m_view->updateAntialiasingForScale();
+  m_view->setLegendItem(m_item);
+  return itemBounds;
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#83).
+void SolutionWindow::openSolutionFile(const QString& path)
+{
+  FemmProblemKind kind = FemmProblemKind::Magnetics;
+  const bool known = SolutionFileIO::kindForSolutionPath(path, kind);
+
+  // .ansx is the magnetics cache, not a solution format of its own, so
+  // kindForSolutionPath refuses it -- but openAnsFile accepts it, and
+  // that is still the right destination.
+  const bool magneticsPath = !known
+      || kind == FemmProblemKind::Magnetics
+      || QFileInfo(path).suffix().compare("ansx", Qt::CaseInsensitive) == 0;
+
+  if (magneticsPath) {
+    m_kind = FemmProblemKind::Magnetics;
+    if (m_item)
+      m_item->setFieldLabelOverride(QString());
+    openAnsFile(path);
+    return;
+  }
+
+  FemmProblem problem;
+  SolvedMesh solved;
+  QString error;
+  if (!SolutionFileIO::read(path, problem, solved, error)) {
+    QMessageBox::warning(this, "Open Failed", error);
+    return;
+  }
+
+  MeshSolution adapted;
+  if (!SolutionAdapter::toMeshSolution(solved, problem, adapted)) {
+    QMessageBox::warning(this, "Open Failed",
+        QStringLiteral("\"%1\" contains no mesh elements.")
+            .arg(QFileInfo(path).fileName()));
+    return;
+  }
+
+  m_kind = kind;
+  m_solution = adapted;
+  m_problemGeometry = problem;
+  m_geometryOverlayError.clear();
+  m_axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
+  m_frequency = problem.frequency;
+  m_currentPath = path;
+
+  // The renderer's scalar is now this physics' field, so the legend has
+  // to say which -- see SolutionAdapter's header. Without this it would
+  // read "|B|, Tesla" over a heat-flux plot.
+  rebuildSceneForSolution();
+
+  // Set AFTER the scene rebuild, because that is what creates m_item.
+  const QVector<SolutionField::Quantity> qs2 = SolutionField::quantities(kind);
+  if (m_item && !qs2.isEmpty()) {
+    const SolutionField::Quantity& primary = qs2.size() > 1 ? qs2[1] : qs2[0];
+    m_item->setFieldLabelOverride(
+        QStringLiteral("%1, %2").arg(primary.name, primary.unit));
+  }
+
+  setWindowTitle(QStringLiteral("%1 Solution -- %2")
+                     .arg(ProblemKind::displayName(kind), QFileInfo(path).fileName()));
+}
+
 void SolutionWindow::openAnsFile(const QString& path)
 {
   QFileInfo pathInfo(path);
@@ -2180,45 +2292,8 @@ void SolutionWindow::openAnsFile(const QString& path)
 
   qint64 elapsedMs = timer.elapsed();
 
-  m_spatialIndexBuilt = false; // m_solution just got replaced -- see buildSpatialIndex()'s comment
-  m_scene->clear();
-  m_contourVisual = nullptr; // clear() above already deleted it
-  m_contourPoints.clear();
-  m_item = new MeshSolutionItem(&m_solution);
-  m_item->setProblemGeometry(&m_problemGeometry);
-  m_scene->setProblemGeometry(&m_problemGeometry);
-  m_scene->addItem(m_item);
-  QRectF itemBounds = m_item->boundingRect();
+  const QRectF itemBounds = rebuildSceneForSolution();
 
-  // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
-  // report -- "when zooming in, I cannot navigate outside the view of the
-  // object, unlike the old gui".
-  //
-  // Root cause: nothing ever set a scene rect, so QGraphicsScene fell back
-  // to computing it from itemsBoundingRect() -- exactly the solved mesh's
-  // own extents. Both pan paths (the Scroll L/R/U/D actions and the
-  // scrollbars they drive) clamp to the scene rect, so the view could not
-  // be moved past the edge of the mesh. The classic GUI has no such limit.
-  //
-  // Sized to the content rather than pinned to a huge constant the way
-  // GeometryScene's constructor does it. That constant is right THERE,
-  // where items are added and removed as the user edits and a scene rect
-  // recomputed from them would silently rescroll the viewport mid-edit
-  // (see that comment). None of that applies to a viewer: the mesh is
-  // fixed once loaded, so the rect can be set once, here. It also avoids
-  // what the constant costs -- against a 1e6 range any real model pins the
-  // scrollbar thumb to Qt's minimum size, so dragging it jumps the view
-  // wildly. A margin of a few times the model keeps the thumb proportional
-  // while putting the pan limit far past anywhere worth looking.
-  constexpr double kPanMarginFactor = 3.0;
-  const double margin =
-      kPanMarginFactor * std::max(itemBounds.width(), itemBounds.height());
-  m_scene->setSceneRect(itemBounds.adjusted(-margin, -margin, margin, margin));
-
-  m_view->fitInViewSafe(itemBounds);
-  m_scene->setGridSize(niceIntegerGridSize(itemBounds));
-  m_view->updateAntialiasingForScale();
-  m_view->setLegendItem(m_item);
   m_currentPath = ansPath;
 
   QString statusMsg = QString("%1 -- %2 mesh nodes, %3 elements, |B| %4 to %5 T (loaded via %6 in %7 ms)")

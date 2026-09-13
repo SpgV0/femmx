@@ -179,6 +179,18 @@ class MeshSolutionItem : public QGraphicsItem {
   // before OK commits the change) without duplicating this method's
   // switch statement.
   QString legendTitle(DensityQuantity q) const;
+
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #83). The renderer paints a scalar per element and a
+  // potential per node; for magnetics those are |B| and A, and for the
+  // other three physics they are that physics' own field and potential
+  // (see SolutionAdapter). The MATHS is identical, the LABELS are not --
+  // a legend reading "|B|, Tesla" over a heat-flux plot is worse than no
+  // legend at all -- so a non-magnetics solution sets its own here.
+  //
+  // Empty (the default) means magnetics, and legendTitle keeps its
+  // existing per-quantity strings.
+  void setFieldLabelOverride(const QString& label) { m_fieldLabelOverride = label; }
   PlotMode plotMode() const { return m_mode; }
 
   // Matches femm/FemmviewView.cpp's OnCplot/IDD_CPLOTDLG(2) -- Number of
@@ -278,6 +290,7 @@ class MeshSolutionItem : public QGraphicsItem {
   // which drive the View menu/toolbar's initial checked state to match.
   PlotMode m_mode = PlotMode::Contour;
   DensityQuantity m_densityQuantity = DensityQuantity::BMag;
+  QString m_fieldLabelOverride; // #83, see setFieldLabelOverride
   bool m_smooth = true;
   // See setGrayscale/setCustomRange's declarations above.
   bool m_grayscale = false;
@@ -549,6 +562,18 @@ class SolutionWindow : public QMainWindow {
 
   void openAnsFile(const QString& path);
 
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #83). Opens any of the four solution formats, choosing by
+  // extension: .ans goes down the existing magnetics path unchanged
+  // (including its .ansx cache), and .res/.anh/.anc are read through
+  // SolutionFileIO and adapted onto the same renderer.
+  //
+  // Kept separate from openAnsFile rather than replacing it so the
+  // magnetics path -- which has a cache, an incremental-solution case
+  // and a lot of verified behaviour -- is not disturbed by a change
+  // meant to add the other three.
+  void openSolutionFile(const QString& path);
+
   // Renders the loaded solution offscreen to an image, for the
   // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng
   // shell out to when a script has called setgui("qt"). Draws the SCENE
@@ -661,7 +686,13 @@ class SolutionWindow : public QMainWindow {
   // missing geometry overlay isn't indistinguishable from "there was
   // never any geometry to show."
   QString m_geometryOverlayError;
+  // #83: shared by openAnsFile and openSolutionFile -- see the .cpp.
+  QRectF rebuildSceneForSolution();
+
   MeshSolutionItem* m_item = nullptr;
+  // #83: which physics is loaded. Magnetics unless a non-magnetics
+  // solution was opened, so every existing path keeps its behaviour.
+  FemmProblemKind m_kind = FemmProblemKind::Magnetics;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
   // classic FEMM labels the raw solved nodal potential differently by
   // coordinate system -- "A ... Wb/m" (planar) vs "Flux ... Wb"
