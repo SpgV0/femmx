@@ -68,4 +68,29 @@ QStringList names(const FemmProblem& p, Category category);
 // callers are UI code reacting to a selection that may have gone stale.
 void setName(FemmProblem& p, Category category, int index, const QString& newName);
 
+// --- list editing, also type-blind (issue #81) -----------------------------
+//
+// The three operations a property list needs beyond reading it. Each is
+// the same logic in all four physics -- only which list, and which
+// entity field refers to it, changes.
+//
+// The ENTITY REFERENCES are what make these worth centralising. Every
+// reference is 1-based with 0 meaning "none" (materials additionally use
+// -1 on a block label to mean a hole), so deleting entry i means every
+// reference equal to i+1 becomes none and every reference above it drops
+// by one. Getting that wrong does not fail: it silently re-points
+// geometry at the neighbouring material.
+
+// Appends a default-constructed entry with a unique name, and returns
+// its index.
+int addDefault(FemmProblem& p, Category category);
+
+// How many nodes, segments, arcs or block labels refer to entry `index`.
+// Shown before a delete, so the user knows what they are about to
+// detach.
+int referenceCount(const FemmProblem& p, Category category, int index);
+
+// Removes entry `index` and fixes up every reference to it, as above.
+void remove(FemmProblem& p, Category category, int index);
+
 } // namespace ProblemKind

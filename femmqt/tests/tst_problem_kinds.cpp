@@ -112,6 +112,13 @@ class TestProblemKinds : public QObject
 
   void everyKindMapsToItsOwnExtensionSolverAndSolutionFile();
   void anExtensionNeverResolvesToTheWrongKind();
+
+  void addingAPropertyGivesItAUniqueNameInEveryKind();
+  void deletingAMaterialTurnsItsLabelsIntoHolesNotIntoMaterialOne();
+  void deletingABoundaryDetachesItsEdgesAndRenumbersTheRest();
+  void deletingAConductorFixesNodeSegmentAndArcReferences();
+  void deletingACircuitFixesBlockLabelReferences();
+  void referenceCountAnswersBeforeTheDelete();
 };
 
 // ---------------------------------------------------------------------------
@@ -706,6 +713,162 @@ void TestProblemKinds::anExtensionNeverResolvesToTheWrongKind()
     if (c.recognised)
       QCOMPARE((int)got, (int)c.kind);
   }
+}
+
+// ---------------------------------------------------------------------------
+// List editing, and the renumbering that makes it dangerous (issue #81)
+// ---------------------------------------------------------------------------
+//
+// Deleting a property is the operation with teeth. Every reference is
+// 1-based with 0 meaning none, so removing entry i has to turn every
+// reference equal to i+1 into none and drop every higher one by one.
+// Getting it wrong does not throw: the geometry silently re-points at
+// the neighbouring material, and the model still solves.
+
+void TestProblemKinds::addingAPropertyGivesItAUniqueNameInEveryKind()
+{
+  for (FemmProblemKind kind : { FemmProblemKind::Magnetics,
+           FemmProblemKind::Electrostatics, FemmProblemKind::HeatFlow,
+           FemmProblemKind::CurrentFlow }) {
+    FemmProblem p;
+    p.kind = kind;
+    for (ProblemKind::Category cat : { ProblemKind::Category::Point,
+             ProblemKind::Category::Boundary, ProblemKind::Category::Material,
+             ProblemKind::Category::Source }) {
+      const int a = ProblemKind::addDefault(p, cat);
+      const int b = ProblemKind::addDefault(p, cat);
+      const int c = ProblemKind::addDefault(p, cat);
+      QCOMPARE(ProblemKind::count(p, cat), 3);
+      const QString na = ProblemKind::name(p, cat, a);
+      const QString nb = ProblemKind::name(p, cat, b);
+      const QString nc = ProblemKind::name(p, cat, c);
+      QVERIFY2(!na.isEmpty(), "a new property came back nameless");
+      // Duplicate names are not cosmetic: the classic writer identifies
+      // a property BY NAME, so two entries sharing one makes the second
+      // unreachable -- the defect #34 fixed in the shipped libraries.
+      QVERIFY2(na != nb && nb != nc && na != nc,
+          qPrintable(QStringLiteral("duplicate names: %1 / %2 / %3").arg(na, nb, nc)));
+    }
+  }
+}
+
+void TestProblemKinds::deletingAMaterialTurnsItsLabelsIntoHolesNotIntoMaterialOne()
+{
+  // Materials are the one category whose "none" is -1 rather than 0,
+  // because a block label with no material IS a hole. Using 0 here would
+  // turn every label that used the deleted material into a meshed region
+  // of the FIRST material -- a solved model, with the wrong physics in
+  // part of it.
+  FemmProblem p;
+  p.kind = FemmProblemKind::Electrostatics;
+  ProblemKind::addDefault(p, ProblemKind::Category::Material); // 1
+  ProblemKind::addDefault(p, ProblemKind::Category::Material); // 2
+  ProblemKind::addDefault(p, ProblemKind::Category::Material); // 3
+
+  FemmProblemEdit::addBlockLabel(p, 0, 0);
+  FemmProblemEdit::addBlockLabel(p, 1, 1);
+  FemmProblemEdit::addBlockLabel(p, 2, 2);
+  p.blockLabels[0].blockTypeIndex = 1; // the one being deleted
+  p.blockLabels[1].blockTypeIndex = 2; // must shift down to 1
+  p.blockLabels[2].blockTypeIndex = 3; // must shift down to 2
+
+  ProblemKind::remove(p, ProblemKind::Category::Material, 0);
+
+  QCOMPARE(ProblemKind::count(p, ProblemKind::Category::Material), 2);
+  QCOMPARE(p.blockLabels[0].blockTypeIndex, -1);
+  QCOMPARE(p.blockLabels[1].blockTypeIndex, 1);
+  QCOMPARE(p.blockLabels[2].blockTypeIndex, 2);
+}
+
+void TestProblemKinds::deletingABoundaryDetachesItsEdgesAndRenumbersTheRest()
+{
+  FemmProblem p;
+  p.kind = FemmProblemKind::HeatFlow;
+  ProblemKind::addDefault(p, ProblemKind::Category::Boundary);
+  ProblemKind::addDefault(p, ProblemKind::Category::Boundary);
+
+  const int a = FemmProblemEdit::addNode(p, 0, 0);
+  const int b = FemmProblemEdit::addNode(p, 1, 0);
+  const int c = FemmProblemEdit::addNode(p, 1, 1);
+  FemmProblemEdit::addSegment(p, a, b);
+  FemmProblemEdit::addArcSegment(p, b, c, 90.0, 1.0);
+  p.segments[0].boundaryMarker = 1;
+  p.arcSegments[0].boundaryMarker = 2;
+
+  ProblemKind::remove(p, ProblemKind::Category::Boundary, 0);
+
+  QCOMPARE(p.segments[0].boundaryMarker, 0); // detached
+  QCOMPARE(p.arcSegments[0].boundaryMarker, 1); // shifted down
+}
+
+void TestProblemKinds::deletingAConductorFixesNodeSegmentAndArcReferences()
+{
+  // Conductors hang off nodes, segments AND arcs in the three
+  // non-magnetics formats. Fixing up only one of the three leaves the
+  // others pointing at whatever moved into the slot.
+  for (FemmProblemKind kind : { FemmProblemKind::Electrostatics,
+           FemmProblemKind::HeatFlow, FemmProblemKind::CurrentFlow }) {
+    FemmProblem p;
+    p.kind = kind;
+    ProblemKind::addDefault(p, ProblemKind::Category::Source);
+    ProblemKind::addDefault(p, ProblemKind::Category::Source);
+
+    const int a = FemmProblemEdit::addNode(p, 0, 0);
+    const int b = FemmProblemEdit::addNode(p, 1, 0);
+    const int c = FemmProblemEdit::addNode(p, 1, 1);
+    FemmProblemEdit::addSegment(p, a, b);
+    FemmProblemEdit::addArcSegment(p, b, c, 90.0, 1.0);
+    p.nodes[a].conductorIndex = 1;
+    p.segments[0].conductorIndex = 2;
+    p.arcSegments[0].conductorIndex = 2;
+
+    ProblemKind::remove(p, ProblemKind::Category::Source, 0);
+
+    QCOMPARE(p.nodes[a].conductorIndex, 0);
+    QCOMPARE(p.segments[0].conductorIndex, 1);
+    QCOMPARE(p.arcSegments[0].conductorIndex, 1);
+  }
+}
+
+void TestProblemKinds::deletingACircuitFixesBlockLabelReferences()
+{
+  // The magnetics half of the same asymmetry: a circuit hangs off a
+  // block label, not off edges.
+  FemmProblem p;
+  p.kind = FemmProblemKind::Magnetics;
+  ProblemKind::addDefault(p, ProblemKind::Category::Source);
+  ProblemKind::addDefault(p, ProblemKind::Category::Source);
+
+  FemmProblemEdit::addBlockLabel(p, 0, 0);
+  FemmProblemEdit::addBlockLabel(p, 1, 1);
+  p.blockLabels[0].circuitIndex = 1;
+  p.blockLabels[1].circuitIndex = 2;
+
+  ProblemKind::remove(p, ProblemKind::Category::Source, 0);
+
+  // A circuit's "none" is 0, unlike a material's -1.
+  QCOMPARE(p.blockLabels[0].circuitIndex, 0);
+  QCOMPARE(p.blockLabels[1].circuitIndex, 1);
+}
+
+void TestProblemKinds::referenceCountAnswersBeforeTheDelete()
+{
+  FemmProblem p;
+  p.kind = FemmProblemKind::CurrentFlow;
+  ProblemKind::addDefault(p, ProblemKind::Category::Material);
+  ProblemKind::addDefault(p, ProblemKind::Category::Material);
+
+  for (int i = 0; i < 3; i++)
+    FemmProblemEdit::addBlockLabel(p, i, i);
+  p.blockLabels[0].blockTypeIndex = 1;
+  p.blockLabels[1].blockTypeIndex = 1;
+  p.blockLabels[2].blockTypeIndex = 2;
+
+  QCOMPARE(ProblemKind::referenceCount(p, ProblemKind::Category::Material, 0), 2);
+  QCOMPARE(ProblemKind::referenceCount(p, ProblemKind::Category::Material, 1), 1);
+  // Out of range answers zero rather than reading past the end -- this
+  // is called from a list whose selection can go stale.
+  QCOMPARE(ProblemKind::referenceCount(p, ProblemKind::Category::Material, 7), 0);
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)
