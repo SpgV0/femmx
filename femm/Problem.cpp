@@ -978,5 +978,4 @@ CCircuit::CCircuit()
   CircName = "New Circuit";
   CircType = 0;
   Amps = 0.;
-  dVolts = 0.;
 }

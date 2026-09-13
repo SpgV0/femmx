@@ -161,6 +161,19 @@ class CCircuit {
   CString CircName;
   CComplex Amps;
   int CircType;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13.
+  // fkn reads <VoltGradient_re>/<_im> into its own CCircuit::dVolts_re/im
+  // and drives a circuit at a prescribed voltage gradient with them
+  // (fkn/femmedoccore.cpp:965). This editor neither parsed nor wrote
+  // them, so a .fem carrying a voltage-driven circuit lost it on the
+  // next save, silently. Held here so it round-trips.
+  //
+  // THIS class, not femmviewdata::CCircuit in Problem.h. There are two
+  // of that name: this one is what CFemmeDoc::circproplist holds and so
+  // what the .fem reader and writer use; the other belongs to the
+  // post-processor and never sees a .fem. Both are in scope in
+  // FemmeDoc.cpp, via `using namespace` at the foot of each header.
+  CComplex dVolts;
 
   private:
 };

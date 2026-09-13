@@ -260,6 +260,7 @@ CCircuit::CCircuit()
   CircName = "New Circuit";
   Amps = 0;
   CircType = 1;
+  dVolts = 0;
 };
 
 CPeriodicBoundary::CPeriodicBoundary()
