@@ -341,6 +341,65 @@ records.
   (despite its own comment claiming MA/m²) — the writer divides by 1e6
   to match every other current-density field's actual MA/m² units.
 
+## The four solution formats
+
+Each solver writes its own solution file, and each is **the model file it
+was given, with a `[Solution]` section appended**. Everything before that
+marker is the same `[PointProps]`/`[BdryProps]`/`[BlockProps]`/geometry
+content the input had, so a solution file is openable as a model.
+
+| physics | solver | solution | post-processor |
+|---|---|---|---|
+| magnetics | `fkn.exe` | `.ans` | `femm/FemmviewDoc.cpp` |
+| electrostatics | `belasolv.exe` | `.res` | `femm/belaviewDoc.cpp` |
+| heat flow | `hsolv.exe` | `.anh` | `femm/hviewDoc.cpp` |
+| current flow | `csolv.exe` | `.anc` | `femm/CVIEWDOC.CPP` |
+
+### The `[Solution]` section
+
+After the `[Solution]` marker: a node count, that many node lines, an
+element count, then that many element lines.
+
+**Element lines are identical in all four** — `p0  p1  p2  lbl`, three
+0-based mesh-node indices plus the 0-based index of the block label whose
+material the element carries.
+
+**Node lines carry that physics' potential, and differ:**
+
+| physics | node line | notes |
+|---|---|---|
+| magnetics | `x  y  A_re  A_im` | `A_im` present **only when `[Frequency]` is non-zero**; a DC solution has three columns, not four |
+| electrostatics | `x  y  V  Q` | `Q` is the conductor the node belongs to, or 0 |
+| heat flow | `x  y  T  Q` | same shape as electrostatics, with temperature in place of voltage |
+| current flow | `x  y  v_re  v_im  Q` | the only one that is both complex **and** carries a conductor column |
+
+Two traps worth stating, because both produce a file that parses without
+complaint and means something else:
+
+- **Magnetics' column count depends on the frequency in the header.**
+  Reading a DC `.ans` as though it were AC consumes the next line's `x`
+  as `A_im`, and everything after is shifted. The frequency has to be
+  known before the node loop starts — it is in the same file, above.
+- **A magnetics node has no conductor column and the other three do.**
+  The same asymmetry as the model formats, where magnetics attaches a
+  circuit to block labels and the rest attach conductors to geometry.
+
+An *incremental* magnetics solution additionally writes a boundary-code
+int and the previous solution's `A` per node; femmqt does not produce
+those.
+
+### Derived quantities
+
+The solvers store only the potential per node. Everything the viewer
+plots is derived from its gradient over each element:
+
+| physics | stored | derived |
+|---|---|---|
+| magnetics | `A` | `B = curl A`, `H = B/mu`, `J` |
+| electrostatics | `V` | `E = -grad V`, `D = eps*E` |
+| heat flow | `T` | `F = -k grad T`, `G = -grad T` |
+| current flow | `V` | `E = -grad V`, `J = sigma*E` |
+
 ## The four model formats, and what differs between them
 
 `.fem` (magnetics), `.fee` (electrostatics), `.feh` (heat flow) and

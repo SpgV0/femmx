@@ -126,6 +126,8 @@ qt_add_library(femmqt_core STATIC
   ProblemFileIO.cpp
   PropertyFields.h
   PropertyFields.cpp
+  SolutionFileIO.h
+  SolutionFileIO.cpp
   PropertyEditDialog.h
   PropertyEditDialog.cpp
   FemxFileIO.h
@@ -335,6 +337,14 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_problem_kind_tests
     tests/tst_problem_kinds.cpp
   )
+
+  # The four solution formats (#83). The failure guarded against is a
+  # COLUMN SHIFT -- these files are whitespace-separated numbers, so
+  # reading the wrong width per node parses cleanly and is wrong down
+  # the whole mesh.
+  qt_add_executable(femmqt_solution_format_tests
+    tests/tst_solution_formats.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -366,6 +376,7 @@ if(TARGET Qt6::Test)
     femmqt_sketch_transform_tests
     femmqt_solver_tag_tests
     femmqt_problem_kind_tests
+    femmqt_solution_format_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -403,6 +414,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_sketch_transform COMMAND femmqt_sketch_transform_tests)
   add_test(NAME femmqt_solver_tags COMMAND femmqt_solver_tag_tests)
   add_test(NAME femmqt_problem_kinds COMMAND femmqt_problem_kind_tests)
+  add_test(NAME femmqt_solution_formats COMMAND femmqt_solution_format_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
