@@ -424,13 +424,22 @@ int main(int argc, char* argv[])
   // OnSwitchToQtGui) opens the Solution Viewer, not the geometry editor --
   // otherwise the geometry editor would try to load a possibly-huge
   // solved mesh as if it were raw, editable geometry.
-  bool isMagSolutionFile = args.size() > 1
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #88): this said openAnsFile, the MAGNETICS-only path, while
+  // isSolutionFile() has matched all four solution formats since #83.
+  // It went unnoticed only because the classic GUI had no "Switch to Qt
+  // GUI" item outside magnetics, so nothing could hand a .anh across --
+  // which is exactly what #88 adds. openSolutionFile routes .ans/.ansx
+  // down the unchanged magnetics path and the other three through the
+  // shared reader.
+  const bool isSolutionFile = args.size() > 1
       && FileRouting::isSolutionFile(args.at(1));
 
-  if (isMagSolutionFile) {
+  if (isSolutionFile) {
     auto* solutionWindow = new SolutionWindow();
     solutionWindow->show();
-    solutionWindow->openAnsFile(args.at(1));
+    solutionWindow->openSolutionFile(args.at(1));
   } else {
     auto* window = new MainWindow();
     window->show();

@@ -25,7 +25,10 @@
 #include "AppPreferences.h"
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
+#include "AnsFileIO.h"
+#include "MeshSolution.h"
 #include "FileRouting.h"
+#include "SolutionFileIO.h"
 #include "GuiSwitch.h"
 
 #include <QCoreApplication>
@@ -51,6 +54,11 @@ private slots:
   void solutionFilesRouteToTheSolutionViewer();
   void solutionFilesRouteToTheSolutionViewer_data();
   void aHandedOverClassicFileSurvivesTheRoundTrip();
+
+  // Issue #88.
+  void everyProblemTypeCanReachTheQtGui();
+  void theHandoffReadsSolutionsWithTheSharedReader();
+  void theMagneticsReaderCannotStandInForTheOthers();
 
 private:
   static QString cfgPath()
@@ -359,6 +367,140 @@ void TestGuiSwitch::aHandedOverClassicFileSurvivesTheRoundTrip()
     QCOMPARE(back.circuitProps[i].circType,
         original.circuitProps[i].circType);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Reaching the Qt GUI at all (issue #88)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QString repoRoot()
+{
+  return QFileInfo(QFileInfo(QStringLiteral(FEMMQT_SOURCE_DIR)).absoluteFilePath())
+      .absolutePath();
+}
+
+QString slurp(const QString& path)
+{
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    return QString();
+  return QString::fromUtf8(f.readAll());
+}
+
+} // namespace
+
+void TestGuiSwitch::everyProblemTypeCanReachTheQtGui()
+{
+  // "Switch to Qt GUI..." lived in the magnetics editor and the
+  // magnetics post-processor only. The other six windows had no way
+  // across at all -- not a degraded one, none -- while femmqt had grown
+  // an editor and a viewer for all four physics.
+  //
+  // A menu item with no handler is a greyed-out entry, and a handler
+  // with no menu item is dead code; neither fails loudly, so both
+  // halves are checked.
+  const QString rc = slurp(repoRoot() + "/femm/femm.rc");
+  QVERIFY2(!rc.isEmpty(), "femm/femm.rc did not read");
+
+  const QStringList menus = { "IDR_FEMMETYPE", "IDR_FEMMVIEWTYPE",
+    "IDR_BELADRAWTYPE", "IDR_BELAVIEWTYPE", "IDR_HDRAWTYPE", "IDR_HVIEWTYPE",
+    "IDR_CDRAWTYPE", "IDR_CVIEWTYPE" };
+
+  QStringList missingItem;
+  for (const QString& menu : menus) {
+    const int start = rc.indexOf(menu + QStringLiteral(" MENU"));
+    QVERIFY2(start > 0, qPrintable(menu + " is gone from femm.rc"));
+    // The block ends where the next menu begins, or at the end.
+    int end = rc.size();
+    for (const QString& other : menus) {
+      if (other == menu)
+        continue;
+      const int at = rc.indexOf(other + QStringLiteral(" MENU"));
+      if (at > start && at < end)
+        end = at;
+    }
+    if (!rc.mid(start, end - start).contains(QStringLiteral("ID_VIEW_SWITCHTOQT")))
+      missingItem << menu;
+  }
+  QVERIFY2(missingItem.isEmpty(),
+      qPrintable(QStringLiteral("no \"Switch to Qt GUI...\" item in %1 -- that "
+                                "problem type cannot reach the Qt GUI at all")
+                     .arg(missingItem.join(", "))));
+
+  const QStringList views = { "FemmeView.cpp", "FemmviewView.cpp",
+    "beladrawView.cpp", "belaviewView.cpp", "hdrawView.cpp", "hviewView.cpp",
+    "cdrawView.cpp", "cviewView.cpp" };
+
+  QStringList missingHandler;
+  for (const QString& name : views) {
+    const QString code = slurp(repoRoot() + "/femm/" + name);
+    QVERIFY2(!code.isEmpty(), qPrintable(name + " did not read"));
+    if (!code.contains(QStringLiteral("ON_COMMAND(ID_VIEW_SWITCHTOQT")))
+      missingHandler << name;
+  }
+  QVERIFY2(missingHandler.isEmpty(),
+      qPrintable(QStringLiteral("%1 has no ID_VIEW_SWITCHTOQT handler, so its "
+                                "menu item would be greyed out")
+                     .arg(missingHandler.join(", "))));
+
+  // And the fifty lines of femm.cfg rewriting plus CreateProcess must
+  // exist once, not eight times. Two copies is how the repo has been
+  // bitten before; eight would be worse.
+  int spawners = 0;
+  for (const QString& name : views) {
+    if (slurp(repoRoot() + "/femm/" + name).contains(QStringLiteral("femmqt.exe\\\" \\\"%s")))
+      spawners++;
+  }
+  QVERIFY2(spawners == 0,
+      qPrintable(QStringLiteral("%1 view(s) still build the femmqt.exe command "
+                                "line themselves instead of calling "
+                                "HandOffToQtGui").arg(spawners)));
+}
+
+void TestGuiSwitch::theHandoffReadsSolutionsWithTheSharedReader()
+{
+  // The handoff branch in main() routed with isSolutionFile() -- which
+  // has matched all four solution formats since #83 -- and then called
+  // openAnsFile(), the MAGNETICS-only path. Nothing could reach it
+  // while only magnetics had a "Switch to Qt GUI" item, which is
+  // exactly what this issue adds.
+  const QString main = slurp(QStringLiteral(FEMMQT_SOURCE_DIR) + "/main.cpp");
+  QVERIFY2(!main.isEmpty(), "femmqt/main.cpp did not read");
+
+  const int at = main.indexOf(QStringLiteral("FileRouting::isSolutionFile(args.at(1))"));
+  QVERIFY2(at > 0, "the command-line handoff no longer routes by extension");
+
+  const QString tail = main.mid(at);
+  QVERIFY2(tail.contains(QStringLiteral("openSolutionFile(args.at(1))")),
+      "the handoff opens a solution with openAnsFile, the magnetics-only path. "
+      "A .anh handed over from the classic post-processor would be parsed as a "
+      ".ans");
+}
+
+void TestGuiSwitch::theMagneticsReaderCannotStandInForTheOthers()
+{
+  // Why the line above matters, stated as behaviour rather than as a
+  // claim about which function is called: the magnetics reader really
+  // cannot read the other three formats, so routing a .anh to it is a
+  // failure and not a slower path to the same answer.
+  const QString anh = repoRoot() + "/manual_qt/images/example.anh";
+  QVERIFY2(QFile::exists(anh), qPrintable(anh + " is missing"));
+
+  FemmProblem problem;
+  MeshSolution magnetics;
+  QString error;
+  QVERIFY2(!AnsFileIO::readAns(anh, problem, magnetics, error),
+      "the magnetics .ans reader accepted a heat-flow solution");
+  QVERIFY2(!error.isEmpty(), "it failed without saying why");
+
+  FemmProblem shared;
+  SolvedMesh mesh;
+  QString sharedError;
+  QVERIFY2(SolutionFileIO::read(anh, shared, mesh, sharedError),
+      qPrintable("the shared reader could not read it either: " + sharedError));
+  QVERIFY2(!mesh.elements.isEmpty(), "the shared reader returned an empty mesh");
 }
 
 // GUI-free: both units are plain file IO over QCoreApplication's own

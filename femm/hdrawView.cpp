@@ -2,6 +2,7 @@
 //
 
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include "femm.h"
 #include <afxtempl.h>
 #include <time.h>
@@ -47,6 +48,7 @@ IMPLEMENT_DYNCREATE(ChdrawView, CView)
 
 BEGIN_MESSAGE_MAP(ChdrawView, CView)
 //{{AFX_MSG_MAP(ChdrawView)
+ON_COMMAND(ID_VIEW_SWITCHTOQT, OnSwitchToQtGui) // #88
 ON_COMMAND(ID_NODE_OP, OnNodeOp)
 ON_COMMAND(ID_SEGMENT_OP, OnSegmentOp)
 ON_COMMAND(ID_BLOCK_OP, OnBlockOp)
@@ -3607,4 +3609,31 @@ void ChdrawView::OnMakeABC()
     LuaCmd.Format("hi_makeABC(%i,%g,%g,%g,%i)", dlg.abcn, dlg.abcr, dlg.abcx, dlg.abcy, dlg.n);
     lua_dostring(lua, LuaCmd);
   }
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #88). "Switch to Qt GUI..." existed only in the two magnetics
+// windows; the other six had no way across at all. The whole body is
+// HandOffToQtGui (femm/ScriptGui.cpp) precisely so that this is eight
+// short functions rather than eight copies of the same fifty lines.
+void ChdrawView::OnSwitchToQtGui()
+{
+  ChdrawDoc* TheDoc = GetDocument();
+  ASSERT_VALID(TheDoc);
+
+  CString pn = TheDoc->GetPathName();
+  if (pn.GetLength() == 0) {
+    MsgBox("A data file must be loaded,\nor the current data must saved.");
+    return;
+  }
+  if (TheDoc->OnSaveDocument(pn) == FALSE)
+    return;
+
+  CString err;
+  if (!HandOffToQtGui(BinDir, pn, &err)) {
+    MsgBox("%s", (const char*)err);
+    return;
+  }
+
+  AfxGetMainWnd()->PostMessage(WM_CLOSE);
 }

@@ -685,6 +685,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR
@@ -794,6 +796,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR
@@ -933,6 +937,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR
@@ -1042,6 +1048,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR
@@ -1133,6 +1141,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR
@@ -1242,6 +1252,8 @@ BEGIN
         MENUITEM "P&rint Setup...",             ID_FILE_PRINT_SETUP
         MENUITEM SEPARATOR
         MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Switch to Qt GUI...",          ID_VIEW_SWITCHTOQT
+        MENUITEM SEPARATOR
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
         MENUITEM SEPARATOR

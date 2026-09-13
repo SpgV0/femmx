@@ -2,6 +2,7 @@
 //
 
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include <afx.h>
 #include <afxtempl.h>
 #include <vector>
@@ -49,6 +50,7 @@ IMPLEMENT_DYNCREATE(CcviewView, CView)
 
 BEGIN_MESSAGE_MAP(CcviewView, CView)
 //{{AFX_MSG_MAP(CcviewView)
+ON_COMMAND(ID_VIEW_SWITCHTOQT, OnSwitchToQtGui) // #88
 ON_COMMAND(ID_SMOOTH, OnSmooth)
 ON_COMMAND(ID_ZOOM_IN, OnZoomIn)
 ON_COMMAND(ID_SNAP_GRID, OnSnapGrid)
@@ -4150,4 +4152,29 @@ void CcviewView::OnSize(UINT nType, int cx, int cy)
       MFrm->m_dlgBar.SetDlgItemText(IDC_OUTBOX, OutputWindowText);
     }
   }
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #88). "Switch to Qt GUI..." existed only in the two magnetics
+// windows; the other six had no way across at all. The whole body is
+// HandOffToQtGui (femm/ScriptGui.cpp) precisely so that this is eight
+// short functions rather than eight copies of the same fifty lines.
+void CcviewView::OnSwitchToQtGui()
+{
+  CcviewDoc* TheDoc = GetDocument();
+  ASSERT_VALID(TheDoc);
+
+  CString pn = TheDoc->GetPathName();
+  if (pn.GetLength() == 0) {
+    MsgBox("This view has no file on disk to hand off to the Qt GUI.");
+    return;
+  }
+
+  CString err;
+  if (!HandOffToQtGui(BinDir, pn, &err)) {
+    MsgBox("%s", (const char*)err);
+    return;
+  }
+
+  AfxGetMainWnd()->PostMessage(WM_CLOSE);
 }

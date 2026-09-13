@@ -1,6 +1,9 @@
 #define _USE_MATH_DEFINES
 
 #include "AnsFileIO.h"
+#include <QFileInfo>
+#include "ProblemKind.h"
+#include "SolutionFileIO.h"
 
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
@@ -100,6 +103,35 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   // about -- so this alone is enough to populate `problem` correctly.
   if (!FemmFileIO::readFem(path, problem, errorMessage))
     return false;
+
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #88). This reader accepted a .anh, a .res or a .anc and
+  // returned SUCCESS with wrong numbers.
+  //
+  // Nothing about the row shape gives it away. A DC magnetics node row
+  // is "x y A [trailing fields this reader intentionally ignores]" and
+  // a heat-flow row is "x y T conductor", so parsing the heat file as
+  // magnetics yields x, y and a temperature in kelvin stored as a
+  // vector potential in Wb/m -- structurally perfect, physically
+  // nonsense, and displayed on a legend that says "A".
+  //
+  // A column count cannot separate them, because ignoring trailing
+  // fields is deliberate here. The extension can: these are four
+  // distinct formats with four distinct names, and a caller that has
+  // one of the other three has taken a wrong turn. Only a format that
+  // is positively identified as somebody else's is refused -- an
+  // unrecognised name still falls through to the parser, so fixtures
+  // and renamed files behave exactly as before.
+  FemmProblemKind named = FemmProblemKind::Magnetics;
+  if (SolutionFileIO::kindForSolutionPath(path, named)
+      && named != FemmProblemKind::Magnetics) {
+    errorMessage = QStringLiteral(
+        "\"%1\" is a %2 solution, not a magnetics one. Reading it here would "
+        "produce a plausible-looking result from the wrong columns.")
+                       .arg(QFileInfo(path).fileName(),
+                           ProblemKind::displayName(named).toLower());
+    return false;
+  }
 
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {

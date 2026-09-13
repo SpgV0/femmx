@@ -123,6 +123,93 @@ const char* ScriptGuiName(ScriptGui g)
   return (g == ScriptGui::Qt) ? "qt" : "classic";
 }
 
+BOOL SetPreferredGuiInCfg(const char* binDir, ScriptGui gui)
+{
+  if (binDir == NULL)
+    return FALSE;
+
+  CString fname;
+  fname.Format("%sfemm.cfg", binDir);
+
+  CStringArray lines;
+  BOOL bReplaced = FALSE;
+  CString newLine;
+  newLine.Format("<PreferredGUI>    = %d", (gui == ScriptGui::Qt) ? 1 : 0);
+
+  FILE* fp = fopen(fname, "rt");
+  if (fp != NULL) {
+    char s[1024];
+    while (fgets(s, 1024, fp) != NULL) {
+      CString line(s);
+      line.TrimRight("\r\n");
+      CString trimmed = line;
+      trimmed.TrimLeft();
+      if (_strnicmp(trimmed, "<PreferredGUI>", 14) == 0) {
+        lines.Add(newLine);
+        bReplaced = TRUE;
+      } else {
+        lines.Add(line);
+      }
+    }
+    fclose(fp);
+  }
+  if (!bReplaced)
+    lines.Add(newLine);
+
+  fp = fopen(fname, "wt");
+  if (fp == NULL)
+    return FALSE;
+  for (int i = 0; i < lines.GetSize(); i++)
+    fprintf(fp, "%s\n", (const char*)lines[i]);
+  fclose(fp);
+  return TRUE;
+}
+
+BOOL HandOffToQtGui(const char* binDir, const char* docPath, CString* errOut)
+{
+  if (binDir == NULL || docPath == NULL || *docPath == '\0') {
+    if (errOut)
+      *errOut = "no file on disk to hand off to the Qt GUI";
+    return FALSE;
+  }
+
+  CString exe;
+  exe.Format("%sfemmqt.exe", binDir);
+  if (GetFileAttributes(exe) == INVALID_FILE_ATTRIBUTES) {
+    if (errOut)
+      errOut->Format("Couldn't find femmqt.exe next to femm.exe (looked for %s).",
+          (const char*)exe);
+    return FALSE;
+  }
+
+  // Written before the process starts, so that if starting it fails the
+  // preference is still what the user asked for -- and, more
+  // importantly, so femmqt is never racing a write to the file it may
+  // read on startup.
+  SetPreferredGuiInCfg(binDir, ScriptGui::Qt);
+
+  CString cmd;
+  cmd.Format("\"%s\" \"%s\"", (const char*)exe, docPath);
+
+  STARTUPINFO si = { 0 };
+  PROCESS_INFORMATION pi;
+  si.cb = sizeof(STARTUPINFO);
+  if (!CreateProcess(NULL, cmd.GetBuffer(0), NULL, NULL, FALSE, 0, NULL, NULL,
+          &si, &pi)) {
+    cmd.ReleaseBuffer();
+    if (errOut)
+      *errOut = "Couldn't start femmqt.exe.";
+    return FALSE;
+  }
+  cmd.ReleaseBuffer();
+
+  // Deliberately NOT waited for, unlike RenderPngViaQtGui: this is a
+  // handoff, and this process is about to close.
+  CloseHandle(pi.hProcess);
+  CloseHandle(pi.hThread);
+  return TRUE;
+}
+
 BOOL SaveHBitmapAsPng(HBITMAP hBmp, const char* pngPath)
 {
   if (hBmp == NULL || pngPath == NULL)

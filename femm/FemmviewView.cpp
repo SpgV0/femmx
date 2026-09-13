@@ -5,6 +5,7 @@
 // title bar switch, same as FemmeView.cpp.
 
 #include "stdafx.h"
+#include "ScriptGui.h"
 #include <afx.h>
 #include <afxtempl.h>
 #include <dwmapi.h>
@@ -4940,48 +4941,16 @@ void CFemmviewView::OnSwitchToQtGui()
     return;
   }
 
-  CString fname = BinDir + "femm.cfg";
-  CStringArray lines;
-  BOOL bReplaced = FALSE;
-  FILE* fp = fopen(fname, "rt");
-  if (fp != NULL) {
-    char s[1024];
-    while (fgets(s, 1024, fp) != NULL) {
-      CString line(s);
-      line.TrimRight("\r\n");
-      CString trimmed = line;
-      trimmed.TrimLeft();
-      if (_strnicmp(trimmed, "<PreferredGUI>", 14) == 0) {
-        lines.Add("<PreferredGUI>    = 1");
-        bReplaced = TRUE;
-      } else {
-        lines.Add(line);
-      }
-    }
-    fclose(fp);
-  }
-  if (!bReplaced)
-    lines.Add("<PreferredGUI>    = 1");
-
-  fp = fopen(fname, "wt");
-  if (fp != NULL) {
-    for (int i = 0; i < lines.GetSize(); i++)
-      fprintf(fp, "%s\n", (const char*)lines[i]);
-    fclose(fp);
-  }
-
-  char CommandLine[1024];
-  sprintf(CommandLine, "\"%sfemmqt.exe\" \"%s\"", (const char*)BinDir, (const char*)pn);
-  STARTUPINFO StartupInfo = { 0 };
-  PROCESS_INFORMATION ProcessInfo;
-  StartupInfo.cb = sizeof(STARTUPINFO);
-  if (!CreateProcess(NULL, CommandLine, NULL, NULL, FALSE,
-          0, NULL, NULL, &StartupInfo, &ProcessInfo)) {
-    MsgBox("Couldn't find or start femmqt.exe next to femm.exe.");
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #88): the femm.cfg read-modify-write and the CreateProcess
+  // used to live here, and identically in the other magnetics window.
+  // Six more windows needed the same thing, and eight copies of fifty
+  // lines is how a fix reaches one of them.
+  CString err;
+  if (!HandOffToQtGui(BinDir, pn, &err)) {
+    MsgBox("%s", (const char*)err);
     return;
   }
-  CloseHandle(ProcessInfo.hProcess);
-  CloseHandle(ProcessInfo.hThread);
 
   AfxGetMainWnd()->PostMessage(WM_CLOSE);
 }

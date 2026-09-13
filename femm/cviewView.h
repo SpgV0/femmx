@@ -224,6 +224,7 @@ class CcviewView : public CView {
   afx_msg void OnViewDarkTheme();
   afx_msg void OnUpdateViewDarkTheme(CCmdUI* pCmdUI);
   //}}AFX_MSG
+  afx_msg void OnSwitchToQtGui(); // #88
   DECLARE_MESSAGE_MAP()
   public:
   afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);

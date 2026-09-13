@@ -39,6 +39,32 @@ void SetScriptGui(ScriptGui g);
 BOOL ParseScriptGui(const char* name, ScriptGui* out);
 const char* ScriptGuiName(ScriptGui g);
 
+// Hands a saved document to femmqt.exe and records the preference, for
+// the "Switch to Qt GUI..." menu item.
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #88). The menu item existed in the magnetics editor and the
+// magnetics post-processor only, as two copies of the same fifty lines
+// of femm.cfg read-modify-write plus CreateProcess. Adding it to the
+// other six windows meant either eight copies or one function; the
+// repo has been bitten enough times by the first answer.
+//
+// `binDir` ends in a separator (the CFemmeView/CFemmviewView BinDir
+// convention). The document must already be saved -- there is no
+// in-memory handoff between two processes -- and the caller is the one
+// that knows how to save it, so that stays outside.
+//
+// Does NOT close the window. The caller does that, because only it
+// knows whether closing is safe, and because a helper that closed the
+// app would be untestable.
+BOOL HandOffToQtGui(const char* binDir, const char* docPath, CString* errOut);
+
+// The femm.cfg half on its own: sets <PreferredGUI>, PRESERVING every
+// other key. Read-modify-write rather than truncate-and-rewrite -- the
+// file also holds the user's editor preferences, and losing them to a
+// GUI switch would be a poor trade.
+BOOL SetPreferredGuiInCfg(const char* binDir, ScriptGui gui);
+
 // Encodes an HBITMAP to PNG through GDI+, which the app already links
 // for the load monitor (see LoadMonitorDlg.cpp's own GetEncoderClsid).
 // Starts and shuts down GDI+ around the call rather than assuming a
