@@ -1,146 +1,168 @@
 #include "MaterialLibraryIO.h"
 
+#include "FemmTextFormat.h"
+#include "ProblemKind.h"
+#include "PropertyCodec.h"
+
 #include <QFile>
-#include <QRegularExpression>
+#include <QFileInfo>
+#include <QSet>
 #include <QTextStream>
+
+using FemmTextFormat::splitTagValue;
+using FemmTextFormat::unquote;
 
 namespace {
 
-QString unquote(const QString& s)
+// Pulls the one material PropertyCodec just parsed out of a scratch
+// problem and onto the node.
+void takeMaterial(const FemmProblem& scratch, MaterialLibraryNode& node)
 {
-  QString t = s.trimmed();
-  if (t.length() >= 2 && t.startsWith('"') && t.endsWith('"'))
-    return t.mid(1, t.length() - 2);
-  return t;
-}
-
-bool splitTagValue(const QString& line, QString& tag, QString& value)
-{
-  int eq = line.indexOf('=');
-  if (eq < 0)
-    return false;
-  tag = line.left(eq).trimmed();
-  if (tag.length() >= 2 && ((tag.front() == '[' && tag.back() == ']') || (tag.front() == '<' && tag.back() == '>')))
-    tag = tag.mid(1, tag.length() - 2);
-  value = line.mid(eq + 1).trimmed();
-  return true;
-}
-
-QVector<QString> splitFields(const QString& line)
-{
-  static const QRegularExpression ws("\\s+");
-  QVector<QString> out;
-  for (const QString& tok : line.trimmed().split(ws, Qt::SkipEmptyParts))
-    out.push_back(tok);
-  return out;
-}
-
-// Parses one <BeginBlock>...<EndBlock> material -- tags match
-// FemmFileIO.cpp's BlockProps case exactly (both ultimately mirror
-// femm/FemmeDoc.cpp's .fem writer for a CMaterialProp).
-bool readBlock(QTextStream& in, FemmMaterialProp& m)
-{
-  QString line;
-  while (!in.atEnd()) {
-    line = in.readLine();
-    if (line.trimmed() == "<EndBlock>")
-      return true;
-    QString t, v;
-    if (!splitTagValue(line, t, v))
-      continue;
-    if (t == "BlockName")
-      m.name = unquote(v);
-    else if (t == "Mu_x")
-      m.muX = v.toDouble();
-    else if (t == "Mu_y")
-      m.muY = v.toDouble();
-    else if (t == "H_c")
-      m.Hc = v.toDouble();
-    else if (t == "H_cAngle")
-      m.HcAngle = v.toDouble();
-    else if (t == "J_re")
-      m.JsrcRe = v.toDouble();
-    else if (t == "J_im")
-      m.JsrcIm = v.toDouble();
-    else if (t == "Sigma")
-      m.sigma = v.toDouble();
-    else if (t == "d_lam")
-      m.dLam = v.toDouble();
-    else if (t == "Phi_h")
-      m.phiH = v.toDouble();
-    else if (t == "Phi_hx")
-      m.phiHx = v.toDouble();
-    else if (t == "Phi_hy")
-      m.phiHy = v.toDouble();
-    else if (t == "LamType")
-      m.lamType = v.toInt();
-    else if (t == "LamFill")
-      m.lamFill = v.toDouble();
-    else if (t == "NStrands")
-      m.nStrands = v.toInt();
-    else if (t == "WireD")
-      m.wireD = v.toDouble();
-    else if (t == "BHPoints") {
-      int bhPoints = v.toInt();
-      for (int k = 0; k < bhPoints && !in.atEnd(); k++) {
-        QVector<QString> f = splitFields(in.readLine());
-        if (f.size() >= 2)
-          m.bhData.push_back({ f[0].toDouble(), f[1].toDouble() });
-      }
-    }
+  switch (scratch.kind) {
+  case FemmProblemKind::Magnetics:
+    if (!scratch.materialProps.isEmpty())
+      node.material = scratch.materialProps.last();
+    return;
+  case FemmProblemKind::Electrostatics:
+    if (!scratch.esMaterialProps.isEmpty())
+      node.esMaterial = scratch.esMaterialProps.last();
+    return;
+  case FemmProblemKind::HeatFlow:
+    if (!scratch.htMaterialProps.isEmpty())
+      node.htMaterial = scratch.htMaterialProps.last();
+    return;
+  case FemmProblemKind::CurrentFlow:
+    if (!scratch.cfMaterialProps.isEmpty())
+      node.cfMaterial = scratch.cfMaterialProps.last();
+    return;
   }
-  return false; // ran off the end of the file without <EndBlock>
 }
 
-// Parses the children of a matlib.dat folder (or the implicit top-level
-// "folder") until a matching <EndFolder> (or end of file, for the top
-// level).
-void readChildren(QTextStream& in, MaterialLibraryNode& node)
+QString nameOf(const MaterialLibraryNode& node, FemmProblemKind kind)
 {
-  while (!in.atEnd()) {
-    QString line = in.readLine().trimmed();
-    if (line == "<EndFolder>")
+  switch (kind) {
+  case FemmProblemKind::Magnetics: return node.material.name;
+  case FemmProblemKind::Electrostatics: return node.esMaterial.name;
+  case FemmProblemKind::HeatFlow: return node.htMaterial.name;
+  case FemmProblemKind::CurrentFlow: return node.cfMaterial.name;
+  }
+  return QString();
+}
+
+// Reads the children of the folder that is currently open, stopping at
+// its <EndFolder> or at end of input.
+//
+// Recursion mirrors the file's own nesting; heatlib.dat is two deep
+// ("Metallic Solids" -> "Aluminum" -> the alloys).
+void readFolderBody(QTextStream& in, FemmProblemKind kind, MaterialLibraryNode& parent)
+{
+  const PropertyCodec::LineReader next = [&in](QString& out) -> bool {
+    if (in.atEnd())
+      return false;
+    out = in.readLine();
+    return true;
+  };
+
+  QString line;
+  while (next(line)) {
+    const QString trimmed = line.trimmed();
+    if (trimmed == "<EndFolder>")
       return;
-    if (line == "<BeginFolder>") {
-      MaterialLibraryNode child;
-      child.isFolder = true;
-      // <FolderName> is always the line right after <BeginFolder> in
-      // matlib.dat -- read it directly rather than looping, matching
-      // femm/fe_libdlg.cpp's own writer, which always emits them adjacent.
-      QString nameLine = in.readLine();
-      QString t, v;
-      if (splitTagValue(nameLine, t, v) && t == "FolderName")
-        child.name = unquote(v);
-      readChildren(in, child);
-      node.children.push_back(child);
-    } else if (line == "<BeginBlock>") {
-      MaterialLibraryNode child;
-      child.isFolder = false;
-      if (readBlock(in, child.material)) {
-        // MaterialLibraryNode::name is what populateTree() displays --
-        // for a folder it comes from <FolderName>, but a block's own name
-        // only ever lands in child.material.name (set by readBlock() from
-        // <BlockName>).
-        child.name = child.material.name;
-        node.children.push_back(child);
-      }
+
+    if (trimmed == "<BeginFolder>") {
+      MaterialLibraryNode folder;
+      folder.isFolder = true;
+      readFolderBody(in, kind, folder);
+      parent.children.push_back(folder);
+      continue;
     }
+
+    if (trimmed == "<BeginBlock>") {
+      // A library leaf IS a [BlockProps] record, so the same codec that
+      // reads a model's materials reads this one. readSection consumes
+      // up to and including <EndBlock>.
+      FemmProblem scratch;
+      scratch.kind = kind;
+      PropertyCodec::readSection(scratch, QStringLiteral("BlockProps"), 1, next);
+
+      MaterialLibraryNode leaf;
+      leaf.isFolder = false;
+      takeMaterial(scratch, leaf);
+      leaf.name = nameOf(leaf, kind);
+      parent.children.push_back(leaf);
+      continue;
+    }
+
+    // A folder's name arrives as a tag AFTER its <BeginFolder>, so it
+    // lands here, inside the folder it names.
+    QString tag, value;
+    if (splitTagValue(line, tag, value) && tag == "FolderName")
+      parent.name = unquote(value);
   }
 }
 
 } // namespace
 
-bool MaterialLibraryIO::load(const QString& matlibPath, MaterialLibraryNode& root, QString& errorMessage)
+QString MaterialLibraryIO::defaultFileName(FemmProblemKind kind)
+{
+  switch (kind) {
+  case FemmProblemKind::Magnetics: return QStringLiteral("matlib.dat");
+  case FemmProblemKind::Electrostatics: return QStringLiteral("statlib.dat");
+  case FemmProblemKind::HeatFlow: return QStringLiteral("heatlib.dat");
+  case FemmProblemKind::CurrentFlow: return QStringLiteral("condlib.dat");
+  }
+  return QStringLiteral("matlib.dat");
+}
+
+bool MaterialLibraryIO::load(const QString& path, FemmProblemKind kind,
+    MaterialLibraryNode& root, QString& errorMessage)
 {
   root = MaterialLibraryNode();
   root.isFolder = true;
+  root.name = ProblemKind::displayName(kind);
 
-  QFile matFile(matlibPath);
-  if (!matFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    errorMessage = QStringLiteral("Could not open \"%1\" for reading.").arg(matlibPath);
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    errorMessage = QStringLiteral("Could not open the %1 material library \"%2\".")
+                       .arg(ProblemKind::displayName(kind), QFileInfo(path).fileName());
     return false;
   }
-  QTextStream in(&matFile);
-  readChildren(in, root);
+
+  QTextStream in(&file);
+  // The top level has no <BeginFolder> of its own, so it is read as the
+  // body of a folder that never ends.
+  readFolderBody(in, kind, root);
+  root.name = ProblemKind::displayName(kind);
   return true;
+}
+
+int MaterialLibraryIO::appendTo(FemmProblem& p, const MaterialLibraryNode& node)
+{
+  if (node.isFolder)
+    return -1;
+
+  // Disambiguate against what is already in the problem. Two materials
+  // sharing a name is not cosmetic -- the writer identifies a material
+  // BY NAME, so the second becomes unreachable (the defect #34 fixed in
+  // these very libraries).
+  QSet<QString> taken;
+  const int existing = ProblemKind::count(p, ProblemKind::Category::Material);
+  for (int i = 0; i < existing; i++)
+    taken.insert(ProblemKind::name(p, ProblemKind::Category::Material, i));
+
+  const QString base = nameOf(node, p.kind);
+  QString name = base;
+  for (int n = 2; taken.contains(name); n++)
+    name = QStringLiteral("%1 (%2)").arg(base).arg(n);
+
+  switch (p.kind) {
+  case FemmProblemKind::Magnetics: p.materialProps.push_back(node.material); break;
+  case FemmProblemKind::Electrostatics: p.esMaterialProps.push_back(node.esMaterial); break;
+  case FemmProblemKind::HeatFlow: p.htMaterialProps.push_back(node.htMaterial); break;
+  case FemmProblemKind::CurrentFlow: p.cfMaterialProps.push_back(node.cfMaterial); break;
+  }
+
+  const int index = ProblemKind::count(p, ProblemKind::Category::Material) - 1;
+  ProblemKind::setName(p, ProblemKind::Category::Material, index, name);
+  return index;
 }

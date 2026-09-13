@@ -28,8 +28,11 @@
 #include "FemmProblemEdit.h"
 #include "ProblemFileIO.h"
 #include "ProblemKind.h"
+#include "MaterialLibraryIO.h"
 #include "PropertyFields.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 namespace {
@@ -126,6 +129,11 @@ class TestProblemKinds : public QObject
   void heatFlowBoundaryTypesEnableExactlyWhatTheClassicDialogDoes();
   void electrostaticsAndCurrentFlowBoundaryTypesMatchTheirClassicDialogs();
   void magneticsKeepsItsOwnDialogs();
+
+  void everyShippedMaterialLibraryLoads();
+  void everyShippedMaterialLibraryLoads_data();
+  void heatLibraryKeepsItsFoldersAndItsConductivityCurve();
+  void importingFromALibraryDisambiguatesTheName();
 };
 
 // ---------------------------------------------------------------------------
@@ -1031,6 +1039,169 @@ void TestProblemKinds::magneticsKeepsItsOwnDialogs()
         "magnetics reported a field spec, which would route it away from its "
         "own dialogs and lose the BH curve editor");
   }
+}
+
+// ---------------------------------------------------------------------------
+// The shipped material libraries (issue #81)
+// ---------------------------------------------------------------------------
+//
+// These read the REAL files this repo ships -- matlib.dat, statlib.dat,
+// heatlib.dat, condlib.dat -- rather than a fixture. They are the actual
+// input, they are large, and a loader that silently produces an empty
+// tree looks exactly like a library with nothing in it.
+
+namespace {
+
+// The libraries live beside the built executable at run time and in
+// bin/ in the source tree; tests run from the build directory, so the
+// source copy is the reliable one.
+QString libraryPath(FemmProblemKind kind)
+{
+  const QString repo = QFileInfo(QStringLiteral(FEMMQT_SOURCE_DIR)).absolutePath();
+  return repo + "/bin/" + MaterialLibraryIO::defaultFileName(kind);
+}
+
+int countLeaves(const MaterialLibraryNode& node)
+{
+  if (!node.isFolder)
+    return 1;
+  int n = 0;
+  for (const MaterialLibraryNode& c : node.children)
+    n += countLeaves(c);
+  return n;
+}
+
+bool findLeaf(const MaterialLibraryNode& node, const QString& name, MaterialLibraryNode& out)
+{
+  if (!node.isFolder) {
+    if (node.name == name) {
+      out = node;
+      return true;
+    }
+    return false;
+  }
+  for (const MaterialLibraryNode& c : node.children) {
+    if (findLeaf(c, name, out))
+      return true;
+  }
+  return false;
+}
+
+} // namespace
+
+void TestProblemKinds::everyShippedMaterialLibraryLoads_data()
+{
+  QTest::addColumn<int>("kindValue");
+  QTest::addColumn<QString>("knownMaterial");
+  QTest::addColumn<int>("expectedMaterials");
+
+  // The exact count of <BeginBlock> records in each shipped file, not a
+  // lower bound. A bound of "more than a few" passed while condlib.dat
+  // -- which really does contain just two materials -- looked suspicious
+  // and every other library could have been quietly losing entries.
+  // Pinning the real number catches a loader that drops a folder's
+  // contents, which is the failure that matters for the two nested ones.
+  QTest::newRow("matlib.dat") << (int)FemmProblemKind::Magnetics << "Air" << 246;
+  QTest::newRow("statlib.dat") << (int)FemmProblemKind::Electrostatics << "Air" << 26;
+  QTest::newRow("heatlib.dat") << (int)FemmProblemKind::HeatFlow << "Aluminum, Pure" << 136;
+  QTest::newRow("condlib.dat") << (int)FemmProblemKind::CurrentFlow << "Copper" << 2;
+}
+
+void TestProblemKinds::everyShippedMaterialLibraryLoads()
+{
+  QFETCH(int, kindValue);
+  QFETCH(QString, knownMaterial);
+  QFETCH(int, expectedMaterials);
+  const FemmProblemKind kind = (FemmProblemKind)kindValue;
+
+  const QString path = libraryPath(kind);
+  QVERIFY2(QFile::exists(path),
+      qPrintable(QStringLiteral("the shipped library %1 is missing").arg(path)));
+
+  MaterialLibraryNode root;
+  QString error;
+  QVERIFY2(MaterialLibraryIO::load(path, kind, root, error), qPrintable(error));
+
+  const int leaves = countLeaves(root);
+  QVERIFY2(leaves == expectedMaterials,
+      qPrintable(QStringLiteral("%1 holds %2 materials but the loader produced %3 -- "
+                                "a tree that is short by a folder looks exactly like "
+                                "a smaller library")
+                     .arg(MaterialLibraryIO::defaultFileName(kind))
+                     .arg(expectedMaterials)
+                     .arg(leaves)));
+
+  MaterialLibraryNode found;
+  QVERIFY2(findLeaf(root, knownMaterial, found),
+      qPrintable(QStringLiteral("%1 does not contain \"%2\"")
+                     .arg(MaterialLibraryIO::defaultFileName(kind), knownMaterial)));
+  QVERIFY(!found.isFolder);
+}
+
+void TestProblemKinds::heatLibraryKeepsItsFoldersAndItsConductivityCurve()
+{
+  // heatlib.dat is the one with real structure: two levels of folders,
+  // and materials carrying a temperature/conductivity curve. Flattening
+  // the folders or dropping the curve would still "load".
+  MaterialLibraryNode root;
+  QString error;
+  QVERIFY2(MaterialLibraryIO::load(libraryPath(FemmProblemKind::HeatFlow),
+               FemmProblemKind::HeatFlow, root, error),
+      qPrintable(error));
+
+  bool sawNestedFolder = false;
+  for (const MaterialLibraryNode& top : root.children) {
+    if (!top.isFolder)
+      continue;
+    for (const MaterialLibraryNode& mid : top.children) {
+      if (mid.isFolder)
+        sawNestedFolder = true;
+    }
+  }
+  QVERIFY2(sawNestedFolder, "the folder nesting was flattened");
+
+  MaterialLibraryNode alu;
+  QVERIFY(findLeaf(root, QStringLiteral("Aluminum, Pure"), alu));
+  QCOMPARE(alu.htMaterial.Kx, 236.0);
+  QCOMPARE(alu.htMaterial.Ky, 236.0);
+  QVERIFY2(alu.htMaterial.tkData.size() == 4,
+      qPrintable(QStringLiteral("expected a 4-point conductivity curve, got %1")
+                     .arg(alu.htMaterial.tkData.size())));
+  QCOMPARE(alu.htMaterial.tkData[0].first, 273.0);
+  QCOMPARE(alu.htMaterial.tkData[0].second, 236.0);
+  QCOMPARE(alu.htMaterial.tkData[3].first, 873.0);
+  QCOMPARE(alu.htMaterial.tkData[3].second, 215.0);
+}
+
+void TestProblemKinds::importingFromALibraryDisambiguatesTheName()
+{
+  // Importing the same material twice must not produce two entries with
+  // one name: the writer identifies a material BY NAME, so the second
+  // would be unreachable -- the defect #34 fixed in these very files.
+  MaterialLibraryNode root;
+  QString error;
+  QVERIFY(MaterialLibraryIO::load(libraryPath(FemmProblemKind::CurrentFlow),
+      FemmProblemKind::CurrentFlow, root, error));
+
+  MaterialLibraryNode copper;
+  QVERIFY(findLeaf(root, QStringLiteral("Copper"), copper));
+
+  FemmProblem p;
+  p.kind = FemmProblemKind::CurrentFlow;
+  const int first = MaterialLibraryIO::appendTo(p, copper);
+  const int second = MaterialLibraryIO::appendTo(p, copper);
+  QVERIFY(first >= 0 && second >= 0);
+  QCOMPARE(ProblemKind::count(p, ProblemKind::Category::Material), 2);
+
+  const QString n1 = ProblemKind::name(p, ProblemKind::Category::Material, first);
+  const QString n2 = ProblemKind::name(p, ProblemKind::Category::Material, second);
+  QCOMPARE(n1, QStringLiteral("Copper"));
+  QVERIFY2(n1 != n2, "importing the same material twice produced two entries "
+                     "sharing one name");
+
+  // And the values actually came across, into the right list.
+  QVERIFY(p.cfMaterialProps[first].ox > 0);
+  QCOMPARE(p.cfMaterialProps[first].ox, p.cfMaterialProps[second].ox);
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)

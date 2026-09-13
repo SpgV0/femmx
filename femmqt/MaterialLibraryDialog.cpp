@@ -1,6 +1,7 @@
 #include "MaterialLibraryDialog.h"
 
 #include "FemmProblem.h"
+#include "ProblemKind.h"
 
 #include <QAbstractButton>
 #include <QCoreApplication>
@@ -11,35 +12,28 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-namespace {
-// Same disambiguation convention as MainWindow.cpp's own uniqueName() --
-// duplicated locally rather than shared since it's a 10-line template and
-// this dialog otherwise has no dependency on MainWindow.
-QString uniqueMaterialName(const QVector<FemmMaterialProp>& list, const QString& base)
-{
-  QSet<QString> existing;
-  for (const FemmMaterialProp& m : list)
-    existing.insert(m.name);
-  if (!existing.contains(base))
-    return base;
-  for (int n = 2;; n++) {
-    QString candidate = QString("%1 (%2)").arg(base).arg(n);
-    if (!existing.contains(candidate))
-      return candidate;
-  }
-}
-} // namespace
 
 MaterialLibraryDialog::MaterialLibraryDialog(FemmProblem& problem, QWidget* parent)
     : QDialog(parent)
     , m_problem(problem)
 {
-  setWindowTitle("Materials Library");
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #81): the library that belongs to this document's physics.
+  // Importing an electrostatics permittivity into a heat-flow model has
+  // no meaning, so there is one library per kind and the document picks
+  // which.
+  setWindowTitle(QStringLiteral("%1 Materials Library")
+                     .arg(ProblemKind::displayName(problem.kind)));
   resize(420, 520);
 
   QString error;
-  QString matPath = QCoreApplication::applicationDirPath() + "/matlib.dat";
-  MaterialLibraryIO::load(matPath, m_root, error);
+  const QString matPath = QCoreApplication::applicationDirPath() + "/"
+      + MaterialLibraryIO::defaultFileName(problem.kind);
+  if (!MaterialLibraryIO::load(matPath, problem.kind, m_root, error)) {
+    // A missing library file and an empty one look identical in the
+    // tree, so the difference is said out loud.
+    QMessageBox::information(this, windowTitle(), error);
+  }
 
   auto* layout = new QVBoxLayout(this);
 
@@ -85,8 +79,14 @@ void MaterialLibraryDialog::onAddToProblem()
   if (!node || node->isFolder)
     return;
 
-  FemmMaterialProp m = node->material;
-  m.name = uniqueMaterialName(m_problem.materialProps, m.name);
-  m_problem.materialProps.push_back(m);
-  QMessageBox::information(this, "Materials Library", QString("Added \"%1\" to the problem.").arg(m.name));
+  // #81: appendTo puts it in whichever of the four material lists this
+  // document uses, and disambiguates the name against what is already
+  // there -- two materials sharing a name makes the second unreachable,
+  // since the writer identifies a material by name.
+  const int index = MaterialLibraryIO::appendTo(m_problem, *node);
+  if (index < 0)
+    return;
+  QMessageBox::information(this, windowTitle(),
+      QStringLiteral("Added \"%1\" to the problem.")
+          .arg(ProblemKind::name(m_problem, ProblemKind::Category::Material, index)));
 }
