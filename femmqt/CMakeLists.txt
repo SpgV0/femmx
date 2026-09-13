@@ -368,6 +368,13 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_solution_integral_tests
     tests/tst_solution_integrals.cpp
   )
+
+  # The guard #84 is really about: the CAD layer must stay type-blind.
+  # A static scan plus a behavioural comparison across all four types --
+  # either alone can be slipped past.
+  qt_add_executable(femmqt_type_independence_tests
+    tests/tst_type_independence.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -402,6 +409,7 @@ if(TARGET Qt6::Test)
     femmqt_solution_format_tests
     femmqt_solution_field_tests
     femmqt_solution_integral_tests
+    femmqt_type_independence_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -442,6 +450,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_solution_formats COMMAND femmqt_solution_format_tests)
   add_test(NAME femmqt_solution_field COMMAND femmqt_solution_field_tests)
   add_test(NAME femmqt_solution_integrals COMMAND femmqt_solution_integral_tests)
+  add_test(NAME femmqt_type_independence COMMAND femmqt_type_independence_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
