@@ -186,6 +186,59 @@ CString QtDensityQuantityName(int densityPlot, double frequency)
   return CString("");
 }
 
+BOOL QtDensityPlotIsRenderable(QtRenderPhysics physics, int densityPlot,
+    CString* wanted, CString* renderable)
+{
+  // The names are the ones each post-processor prints on its own
+  // legend (belaviewView.cpp, hviewView.cpp, cviewView.cpp), so a
+  // refusal names the quantity using the same words the window does.
+  static const char* const kEs[] = { "V, Volts", "|D|, C/m^2", "|E|, V/m" };
+  static const char* const kHt[] = { "Temperature, K", "|F|, W/m^2", "|G|, K/m" };
+  static const char* const kCf[] = { "|V|, Volts", "|Re(V)|, Volts",
+    "|Im(V)|, Volts", "|J|, A/m^2", "|Re(J)|, A/m^2", "|Im(J)|, A/m^2",
+    "|E|, V/m", "|Re(E)|, V/m", "|Im(E)|, V/m" };
+
+  const char* const* names = kEs;
+  int count = 3;
+  int renderableIndex = 2; // 1-based, matching DensityPlot
+
+  switch (physics) {
+  case QtRenderPhysics::Electrostatics:
+    names = kEs;
+    count = 3;
+    renderableIndex = 2; // |D|
+    break;
+  case QtRenderPhysics::HeatFlow:
+    names = kHt;
+    count = 3;
+    renderableIndex = 2; // |F|
+    break;
+  case QtRenderPhysics::CurrentFlow:
+    names = kCf;
+    count = 9;
+    renderableIndex = 4; // |J|
+    break;
+  }
+
+  if (renderable)
+    *renderable = CString(names[renderableIndex - 1]);
+
+  // 0 means the density plot is off -- a contour plot, which the Qt
+  // viewer draws for every physics.
+  if (densityPlot <= 0)
+    return TRUE;
+  if (densityPlot == renderableIndex)
+    return TRUE;
+
+  if (wanted) {
+    if (densityPlot <= count)
+      *wanted = CString(names[densityPlot - 1]);
+    else
+      wanted->Format("density plot %d", densityPlot);
+  }
+  return FALSE;
+}
+
 BOOL RenderPngViaQtGui(const char* binDir, const char* docPath,
     const char* pngPath, int width, int height, const QtPlotState* plot,
     CString* errOut)

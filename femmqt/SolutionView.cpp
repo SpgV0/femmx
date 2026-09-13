@@ -2234,9 +2234,17 @@ bool SolutionWindow::openSolutionFile(const QString& path)
   rebuildSceneForSolution();
 
   // Set AFTER the scene rebuild, because that is what creates m_item.
-  const QVector<SolutionField::Quantity> qs2 = SolutionField::quantities(kind);
-  if (m_item && !qs2.isEmpty()) {
-    const SolutionField::Quantity& primary = qs2.size() > 1 ? qs2[1] : qs2[0];
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #87): was quantities(kind)[1], an index into a list ordered
+  // for a menu. That index is the field for heat flow and current flow
+  // and is NOT for electrostatics -- whose list reads V, |E|, |D| --
+  // so an electrostatic density plot was labelled "Field intensity |E|,
+  // V/m" while showing |D| in C/m^2, wrong by eps0*er with numbers that
+  // look plausible either way. fieldQuantity() names what elementField
+  // actually returns.
+  const SolutionField::Quantity primary = SolutionField::fieldQuantity(kind);
+  if (m_item && !primary.name.isEmpty()) {
     m_item->setFieldLabelOverride(
         QStringLiteral("%1, %2").arg(primary.name, primary.unit));
   }
@@ -3491,10 +3499,31 @@ void SolutionWindow::selectDensityPlot()
 }
 
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#86).
-bool SolutionWindow::applyPlotState(const PlotState& state)
+bool SolutionWindow::applyPlotState(const PlotState& state, QString* error)
 {
-  if (!m_item)
+  if (!m_item) {
+    if (error)
+      *error = QStringLiteral("no solution is loaded");
     return false;
+  }
+
+  // Issue #87: the ten density quantities are magnetics'. The other
+  // three physics carry one field each through SolutionAdapter -- |D|,
+  // |F|, |J| -- and the H/J/log options are derived from magnetics'
+  // permeability and conductivity, which mean different things or
+  // nothing at all in those formats. Drawing the field and calling it
+  // whatever was asked for is the failure mode this whole area keeps
+  // producing, so say no instead.
+  if (m_kind != FemmProblemKind::Magnetics && state.quantity > 0) {
+    if (error) {
+      const SolutionField::Quantity f = SolutionField::fieldQuantity(m_kind);
+      *error = QStringLiteral("%1 solutions plot one density quantity, %2 -- "
+                              "not \"%3\"")
+                   .arg(ProblemKind::displayName(m_kind), f.name,
+                       PlotStateArgs::nameForQuantity(state.quantity));
+    }
+    return false;
+  }
 
   if (state.mode == PlotState::Mode::Density)
     m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);

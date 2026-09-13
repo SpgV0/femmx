@@ -88,6 +88,7 @@ class TestSolutionField : public QObject
   void anisotropicMaterialsScaleTheAxesIndependently();
 
   void everyKindListsItsOwnPlotQuantities();
+  void theFieldLabelNamesTheFieldThatIsActuallyComputed();
   void aHoleBehavesAsFreeSpaceRatherThanAsZero();
 };
 
@@ -273,6 +274,83 @@ void TestSolutionField::everyKindListsItsOwnPlotQuantities()
       QStringLiteral("T"));
   QCOMPARE(SolutionField::potentialQuantity(FemmProblemKind::HeatFlow).unit,
       QStringLiteral("K"));
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#87).
+void TestSolutionField::theFieldLabelNamesTheFieldThatIsActuallyComputed()
+{
+  // The legend over a density plot has to name the quantity the plot is
+  // showing, and this is not a cosmetic requirement: the numbers on it
+  // look plausible either way.
+  //
+  // It was wrong for electrostatics. The label was taken as
+  // quantities(kind)[1] -- an index into a list ordered for a menu (V,
+  // |E|, |D|) -- while SolutionAdapter carries elementField()'s result
+  // onto the renderer, and elementField returns D. So the legend read
+  // "Field intensity |E|, V/m" over a plot of |D| in C/m^2: wrong
+  // quantity, wrong units, off by a factor of eps0*er.
+  //
+  // Both halves are pinned here, because either alone can drift: the
+  // NAME the label uses, and the VALUE elementField returns. A unit
+  // string cannot be derived from arithmetic, so the agreement between
+  // them is asserted as a pair.
+
+  // What each kind's field is called.
+  QCOMPARE(SolutionField::fieldQuantity(FemmProblemKind::Magnetics).unit,
+      QStringLiteral("T"));
+  QCOMPARE(SolutionField::fieldQuantity(FemmProblemKind::Electrostatics).unit,
+      QStringLiteral("C/m^2"));
+  QCOMPARE(SolutionField::fieldQuantity(FemmProblemKind::HeatFlow).unit,
+      QStringLiteral("W/m^2"));
+  QCOMPARE(SolutionField::fieldQuantity(FemmProblemKind::CurrentFlow).unit,
+      QStringLiteral("A/m^2"));
+
+  QVERIFY2(SolutionField::fieldQuantity(FemmProblemKind::Electrostatics)
+               .name.contains(QStringLiteral("|D|")),
+      "the electrostatic field label does not name |D|, which is what "
+      "elementField returns -- this is the exact defect #87 found");
+
+  // And what the maths actually returns, for a unit potential gradient.
+  // A linear potential V = 2x over the unit triangle gives grad V =
+  // (2, 0), so with er = 1 the field is D = -eps0 * 2 -- a number in
+  // C/m^2, not the -2 V/m that an |E| label would imply.
+  {
+    const SolvedMesh m = linearPotential(2.0, 0.0);
+    FemmProblem p = problemWith(FemmProblemKind::Electrostatics, FemmLengthUnits::Meters);
+    FemmEsMaterialProp mat;
+    mat.ex = 1.0;
+    mat.ey = 1.0;
+    p.esMaterialProps << mat;
+    // problemWith already points the label at this one -- blockTypeIndex
+    // is 1-BASED, and setting it to 0 would make the label a hole, which
+    // behaves as free space and would let this pass without ever reading
+    // the material.
+
+    SolutionField::Vector2 f;
+    QVERIFY(SolutionField::elementField(m, p, 0, f));
+    QVERIFY2(close(f.xRe, -2.0 * kEps0),
+        qPrintable(QStringLiteral("expected D = %1 C/m^2, got %2. If this is -2, "
+                                  "the field is E and the label has to say so.")
+                       .arg(-2.0 * kEps0, 0, 'g', 6).arg(f.xRe, 0, 'g', 6)));
+  }
+
+  // Heat flow: F = -k grad T, so with k = 5 and grad T = (2, 0) the
+  // flux is -10 W/m^2 -- the label's W/m^2, not the K/m of |G|.
+  {
+    const SolvedMesh m = linearPotential(2.0, 0.0);
+    FemmProblem p = problemWith(FemmProblemKind::HeatFlow, FemmLengthUnits::Meters);
+    FemmHtMaterialProp mat;
+    mat.Kx = 5.0;
+    mat.Ky = 5.0;
+    p.htMaterialProps << mat;
+
+    SolutionField::Vector2 f;
+    QVERIFY(SolutionField::elementField(m, p, 0, f));
+    QVERIFY2(close(f.xRe, -10.0),
+        qPrintable(QStringLiteral("expected F = -10 W/m^2, got %1. If this is -2, "
+                                  "the field is the gradient |G| in K/m.")
+                       .arg(f.xRe, 0, 'g', 6)));
+  }
 }
 
 void TestSolutionField::aHoleBehavesAsFreeSpaceRatherThanAsZero()

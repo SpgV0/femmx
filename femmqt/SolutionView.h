@@ -612,7 +612,12 @@ class SolutionWindow : public QMainWindow {
   // loaded, which is the caller's signal that the state was dropped
   // rather than applied -- silently rendering defaults is the defect
   // this exists to fix.
-  bool applyPlotState(const struct PlotState& state);
+  // `error`, if given, receives why the state could not be applied --
+  // which is not always "nothing is loaded". The other three physics
+  // render exactly ONE density quantity (their field: |D|, |F|, |J|),
+  // so a request for a different one has to be refused rather than
+  // drawn as the one they do have (issue #87).
+  bool applyPlotState(const struct PlotState& state, QString* error = nullptr);
 
 
   private slots:

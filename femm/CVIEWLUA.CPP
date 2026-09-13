@@ -1111,17 +1111,68 @@ int CcviewDoc::lua_savepng(lua_State* L)
   int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)cap.cy;
 
   if (GetScriptGui() == ScriptGui::Qt) {
-    // femmqt is magnetics-only (see issue #35 and its children), so
-    // there is no Qt renderer for this physics to hand the file to.
-    // Refusing beats quietly rendering with the classic GUI instead:
-    // the caller asked for a specific renderer, and silently
-    // substituting the other one produces an image that differs from
-    // the one requested with nothing to say so.
-    CString msg;
-    msg.Format("co_savepng: setgui(\"qt\") selected the Qt GUI, which "
-        "supports magnetics only. Use setgui(\"classic\") to render this "
-        "solution.");
-    lua_error(L, msg.GetBuffer(1));
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+    // (issue #87). This used to refuse outright, on the true premise
+    // that femmqt drew magnetics only. #83 gave it a Solution Viewer
+    // for all four physics and #85 stopped an unreadable file hanging
+    // the render, so the premise is gone and the refusal with it.
+    //
+    // What survives is the PRINCIPLE behind it: never quietly render
+    // something other than what was asked for. femmqt draws one
+    // density quantity for this physics -- its field -- so a view
+    // showing a different one is still refused, now by name.
+    CString pn = thisDoc->GetPathName();
+    if (pn.GetLength() == 0) {
+      CString msg = "co_savepng: with setgui(\"qt\"), the solution must "
+                    "already be saved to disk for femmqt.exe to open.";
+      lua_error(L, msg.GetBuffer(1));
+      return 0;
+    }
+
+    CString wanted, renderable;
+    if (!QtDensityPlotIsRenderable(QtRenderPhysics::CurrentFlow,
+            theView->DensityPlot, &wanted, &renderable)) {
+      CString msg;
+      msg.Format("co_savepng: the Qt renderer draws one density quantity for this "
+                 "physics, %s, and the view is showing %s. Use "
+                 "setgui(\"classic\") to render that, or switch the density "
+                 "plot.",
+          (const char*)renderable, (const char*)wanted);
+      lua_error(L, msg.GetBuffer(1));
+      return 0;
+    }
+
+    QtPlotState plot;
+    plot.haveState = TRUE;
+    plot.density = (theView->DensityPlot > 0);
+    // No quantity name: this physics has exactly one, and femmqt
+    // refuses --quantity on a non-magnetics solution for that reason.
+    plot.greyscale = theView->GreyContours;
+    plot.legend = theView->LegendFlag;
+    plot.numContours = theView->NumContours;
+    if (theView->DensityPlot > 0) {
+      plot.haveBounds = TRUE;
+      plot.lower = thisDoc->PlotBounds[theView->DensityPlot - 1][0];
+      plot.upper = thisDoc->PlotBounds[theView->DensityPlot - 1][1];
+    }
+    // The visible region: the density plot's banding is scaled to what
+    // is VISIBLE, so a full-model render cannot reproduce a zoomed-in
+    // view's colours.
+    if (theView->mag > 0) {
+      plot.haveCrop = TRUE;
+      plot.x0 = theView->ox;
+      plot.y0 = theView->oy;
+      plot.x1 = theView->ox + (double)cap.cx / theView->mag;
+      plot.y1 = theView->oy + (double)cap.cy / theView->mag;
+    }
+
+    CString err;
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &plot,
+            &err)) {
+      CString msg;
+      msg.Format("co_savepng: %s", (const char*)err);
+      lua_error(L, msg.GetBuffer(1));
+    }
     return 0;
   }
 

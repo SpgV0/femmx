@@ -27,6 +27,8 @@
 #include <QtTest>
 
 #include "PlotStateArgs.h"
+#include "FemmProblem.h"
+#include "SolutionField.h"
 
 #include <QColor>
 #include <QFile>
@@ -174,6 +176,14 @@ class TestPlotState : public QObject
   void theLegendReachesTheRenderedImage();
   void customBoundsChangeTheBanding();
   void aPlotOptionOnAModelIsRefused();
+
+  // Issue #87.
+  void everyPhysicsRendersTheModeItWasAskedFor();
+  void everyPhysicsRendersTheModeItWasAskedFor_data();
+  void aQuantityTheOtherPhysicsCannotDrawIsRefusedByName();
+  void aQuantityTheOtherPhysicsCannotDrawIsRefusedByName_data();
+  void noMagneticsOnlyRefusalIsLeftStanding();
+  void theClassicSideAndTheRendererAgreeOnWhichQuantityIsDrawn();
 
   private:
   QString m_ans;
@@ -526,6 +536,221 @@ void TestPlotState::aPlotOptionOnAModelIsRefused()
       &err);
   QVERIFY2(!ok, "plot options on a model were accepted and silently dropped");
   QVERIFY2(err.contains("model"), qPrintable("unhelpful message: " + err));
+}
+
+// ---------------------------------------------------------------------------
+// All four physics (issue #87)
+// ---------------------------------------------------------------------------
+//
+// eo_/ho_/co_savepng used to refuse the Qt renderer outright, on the
+// true premise that femmqt drew magnetics only. #83 gave it a Solution
+// Viewer for all four and #85 stopped an unreadable file hanging the
+// render, so the premise is gone. What has to survive the lifting is
+// the PRINCIPLE the refusals were protecting: never quietly render
+// something other than what was asked for.
+
+void TestPlotState::everyPhysicsRendersTheModeItWasAskedFor_data()
+{
+  QTest::addColumn<QString>("solution");
+
+  QTest::newRow("magnetics") << "manual_qt/images/example.ans";
+  QTest::newRow("electrostatics") << "test/results/analytic_fields/coax.res";
+  QTest::newRow("heat flow") << "manual_qt/images/example.anh";
+  QTest::newRow("current flow") << "test/results/analytic_fields/bar.anc";
+}
+
+void TestPlotState::everyPhysicsRendersTheModeItWasAskedFor()
+{
+  QFETCH(QString, solution);
+  const QString path = repoRoot() + "/" + solution;
+  QVERIFY2(QFile::exists(path), qPrintable(path + " is missing"));
+
+  const QString base = QFileInfo(path).completeBaseName() + QFileInfo(path).suffix();
+  const QString density = m_tmp.filePath("d_" + base + ".png");
+  const QString contour = m_tmp.filePath("c_" + base + ".png");
+
+  QString err;
+  QVERIFY2(runRender({ "--render-png", path, density, QString::number(kW),
+                         QString::number(kH), "--density", "--legend", "0" },
+               &err),
+      qPrintable("density render failed: " + err));
+  QVERIFY2(runRender({ "--render-png", path, contour, QString::number(kW),
+                         QString::number(kH), "--contour", "--legend", "0" },
+               &err),
+      qPrintable("contour render failed: " + err));
+
+  const ImageStats d = measure(density);
+  const ImageStats c = measure(contour);
+  QVERIFY(d.ok && c.ok);
+
+  // Identity, not difference -- "it produced a file" would pass even if
+  // every physics came back with femmqt's default plot, which is
+  // precisely what this used to do for magnetics.
+  //
+  // The property used is COLOUR, not area: a density plot paints filled
+  // bands from the colour map, a contour plot draws thin near-neutral
+  // lines. Measured across the four solutions the density renders are
+  // 45-100% coloured and the contour renders 0.6-0.7% -- two orders of
+  // magnitude apart. Area alone is not usable: bar.anc is a thin bar
+  // that occupies little of a 4:3 canvas, so its density plot is 55%
+  // background and a threshold tuned to the others would fail it for a
+  // reason that has nothing to do with the mode.
+  QVERIFY2(d.colouredFraction > 0.25,
+      qPrintable(QStringLiteral("%1: the --density render is only %2 coloured -- "
+                                "that is contour lines, not filled bands")
+                     .arg(solution).arg(d.colouredFraction, 0, 'f', 4)));
+  QVERIFY2(c.colouredFraction < 0.05,
+      qPrintable(QStringLiteral("%1: the --contour render is %2 coloured -- that "
+                                "is a filled plot, not contour lines")
+                     .arg(solution).arg(c.colouredFraction, 0, 'f', 4)));
+  QVERIFY2(c.backgroundFraction > d.backgroundFraction,
+      qPrintable(QStringLiteral("%1: the contour render covers as much of the "
+                                "canvas as the density one")
+                     .arg(solution)));
+}
+
+void TestPlotState::aQuantityTheOtherPhysicsCannotDrawIsRefusedByName_data()
+{
+  QTest::addColumn<QString>("solution");
+  QTest::addColumn<QString>("expectField");
+
+  QTest::newRow("electrostatics") << "test/results/analytic_fields/coax.res" << "|D|";
+  QTest::newRow("heat flow") << "manual_qt/images/example.anh" << "|F|";
+  QTest::newRow("current flow") << "test/results/analytic_fields/bar.anc" << "|J|";
+}
+
+void TestPlotState::aQuantityTheOtherPhysicsCannotDrawIsRefusedByName()
+{
+  QFETCH(QString, solution);
+  QFETCH(QString, expectField);
+
+  const QString path = repoRoot() + "/" + solution;
+  QVERIFY2(QFile::exists(path), qPrintable(path + " is missing"));
+
+  // The ten density quantities are magnetics'. |H| and |J| come from
+  // permeability and conductivity, which mean something else or nothing
+  // at all in these formats -- so drawing the field and labelling it
+  // "|H|" would be the defect, not the fix.
+  QString err;
+  const bool ok = runRender({ "--render-png", path, m_tmp.filePath("q.png"),
+                                "300", "220", "--density", "--quantity", "hmag" },
+      &err);
+  QVERIFY2(!ok,
+      qPrintable(QStringLiteral("%1 accepted --quantity hmag").arg(solution)));
+  QVERIFY2(err.contains(expectField),
+      qPrintable(QStringLiteral("the refusal does not name the one quantity this "
+                                "physics does plot (%1): %2")
+                     .arg(expectField, err)));
+
+  // And the quantity this physics DOES draw needs no naming at all --
+  // the plain density render must still work.
+  QVERIFY2(runRender({ "--render-png", path, m_tmp.filePath("q_ok.png"), "300",
+                         "220", "--density" },
+               &err),
+      qPrintable("a plain density render was refused too: " + err));
+}
+
+void TestPlotState::noMagneticsOnlyRefusalIsLeftStanding()
+{
+  // Six copies of the same hardcoded sentence existed -- three
+  // post-processors and three editors. A stale one is a script getting
+  // told the Qt GUI cannot do something it now does.
+  const QStringList files = { "belaviewLua.cpp", "hviewLua.cpp", "CVIEWLUA.CPP",
+    "beladrawLua.cpp", "HDRAWLUA.CPP", "CDRAWLUA.CPP" };
+
+  QStringList offenders;
+  for (const QString& name : files) {
+    const QString path = repoRoot() + "/femm/" + name;
+    QVERIFY2(QFile::exists(path), qPrintable(name + " is gone -- update this list"));
+    const QString code = readAll(path);
+    QVERIFY2(!code.isEmpty(), qPrintable(name + " read as empty"));
+    if (code.contains(QStringLiteral("supports magnetics only")))
+      offenders << name;
+  }
+  QVERIFY2(offenders.isEmpty(),
+      qPrintable(QStringLiteral("%1 still tells scripts the Qt GUI supports "
+                                "magnetics only, which stopped being true when "
+                                "#83 landed").arg(offenders.join(", "))));
+}
+
+void TestPlotState::theClassicSideAndTheRendererAgreeOnWhichQuantityIsDrawn()
+{
+  // The risk this closes: the classic side decides, from its own table,
+  // which DensityPlot index femmqt is able to render -- and then does
+  // NOT pass a quantity, because these physics have only one. So if
+  // that table named the wrong index, a script showing |E| would be
+  // rendered as |D| with nothing to say so. femmqt cannot catch it,
+  // having been told nothing.
+  //
+  // The table is MFC code and not linked here, so it is read as text --
+  // properly, out of the switch, not out of a comment. If the shape
+  // changes enough that this cannot find it, that is a failure worth
+  // having: an unreadable rule is an unchecked one.
+  const QString code = readAll(repoRoot() + "/femm/ScriptGui.cpp");
+  QVERIFY2(!code.isEmpty(), "femm/ScriptGui.cpp did not read");
+
+  struct Case {
+    const char* physics;
+    FemmProblemKind kind;
+  };
+  const QVector<Case> cases = {
+    { "Electrostatics", FemmProblemKind::Electrostatics },
+    { "HeatFlow", FemmProblemKind::HeatFlow },
+    { "CurrentFlow", FemmProblemKind::CurrentFlow },
+  };
+
+  for (const Case& c : cases) {
+    // case QtRenderPhysics::X: ... names = kY; ... renderableIndex = N;
+    const QRegularExpression armRe(
+        QStringLiteral("case QtRenderPhysics::%1:(.*?)break;").arg(c.physics),
+        QRegularExpression::DotMatchesEverythingOption);
+    const QRegularExpressionMatch arm = armRe.match(code);
+    QVERIFY2(arm.hasMatch(),
+        qPrintable(QStringLiteral("no QtRenderPhysics::%1 arm in ScriptGui.cpp")
+                       .arg(c.physics)));
+
+    const QRegularExpressionMatch nameVar =
+        QRegularExpression(QStringLiteral("names\\s*=\\s*(k\\w+)\\s*;"))
+            .match(arm.captured(1));
+    const QRegularExpressionMatch indexM =
+        QRegularExpression(QStringLiteral("renderableIndex\\s*=\\s*(\\d+)\\s*;"))
+            .match(arm.captured(1));
+    QVERIFY2(nameVar.hasMatch() && indexM.hasMatch(),
+        qPrintable(QStringLiteral("could not read the table for %1").arg(c.physics)));
+
+    // The array it points at.
+    const QRegularExpression arrayRe(
+        QStringLiteral("%1\\[\\]\\s*=\\s*\\{(.*?)\\};").arg(nameVar.captured(1)),
+        QRegularExpression::DotMatchesEverythingOption);
+    const QRegularExpressionMatch array = arrayRe.match(code);
+    QVERIFY2(array.hasMatch(),
+        qPrintable(QStringLiteral("no %1[] in ScriptGui.cpp").arg(nameVar.captured(1))));
+
+    QStringList entries;
+    QRegularExpressionMatchIterator it =
+        QRegularExpression(QStringLiteral("\"([^\"]*)\"")).globalMatch(array.captured(1));
+    while (it.hasNext())
+      entries << it.next().captured(1);
+
+    const int index = indexM.captured(1).toInt(); // 1-based
+    QVERIFY2(index >= 1 && index <= entries.size(),
+        qPrintable(QStringLiteral("%1's renderable index %2 is outside its own "
+                                  "table of %3")
+                       .arg(c.physics).arg(index).arg(entries.size())));
+
+    const QString classicName = entries.at(index - 1);
+    const SolutionField::Quantity ours = SolutionField::fieldQuantity(c.kind);
+
+    // The classic legend strings read "|D|, C/m^2"; the unit is the
+    // half that cannot be got right by accident.
+    QVERIFY2(classicName.contains(ours.unit),
+        qPrintable(QStringLiteral("for %1 the classic side treats \"%2\" as the "
+                                  "quantity femmqt renders, but femmqt renders "
+                                  "%3 in %4. A script showing a different "
+                                  "quantity would be rendered as this one with "
+                                  "nothing to say so.")
+                       .arg(c.physics, classicName, ours.name, ours.unit)));
+  }
 }
 
 QTEST_GUILESS_MAIN(TestPlotState)

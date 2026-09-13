@@ -375,9 +375,9 @@ int main(int argc, char* argv[])
       // value is checked, because a state that silently failed to
       // apply produces exactly the defect this fixes: a valid PNG of
       // the wrong plot.
-      if (!plot.isEmpty() && !window.applyPlotState(plot)) {
-        fprintf(stderr, "--render-png: plot options were given but no solution "
-                        "loaded to apply them to\n");
+      QString plotApplyError;
+      if (!plot.isEmpty() && !window.applyPlotState(plot, &plotApplyError)) {
+        fprintf(stderr, "--render-png: %s\n", qPrintable(plotApplyError));
         return 1;
       }
       // Modified by Claude (Anthropic), noreply@anthropic.com: found while

@@ -59,6 +59,20 @@ struct Quantity {
 // order the classic post-processor's own plot menu uses.
 QVector<Quantity> quantities(FemmProblemKind kind);
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #87). The one quantity elementField() actually returns for a
+// kind -- B, D, heat flux, J -- which is what SolutionAdapter stores in
+// the renderer's B1/B2 and therefore what a density plot is showing.
+//
+// This exists because the label was being taken as quantities(kind)[1],
+// an index that happened to be right for heat flow and current flow and
+// WRONG for electrostatics: that list reads V, |E|, |D|, so the legend
+// said "Field intensity |E|, V/m" over a plot of |D| in C/m^2 -- off by
+// a factor of eps0*er, on a legend whose numbers look plausible either
+// way. An index into a list ordered for a menu is not the same thing as
+// the field the maths returns, so the two are no longer conflated.
+Quantity fieldQuantity(FemmProblemKind kind);
+
 // What the file stores per node, named and united for this physics:
 // magnetics "A" in Wb/m, electrostatics and current flow "V" in volts,
 // heat flow "T" in kelvin.

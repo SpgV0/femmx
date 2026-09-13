@@ -2004,17 +2004,25 @@ int CcdrawDoc::lua_savepng(lua_State* L)
   int height = (lua_gettop(L) >= 3) ? (int)lua_todouble(L, 3) : (int)cap.cy;
 
   if (GetScriptGui() == ScriptGui::Qt) {
-    // femmqt is magnetics-only (see issue #35 and its children), so
-    // there is no Qt renderer for this physics to hand the file to.
-    // Refusing beats quietly rendering with the classic GUI instead:
-    // the caller asked for a specific renderer, and silently
-    // substituting the other one produces an image that differs from
-    // the one requested with nothing to say so.
-    CString msg;
-    msg.Format("ci_savepng: setgui(\"qt\") selected the Qt GUI, which "
-        "supports magnetics only. Use setgui(\"classic\") to render this "
-        "document.");
-    lua_error(L, msg.GetBuffer(1));
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+    // (issue #87). Refused outright until #80 gave femmqt a reader for
+    // this document type and #85 stopped an unrecognised file hanging
+    // the render. A pre-processor view is geometry, so there is no
+    // plot state to carry -- same as mi_savepng.
+    CString pn = thisDoc->GetPathName();
+    if (pn.GetLength() == 0) {
+      CString msg = "ci_savepng: with setgui(\"qt\"), the document must "
+                    "already be saved to disk for femmqt.exe to open.";
+      lua_error(L, msg.GetBuffer(1));
+      return 0;
+    }
+    CString err;
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, NULL,
+            &err)) {
+      CString msg;
+      msg.Format("ci_savepng: %s", (const char*)err);
+      lua_error(L, msg.GetBuffer(1));
+    }
     return 0;
   }
 

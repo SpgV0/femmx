@@ -108,6 +108,33 @@ struct QtPlotState {
 // string for 0 (density plot off) or an index out of range.
 CString QtDensityQuantityName(int densityPlot, double frequency);
 
+// Which post-processor is asking. Magnetics is absent on purpose: it
+// has its own, richer mapping above (QtDensityQuantityName), and the
+// question below does not arise for it.
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #87).
+enum class QtRenderPhysics {
+  Electrostatics,
+  HeatFlow,
+  CurrentFlow,
+};
+
+// The Qt viewer draws exactly ONE density quantity for each of these
+// three physics -- the field its solver actually stores, which is what
+// SolutionAdapter carries onto the renderer: |D| for electrostatics,
+// |F| for heat flow, |J| for current flow. The potential and the other
+// gradient are not separate density plots there.
+//
+// So a script that has selected one of the others cannot be served, and
+// drawing the field while the caller asked for something else is the
+// failure this repo keeps producing. Returns TRUE when the current
+// DensityPlot index is the renderable one (0 -- density plot off, i.e.
+// a contour plot -- always is). On FALSE, `wanted` and `renderable`
+// receive display names for the message.
+BOOL QtDensityPlotIsRenderable(QtRenderPhysics physics, int densityPlot,
+    CString* wanted, CString* renderable);
+
 // Renders an already-saved document to PNG by shelling out to
 // femmqt.exe --render-png, and WAITS for it. binDir must end in a
 // separator (the CFemmeView/CFemmviewView BinDir convention). plot may

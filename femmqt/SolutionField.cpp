@@ -36,6 +36,24 @@ double SolutionField::Vector2::magnitude() const
   return std::hypot(std::hypot(xRe, xIm), std::hypot(yRe, yIm));
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#87).
+// Must agree with elementField() above, kind for kind.
+SolutionField::Quantity SolutionField::fieldQuantity(FemmProblemKind kind)
+{
+  switch (kind) {
+  case FemmProblemKind::Magnetics:
+    return { QStringLiteral("Flux density |B|"), QStringLiteral("T") };
+  case FemmProblemKind::Electrostatics:
+    // D, not E -- elementField multiplies through by eps0*er.
+    return { QStringLiteral("Flux density |D|"), QStringLiteral("C/m^2") };
+  case FemmProblemKind::HeatFlow:
+    return { QStringLiteral("Heat flux |F|"), QStringLiteral("W/m^2") };
+  case FemmProblemKind::CurrentFlow:
+    return { QStringLiteral("Current density |J|"), QStringLiteral("A/m^2") };
+  }
+  return {};
+}
+
 QVector<SolutionField::Quantity> SolutionField::quantities(FemmProblemKind kind)
 {
   switch (kind) {
