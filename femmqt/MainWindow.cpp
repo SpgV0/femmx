@@ -28,6 +28,8 @@
 #include "NodePropDialog.h"
 #include "ConstructionGeometry.h"
 #include "OffsetChamfer.h"
+#include "ProblemFileIO.h"
+#include "ProblemKind.h"
 #include "OpenBoundaryDialog.h"
 #include "PointPropDialog.h"
 #include "PreferencesDialog.h"
@@ -834,20 +836,57 @@ void MainWindow::onNewTriggered()
 {
   if (!confirmDiscardUnsavedChanges())
     return;
+
+  // Issue #80: a document is one problem kind, chosen here, exactly as
+  // the classic GUI's NewDocDlg asks. The kind cannot be changed
+  // afterwards because the properties attached to the geometry mean
+  // different things in each physics -- a permeability is not a thermal
+  // conductivity -- so there is nothing sensible to convert them into.
+  QDialog dlg(this);
+  dlg.setWindowTitle("New Problem");
+  auto* form = new QFormLayout;
+  auto* kindCombo = new QComboBox(&dlg);
+  const FemmProblemKind kinds[] = {
+    FemmProblemKind::Magnetics,
+    FemmProblemKind::Electrostatics,
+    FemmProblemKind::HeatFlow,
+    FemmProblemKind::CurrentFlow,
+  };
+  for (FemmProblemKind k : kinds) {
+    kindCombo->addItem(QStringLiteral("%1  (*.%2)")
+                           .arg(ProblemKind::displayName(k), ProblemKind::extension(k)));
+  }
+  form->addRow("Problem type:", kindCombo);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  auto* layout = new QVBoxLayout(&dlg);
+  layout->addLayout(form);
+  layout->addWidget(buttons);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+
   m_problem = FemmProblem();
+  m_problem.kind = kinds[qBound(0, kindCombo->currentIndex(), 3)];
   m_currentPath.clear();
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
   m_view->resetZoomTransform();
   updateTitle();
-  statusBar()->showMessage("New problem");
+  statusBar()->showMessage(
+      QStringLiteral("New %1 problem").arg(ProblemKind::displayName(m_problem.kind)));
 }
 
 void MainWindow::onOpenTriggered()
 {
   if (!confirmDiscardUnsavedChanges())
     return;
-  QString path = QFileDialog::getOpenFileName(this, "Open Magnetics Problem", QString(), "FEMM Magnetics Files (*.fem *.femx)");
+  const QString path = QFileDialog::getOpenFileName(this, "Open Problem", QString(),
+      "FEMM Problems (*.fem *.fee *.feh *.fec *.femx);;"
+      "Magnetics (*.fem *.femx);;"
+      "Electrostatics (*.fee);;"
+      "Heat Flow (*.feh);;"
+      "Current Flow (*.fec)");
   if (path.isEmpty())
     return;
   openFile(path);
@@ -863,11 +902,42 @@ void MainWindow::openFile(const QString& path)
     femxPath = path;
   }
 
+  // Issue #80: which physics this file is, from its extension.
+  FemmProblemKind kind = FemmProblemKind::Magnetics;
+  if (!ProblemKind::kindForPath(femPath, kind)) {
+    QMessageBox::warning(this, "Open Failed",
+        QStringLiteral("\"%1\" is not a FEMM model file. Expected .fem "
+                       "(magnetics), .fee (electrostatics), .feh (heat flow) "
+                       "or .fec (current flow).")
+            .arg(pathInfo.fileName()));
+    return;
+  }
+
+  // THE .femx CACHE IS MAGNETICS-ONLY, deliberately, which #80 asked to
+  // have decided explicitly rather than left to happen.
+  //
+  // It is a binary mirror of the .fem's record layout, and it exists
+  // twice -- once in femmqt/ and once in femm/ -- which is a duplication
+  // this repo has already been bitten by. Extending it to three more
+  // formats means three more record layouts kept byte-identical across
+  // both copies, in exchange for load time on models that do not exist:
+  // the 88k-node magnetics models that motivated the cache have no
+  // electrostatics or heat-flow counterpart here. The format also has no
+  // field saying which physics it holds, so a .femx cannot describe a
+  // .fee without a version bump that would invalidate every existing
+  // cache.
+  //
+  // The correctness point matters more than the reasoning: a .femx
+  // sitting beside a .fee is a cache of some OTHER model that shared the
+  // base name, and loading it would silently hand back the wrong
+  // geometry. Hence the kind check here, not just a preference.
+  const bool cacheApplies = (kind == FemmProblemKind::Magnetics);
+
   QString error;
   FemmProblem problem;
   bool loadedFromFemx = false;
 
-  if (FemxFileIO::isUpToDate(femxPath, femPath)) {
+  if (cacheApplies && FemxFileIO::isUpToDate(femxPath, femPath)) {
     if (FemxFileIO::readFemx(femxPath, problem, error))
       loadedFromFemx = true;
     // falls through to the .fem path below if the cache turned out corrupt
@@ -879,13 +949,16 @@ void MainWindow::openFile(const QString& path)
           QStringLiteral("\"%1\" doesn't exist and no matching .femx cache was found.").arg(femPath));
       return;
     }
-    if (!FemmFileIO::readFem(femPath, problem, error)) {
+    if (!ProblemFileIO::readAs(femPath, kind, problem, error)) {
       QMessageBox::warning(this, "Open Failed", error);
       return;
     }
-    // Cache for next time -- best-effort, same as the .ansx side.
-    QString writeError;
-    FemxFileIO::writeFemx(femxPath, femPath, problem, writeError);
+    // Cache for next time -- best-effort, same as the .ansx side, and
+    // only for the format the cache describes.
+    if (cacheApplies) {
+      QString writeError;
+      FemxFileIO::writeFemx(femxPath, femPath, problem, writeError);
+    }
   }
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
@@ -950,7 +1023,15 @@ void MainWindow::onSaveTriggered()
 
 void MainWindow::onSaveAsTriggered()
 {
-  QString path = QFileDialog::getSaveFileName(this, "Save Magnetics Problem", m_currentPath, "FEMM Magnetics Files (*.fem)");
+  // Only this kind's extension is offered: the writer refuses a
+  // mismatched one anyway (a heat-flow model saved as .fem would reopen
+  // as magnetics with no properties), so offering the others would only
+  // produce a refusal the user could have been spared.
+  const QString ext = ProblemKind::extension(m_problem.kind);
+  const QString path = QFileDialog::getSaveFileName(this,
+      QStringLiteral("Save %1 Problem").arg(ProblemKind::displayName(m_problem.kind)),
+      m_currentPath,
+      QStringLiteral("%1 (*.%2)").arg(ProblemKind::displayName(m_problem.kind), ext));
   if (path.isEmpty())
     return;
   saveAs(path);
@@ -959,7 +1040,7 @@ void MainWindow::onSaveAsTriggered()
 bool MainWindow::saveAs(const QString& path)
 {
   QString error;
-  if (!FemmFileIO::writeFem(path, m_problem, error)) {
+  if (!ProblemFileIO::write(path, m_problem, error)) {
     QMessageBox::warning(this, "Save Failed", error);
     return false;
   }
@@ -969,8 +1050,10 @@ bool MainWindow::saveAs(const QString& path)
   // behind for this session's own next open.
   QFileInfo pathInfo(path);
   QString femxPath = pathInfo.absolutePath() + "/" + pathInfo.completeBaseName() + ".femx";
-  QString femxError;
-  FemxFileIO::writeFemx(femxPath, path, m_problem, femxError);
+  if (m_problem.kind == FemmProblemKind::Magnetics) {
+    QString femxError;
+    FemxFileIO::writeFemx(femxPath, path, m_problem, femxError);
+  }
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-12:
   // the sketch layer goes to its own sidecar (issue #27). Best-effort in

@@ -341,6 +341,70 @@ records.
   (despite its own comment claiming MA/m²) — the writer divides by 1e6
   to match every other current-density field's actual MA/m² units.
 
+## The four model formats, and what differs between them
+
+`.fem` (magnetics), `.fee` (electrostatics), `.feh` (heat flow) and
+`.fec` (current flow) are the same file with different property
+payloads. femmqt reads and writes all four through one driver
+(`femmqt/ProblemFileIO.cpp`) with the differing parts in
+`femmqt/PropertyCodec.cpp`; the classic GUI has four separate document
+classes instead.
+
+**Identical in all four:** the `[Format]`, `[Precision]`, `[MinAngle]`,
+`[DoSmartMesh]`, `[Depth]`, `[LengthUnits]`, `[ProblemType]`,
+`[Coordinates]`, `[extZo]`/`[extRo]`/`[extRi]`, `[GPUAccel]` and
+`[Comment]` header scalars; the `[NumPoints]`, `[NumSegments]`,
+`[NumArcSegments]` and `[NumHoles]` sections; and the
+`<BeginX>`/`<EndX>` record framing of the property sections.
+
+**Per-format header scalars:** `[Frequency]`, `[ACSolver]`, `[PrevType]`
+and `[PrevSoln]` for magnetics; `[Frequency]` for current flow; `[dT]`
+and `[PrevSoln]` for heat flow. Electrostatics has none of its own.
+
+**Property payloads:**
+
+| section | `.fem` | `.fee` | `.feh` | `.fec` |
+|---|---|---|---|---|
+| `[PointProps]` | `I_re` `I_im` `A_re` `A_im` | `Vp` `qp` | `Tp` `qp` | `vpr` `vpi` `qpr` `qpi` |
+| `[BdryProps]` | `A_0`…`A_2` `Phi` `c0`/`c0i` `c1`/`c1i` `Mu_ssd` `Sigma_ssd` `innerangle` `outerangle` | `Vs` `qs` `c0` `c1` | `Tset` `qs` `beta` `h` `Tinf` `TinfRad` | `vsr` `vsi` `qsr` `qsi` `c0r`…`c1i` |
+| `[BlockProps]` | `Mu_x` `Mu_y` `H_c` `J_re` `Sigma` `Phi_h` … `BHPoints` | `ex` `ey` `qv` | `Kx` `Ky` `Kt` `qv` `TKPoints` | `ox` `oy` `ex` `ey` `ltx` `lty` |
+| sources | `[CircuitProps]` | `[ConductorProps]` | `[ConductorProps]` | `[ConductorProps]` |
+
+**The geometry is *not* quite identical**, which is easy to miss and
+expensive to get wrong:
+
+- `.fee`, `.feh` and `.fec` carry a **conductor index** as an extra
+  trailing column on every node and segment row, and on the arc row it
+  sits **between `inGroup` and `mySideLength`** — so reading an arc with
+  the magnetics column layout does not drop a field, it reads
+  `mySideLength` out of the conductor column.
+- `.fem` block-label rows are `x y blockType maxsidelen circuit MagDir
+  group turns flags ["MagDirFctn"]`; the other three are
+  `x y blockType maxsidelen group flags`. No circuit, no MagDir, no
+  turns — those are magnetics ideas.
+
+Magnetics attaches its source to a **block label** (a circuit carries
+current through a region); the other three attach theirs to **nodes,
+segments and arcs** (a conductor is an equipotential surface).
+
+### `.femx` is magnetics-only, deliberately
+
+The binary cache exists for `.fem` and is not extended to the other
+three. It is a mirror of the `.fem` record layout and it exists **twice**
+— `femmqt/FemxFileIO.cpp` and `femm/FemxFileIO.cpp`, which must stay
+byte-identical — so each new format would mean another record layout kept
+in lockstep across both copies. The payoff would be load time on models
+that do not exist: the very large models that motivated the cache are
+magnetics.
+
+The format also has no field saying which physics it holds, so a `.femx`
+cannot describe a `.fee` without a version bump invalidating every
+existing cache.
+
+The correctness consequence matters more than the reasoning: a `.femx`
+sitting next to a `.fee` is a cache of some *other* model that shared the
+base name, so femmqt consults the cache only when opening a `.fem`.
+
 ## `.fes` — the sketch sidecar (femmqt only)
 
 `foo.fes` holds the constraints and dimensions femmqt's CAD sketch layer

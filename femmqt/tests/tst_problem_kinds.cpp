@@ -109,6 +109,9 @@ class TestProblemKinds : public QObject
 
   void openRefusesAnExtensionItDoesNotKnow();
   void saveRefusesAnExtensionBelongingToAnotherKind();
+
+  void everyKindMapsToItsOwnExtensionSolverAndSolutionFile();
+  void anExtensionNeverResolvesToTheWrongKind();
 };
 
 // ---------------------------------------------------------------------------
@@ -631,6 +634,78 @@ void TestProblemKinds::saveRefusesAnExtensionBelongingToAnotherKind()
   // The right extension still works.
   const QString right = dir.path() + "/model.feh";
   QVERIFY2(ProblemFileIO::write(right, p, error), qPrintable(error));
+}
+
+// ---------------------------------------------------------------------------
+// The mapping everything else routes on
+// ---------------------------------------------------------------------------
+
+void TestProblemKinds::everyKindMapsToItsOwnExtensionSolverAndSolutionFile()
+{
+  // Exhaustive over the four rather than a sample. This table is what
+  // Open routes on, what Save names a file with, and what the solve step
+  // will launch (#82) -- one wrong row sends a heat-flow model to the
+  // magnetics solver, which reads it, finds none of its own tags, and
+  // solves an empty problem rather than failing.
+  const struct {
+    FemmProblemKind kind;
+    const char* display;
+    const char* ext;
+    const char* solver;
+    const char* solution;
+  } expected[] = {
+    { FemmProblemKind::Magnetics, "Magnetics", "fem", "fkn.exe", "ans" },
+    { FemmProblemKind::Electrostatics, "Electrostatics", "fee", "belasolv.exe", "res" },
+    { FemmProblemKind::HeatFlow, "Heat Flow", "feh", "hsolv.exe", "anh" },
+    { FemmProblemKind::CurrentFlow, "Current Flow", "fec", "csolv.exe", "anc" },
+  };
+
+  for (const auto& e : expected) {
+    QCOMPARE(ProblemKind::displayName(e.kind), QString::fromLatin1(e.display));
+    QCOMPARE(ProblemKind::extension(e.kind), QString::fromLatin1(e.ext));
+    QCOMPARE(ProblemKind::solverExecutable(e.kind), QString::fromLatin1(e.solver));
+    QCOMPARE(ProblemKind::solutionExtension(e.kind), QString::fromLatin1(e.solution));
+  }
+
+  // The one label that differs between the physics: magnetics drives a
+  // region with a circuit, the other three hold a surface at a potential
+  // with a conductor.
+  QCOMPARE(ProblemKind::categoryLabel(FemmProblemKind::Magnetics, ProblemKind::Category::Source),
+      QStringLiteral("Circuits"));
+  QCOMPARE(ProblemKind::categoryLabel(FemmProblemKind::HeatFlow, ProblemKind::Category::Source),
+      QStringLiteral("Conductors"));
+}
+
+void TestProblemKinds::anExtensionNeverResolvesToTheWrongKind()
+{
+  const struct {
+    const char* path;
+    bool recognised;
+    FemmProblemKind kind;
+  } cases[] = {
+    { "c:/models/motor.fem", true, FemmProblemKind::Magnetics },
+    { "c:/models/motor.FEM", true, FemmProblemKind::Magnetics },
+    { "c:/models/cap.fee", true, FemmProblemKind::Electrostatics },
+    { "c:/models/sink.feh", true, FemmProblemKind::HeatFlow },
+    { "c:/models/trace.fec", true, FemmProblemKind::CurrentFlow },
+    // .femx is a CACHE, not a model format. Resolving it to a kind here
+    // is what would let a stale .femx beside a .fee be opened as the
+    // model -- the wrong geometry, silently.
+    { "c:/models/motor.femx", false, FemmProblemKind::Magnetics },
+    { "c:/models/motor.ans", false, FemmProblemKind::Magnetics },
+    { "c:/models/notes.txt", false, FemmProblemKind::Magnetics },
+    { "c:/models/noextension", false, FemmProblemKind::Magnetics },
+  };
+
+  for (const auto& c : cases) {
+    FemmProblemKind got = FemmProblemKind::CurrentFlow; // deliberately not the default
+    const bool ok = ProblemKind::kindForPath(QString::fromLatin1(c.path), got);
+    QVERIFY2(ok == c.recognised,
+        qPrintable(QStringLiteral("%1: expected recognised=%2")
+                       .arg(c.path).arg(c.recognised)));
+    if (c.recognised)
+      QCOMPARE((int)got, (int)c.kind);
+  }
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)
