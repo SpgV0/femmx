@@ -354,6 +354,25 @@ enum class FemmLengthUnits {
   Microns = 5,
 };
 
+// Metres per model unit. Added by Claude (Anthropic),
+// noreply@anthropic.com, 2026-09-13 (issue #83): every derived field
+// quantity needs this, and there were already three separate copies of
+// it (AnsFileIO's table, CircuitAnalysis's function, SolutionView's
+// function). Placed beside the enum it describes so the next one has an
+// obvious home rather than a fourth copy.
+inline double lengthToMeters(FemmLengthUnits u)
+{
+  switch (u) {
+  case FemmLengthUnits::Inches: return 0.0254;
+  case FemmLengthUnits::Millimeters: return 0.001;
+  case FemmLengthUnits::Centimeters: return 0.01;
+  case FemmLengthUnits::Meters: return 1.0;
+  case FemmLengthUnits::Mils: return 2.54e-05;
+  case FemmLengthUnits::Microns: return 1.0e-06;
+  }
+  return 1.0;
+}
+
 enum class FemmCoordinateType {
   Planar = 0,
   Axisymmetric = 1,

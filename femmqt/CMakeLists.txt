@@ -128,6 +128,8 @@ qt_add_library(femmqt_core STATIC
   PropertyFields.cpp
   SolutionFileIO.h
   SolutionFileIO.cpp
+  SolutionField.h
+  SolutionField.cpp
   PropertyEditDialog.h
   PropertyEditDialog.cpp
   FemxFileIO.h
@@ -345,6 +347,14 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_solution_format_tests
     tests/tst_solution_formats.cpp
   )
+
+  # Derived field quantities (#83). Checked against analytic answers --
+  # a linear potential has an exactly constant gradient -- because a
+  # field wrong only by a constant factor is invisible on a plot with an
+  # auto-scaled legend.
+  qt_add_executable(femmqt_solution_field_tests
+    tests/tst_solution_field.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -377,6 +387,7 @@ if(TARGET Qt6::Test)
     femmqt_solver_tag_tests
     femmqt_problem_kind_tests
     femmqt_solution_format_tests
+    femmqt_solution_field_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -415,6 +426,7 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_solver_tags COMMAND femmqt_solver_tag_tests)
   add_test(NAME femmqt_problem_kinds COMMAND femmqt_problem_kind_tests)
   add_test(NAME femmqt_solution_formats COMMAND femmqt_solution_format_tests)
+  add_test(NAME femmqt_solution_field COMMAND femmqt_solution_field_tests)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
