@@ -1,5 +1,6 @@
 #include "DemoLibrary.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -33,6 +34,13 @@ QString DemoLibrary::Demo::absolutePath() const
 
 QString DemoLibrary::directory()
 {
+  // Checked every call and never cached: a test sets it between cases,
+  // and a stale cache would make the second case read the first one's
+  // directory.
+  const QByteArray override = qgetenv("FEMMQT_DEMOS_DIR");
+  if (!override.isEmpty())
+    return QDir(QString::fromLocal8Bit(override)).absolutePath();
+
   if (g_searched)
     return g_cachedDir;
   g_searched = true;

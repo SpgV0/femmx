@@ -51,6 +51,14 @@ struct Demo {
 // tree has it at <repo>/demos and an install at $INSTDIR\demos, and
 // neither needs configuring. Empty when there is none, which is not an
 // error -- a build without the corpus simply has no demos.
+//
+// FEMMQT_DEMOS_DIR overrides the search when set. It exists for two
+// reasons: a packaging layout this walk does not anticipate, and --
+// the reason it was actually written -- so that the ways this can
+// degrade can be tested. "No demos directory", "a manifest that is not
+// JSON" and "a manifest naming files that are not there" all have to
+// end in a disabled menu item rather than an error, and none of them
+// is reachable in a tree that has a perfectly good demos/ in it.
 QString directory();
 
 // Reads demos.json. Returns an empty list and sets `error` when the

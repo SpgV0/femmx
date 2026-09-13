@@ -61,6 +61,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 
+#include "DemoBrowserDialog.h"
 #include "DemoLibrary.h"
 #include "Notify.h"
 #include <QPageSetupDialog>
@@ -232,6 +233,28 @@ MainWindow::MainWindow(QWidget* parent)
   fileMenu->addAction("Print Pre&view...", this, &MainWindow::onPrintPreviewTriggered);
   fileMenu->addAction("&Print...", this, &MainWindow::onPrintTriggered, QKeySequence::Print);
   fileMenu->addAction("P&rint Setup...", this, &MainWindow::onPrintSetupTriggered);
+  fileMenu->addSeparator();
+  // Issue #90: the shipped demo library. Disabled rather than hidden
+  // when there is none, so a build without the corpus says why instead
+  // of quietly having one fewer menu item -- and disabled rather than
+  // reporting: a missing demo library is not something the user did,
+  // and an error dialog at startup would be a modal on a path that may
+  // have no desktop (#85).
+  m_demoModelsAction = fileMenu->addAction("&Demo Models...", this,
+      &MainWindow::onDemoModelsTriggered);
+  {
+    QString demoError;
+    const int count = DemoLibrary::load(demoError).size();
+    if (count == 0) {
+      m_demoModelsAction->setEnabled(false);
+      m_demoModelsAction->setToolTip(
+          QStringLiteral("No demo models are installed: %1").arg(demoError));
+    } else {
+      m_demoModelsAction->setToolTip(
+          QStringLiteral("%1 worked examples, each with a closed-form answer to "
+                         "check against").arg(count));
+    }
+  }
   fileMenu->addSeparator();
   m_recentFilesMenu = fileMenu->addMenu("Recent Files");
   fileMenu->addSeparator();
@@ -1211,6 +1234,34 @@ void MainWindow::onViewResultsTriggered()
   m_solutionWindow->show();
   m_solutionWindow->raise();
   m_solutionWindow->activateWindow();
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#90).
+void MainWindow::onDemoModelsTriggered()
+{
+  QString error;
+  const QVector<DemoLibrary::Demo> demos = DemoLibrary::load(error);
+  if (demos.isEmpty()) {
+    // Reached only if the library disappeared after startup, since the
+    // action is disabled otherwise.
+    Notify::warning(this, "Demo Models",
+        QStringLiteral("No demo models are installed: %1").arg(error));
+    return;
+  }
+
+  // An unsaved document would be silently replaced otherwise -- the
+  // same guard the ordinary Open path uses.
+  if (!confirmDiscardUnsavedChanges())
+    return;
+
+  DemoBrowserDialog dialog(demos, this);
+  if (dialog.exec() != QDialog::Accepted)
+    return;
+
+  const DemoLibrary::Demo& demo = dialog.selected();
+  // openDemo, not openFile: the installed original must never be the
+  // file that is open. See DemoLibrary.h.
+  openDemo(demo.absolutePath(), demo.title);
 }
 
 void MainWindow::onSwitchToClassicTriggered()

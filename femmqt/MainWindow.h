@@ -62,6 +62,7 @@ class MainWindow : public QMainWindow {
   void onSolveTriggered();
   void onViewResultsTriggered();
   void onSwitchToClassicTriggered();
+  void onDemoModelsTriggered(); // #90
   void onProblemEdited();
   void onProblemPropertiesTriggered();
   void onMaterialsTriggered();
@@ -209,6 +210,9 @@ class MainWindow : public QMainWindow {
   // Cleared by a Save As, at which point it is an ordinary document.
   bool m_isDemoCopy = false;
   QString m_demoTitle;
+  // Held so the menu item can be disabled with a reason when there is
+  // no demo library, rather than opening an empty dialog (#90).
+  QAction* m_demoModelsAction = nullptr;
   bool m_dirty = false;
   // Updated by onMousePositionChanged; used as onEnterPointTriggered's
   // starting point, matching femm/FemmeView.cpp's EnterPoint() defaulting

@@ -104,6 +104,8 @@ qt_add_library(femmqt_core STATIC
   GuiSwitch.cpp
   FileRouting.h
   FileRouting.cpp
+  DemoBrowserDialog.h
+  DemoBrowserDialog.cpp
   DemoLibrary.h
   DemoLibrary.cpp
   Notify.h
@@ -392,6 +394,10 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_demo_library_tests
     tests/tst_demo_library.cpp
   )
+  # The browser itself -- widgets, so this one needs a QPA platform.
+  qt_add_executable(femmqt_demo_browser_tests
+    tests/tst_demo_browser.cpp
+  )
   # Also drives femmqt.exe: the question "did the render obey the plot
   # state" can only be asked of an actual image (#86).
   qt_add_executable(femmqt_plot_state_tests
@@ -434,6 +440,7 @@ if(TARGET Qt6::Test)
     femmqt_type_independence_tests
     femmqt_headless_cli_tests
     femmqt_demo_library_tests
+    femmqt_demo_browser_tests
     femmqt_plot_state_tests
     femmqt_icon_tests
   )
@@ -486,6 +493,7 @@ if(TARGET Qt6::Test)
 
   add_test(NAME femmqt_headless_cli COMMAND femmqt_headless_cli_tests)
   add_test(NAME femmqt_demo_library COMMAND femmqt_demo_library_tests)
+  add_test(NAME femmqt_demo_browser COMMAND femmqt_demo_browser_tests)
   add_test(NAME femmqt_plot_state COMMAND femmqt_plot_state_tests)
   set_tests_properties(femmqt_plot_state PROPERTIES TIMEOUT 900)
   # Spawns femmqt.exe, which must exist first.
@@ -496,7 +504,7 @@ if(TARGET Qt6::Test)
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap femmqt_icons PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap femmqt_icons femmqt_demo_browser PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )
