@@ -560,7 +560,10 @@ class SolutionWindow : public QMainWindow {
   public:
   explicit SolutionWindow(QWidget* parent = nullptr);
 
-  void openAnsFile(const QString& path);
+  // Returns false when nothing was loaded -- the headless CLI paths
+  // need that as an exit code, since a failure here now prints to
+  // stderr instead of stopping on a dialog (issue #85).
+  bool openAnsFile(const QString& path);
 
   // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
   // (issue #83). Opens any of the four solution formats, choosing by
@@ -572,7 +575,7 @@ class SolutionWindow : public QMainWindow {
   // magnetics path -- which has a cache, an incremental-solution case
   // and a lot of verified behaviour -- is not disturbed by a change
   // meant to add the other three.
-  void openSolutionFile(const QString& path);
+  bool openSolutionFile(const QString& path);
 
   // Renders the loaded solution offscreen to an image, for the
   // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng

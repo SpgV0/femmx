@@ -26,7 +26,10 @@ class MainWindow : public QMainWindow {
   // Opens a .fem file immediately, bypassing the file dialog -- used for
   // the femm.cfg-driven GUI switch (step 7) and for command-line-argument
   // opens, so both paths share one code path.
-  void openFile(const QString& path);
+  // False when nothing was loaded. The headless CLI paths turn that
+  // into an exit code -- a failure in here now prints to stderr
+  // rather than stopping on a dialog nobody can dismiss (#85).
+  bool openFile(const QString& path);
 
   // Renders the loaded geometry offscreen to an image, for the
   // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng

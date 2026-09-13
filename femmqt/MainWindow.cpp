@@ -60,6 +60,8 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+
+#include "Notify.h"
 #include <QPageSetupDialog>
 #include <QPainter>
 #include <QPlainTextEdit>
@@ -894,7 +896,7 @@ void MainWindow::onOpenTriggered()
   openFile(path);
 }
 
-void MainWindow::openFile(const QString& path)
+bool MainWindow::openFile(const QString& path)
 {
   QFileInfo pathInfo(path);
   QString femPath = path;
@@ -907,12 +909,12 @@ void MainWindow::openFile(const QString& path)
   // Issue #80: which physics this file is, from its extension.
   FemmProblemKind kind = FemmProblemKind::Magnetics;
   if (!ProblemKind::kindForPath(femPath, kind)) {
-    QMessageBox::warning(this, "Open Failed",
+    Notify::warning(this, "Open Failed",
         QStringLiteral("\"%1\" is not a FEMM model file. Expected .fem "
                        "(magnetics), .fee (electrostatics), .feh (heat flow) "
                        "or .fec (current flow).")
             .arg(pathInfo.fileName()));
-    return;
+    return false;
   }
 
   // THE .femx CACHE IS MAGNETICS-ONLY, deliberately, which #80 asked to
@@ -947,13 +949,13 @@ void MainWindow::openFile(const QString& path)
 
   if (!loadedFromFemx) {
     if (!QFileInfo::exists(femPath)) {
-      QMessageBox::warning(this, "Open Failed",
+      Notify::warning(this, "Open Failed",
           QStringLiteral("\"%1\" doesn't exist and no matching .femx cache was found.").arg(femPath));
-      return;
+      return false;
     }
     if (!ProblemFileIO::readAs(femPath, kind, problem, error)) {
-      QMessageBox::warning(this, "Open Failed", error);
-      return;
+      Notify::warning(this, "Open Failed", error);
+      return false;
     }
     // Cache for next time -- best-effort, same as the .ansx side, and
     // only for the format the cache describes.
@@ -976,12 +978,12 @@ void MainWindow::openFile(const QString& path)
   QStringList sketchReport;
   QString sketchError;
   if (!SketchFileIO::readSketch(femPath, problem, sketchReport, sketchError)) {
-    QMessageBox::warning(this, "Sketch Not Loaded",
+    Notify::warning(this, "Sketch Not Loaded",
         QStringLiteral("The model opened, but its constraints and dimensions "
                        "did not:\n\n%1")
             .arg(sketchError));
   } else if (!sketchReport.isEmpty()) {
-    QMessageBox::information(this, "Sketch Partly Restored",
+    Notify::information(this, "Sketch Partly Restored",
         QStringLiteral("The model opened. Some constraints or dimensions "
                        "could not be reattached to the geometry and were "
                        "dropped:\n\n%1")
@@ -1012,6 +1014,7 @@ void MainWindow::openFile(const QString& path)
                                 .arg(loadedFromFemx ? ".femx" : ".fem"));
   updateTitle();
   addToRecentFiles(femPath);
+  return true;
 }
 
 void MainWindow::onSaveTriggered()
@@ -1043,7 +1046,7 @@ bool MainWindow::saveAs(const QString& path)
 {
   QString error;
   if (!ProblemFileIO::write(path, m_problem, error)) {
-    QMessageBox::warning(this, "Save Failed", error);
+    Notify::warning(this, "Save Failed", error);
     return false;
   }
   // Best-effort .femx cache refresh -- unlike .ansx's lazy on-open
@@ -1097,7 +1100,7 @@ void MainWindow::onSolveTriggered()
   }
 
   if (hasAppliedPeriodicBoundary()) {
-    QMessageBox::warning(this, "Cannot Solve",
+    Notify::warning(this, "Cannot Solve",
         "This problem uses a periodic or antiperiodic boundary condition, "
         "which this Qt GUI doesn't support meshing for yet. Open it in the "
         "classic FEMMX GUI to solve it.");
@@ -1126,7 +1129,7 @@ void MainWindow::onSolveTriggered()
 
   if (!ok) {
     statusBar()->showMessage("Solve failed");
-    QMessageBox::warning(this, "Solve Failed", error);
+    Notify::warning(this, "Solve Failed", error);
     return;
   }
 
@@ -1171,9 +1174,13 @@ void MainWindow::onSwitchToClassicTriggered()
   // requirement as onSolveTriggered, reusing the same confirm-or-save
   // flow the normal close path already uses.
   if (m_dirty) {
-    auto result = QMessageBox::question(this, "Switch GUI",
+    // Cancel is the headless answer: with nobody to ask, refusing to
+    // switch loses nothing, while Discard would throw away the user's
+    // edits on their behalf (issue #85).
+    auto result = Notify::question(this, "Switch GUI",
         "Save changes before switching to the classic GUI?",
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save, QMessageBox::Cancel);
     if (result == QMessageBox::Cancel)
       return;
     if (result == QMessageBox::Save) {
@@ -1189,7 +1196,7 @@ void MainWindow::onSwitchToClassicTriggered()
 
   GuiSwitch::writePreferredGui(GuiSwitch::PreferredGui::Classic);
   if (!GuiSwitch::launchClassicGui(m_currentPath)) {
-    QMessageBox::warning(this, "Switch Failed",
+    Notify::warning(this, "Switch Failed",
         "Couldn't find or start femmx.exe next to femmqt.exe.");
     return;
   }
@@ -1316,18 +1323,18 @@ void MainWindow::onCreateRadiusTriggered()
   for (int i = 0; i < m_problem.nodes.size(); i++) {
     if (m_problem.nodes[i].isSelected) {
       if (nodeIndex >= 0) {
-        QMessageBox::information(this, "Create Radius", "Select exactly one node first.");
+        Notify::information(this, "Create Radius", "Select exactly one node first.");
         return;
       }
       nodeIndex = i;
     }
   }
   if (nodeIndex < 0) {
-    QMessageBox::information(this, "Create Radius", "Select a node first (one shared by two segments, two arcs, or one of each).");
+    Notify::information(this, "Create Radius", "Select a node first (one shared by two segments, two arcs, or one of each).");
     return;
   }
   if (!FemmProblemEdit::canCreateRadius(m_problem, nodeIndex)) {
-    QMessageBox::information(this, "Create Radius",
+    Notify::information(this, "Create Radius",
         "That node isn't a valid corner to fillet -- it needs to be shared by exactly two segments, two arcs, or one segment and one arc.");
     return;
   }
@@ -1339,7 +1346,7 @@ void MainWindow::onCreateRadiusTriggered()
 
   snapshotForUndo();
   if (!FemmProblemEdit::createRadius(m_problem, nodeIndex, r)) {
-    QMessageBox::warning(this, "Create Radius",
+    Notify::warning(this, "Create Radius",
         "Couldn't fit a radius of that size at that corner (too large, a near-straight corner, or no valid tangent solution).");
     return;
   }
@@ -1359,14 +1366,14 @@ void MainWindow::onChamferTriggered()
   for (int i = 0; i < m_problem.nodes.size(); i++) {
     if (m_problem.nodes[i].isSelected) {
       if (nodeIndex >= 0) {
-        QMessageBox::information(this, "Chamfer", "Select exactly one node first.");
+        Notify::information(this, "Chamfer", "Select exactly one node first.");
         return;
       }
       nodeIndex = i;
     }
   }
   if (nodeIndex < 0) {
-    QMessageBox::information(this, "Chamfer",
+    Notify::information(this, "Chamfer",
         "Select the corner node to chamfer first -- one shared by exactly two straight lines.");
     return;
   }
@@ -1420,7 +1427,7 @@ void MainWindow::onChamferTriggered()
       ? OffsetChamfer::chamferDistances(trial, nodeIndex, first, second)
       : OffsetChamfer::chamferDistanceAngle(trial, nodeIndex, first, second);
   if (!probe.ok) {
-    QMessageBox::information(this, "Chamfer", probe.message);
+    Notify::information(this, "Chamfer", probe.message);
     return;
   }
 
@@ -1444,7 +1451,7 @@ void MainWindow::onOffsetTriggered()
     if (a.isSelected)
       selected++;
   if (selected == 0) {
-    QMessageBox::information(this, "Offset",
+    Notify::information(this, "Offset",
         "Select the lines and arcs to offset first. A connected run offsets as one "
         "curve, with its corners resolved; anything disconnected offsets on its own.");
     return;
@@ -1491,7 +1498,7 @@ void MainWindow::onOffsetTriggered()
   FemmProblem trial = m_problem;
   const OffsetChamfer::Result probe = OffsetChamfer::offsetSelection(trial, distance, style);
   if (!probe.ok) {
-    QMessageBox::information(this, "Offset", probe.message);
+    Notify::information(this, "Offset", probe.message);
     return;
   }
 
@@ -1514,7 +1521,7 @@ void MainWindow::applyConstructionResult(const QString& title,
     const ConstructionGeometry::Result& r)
 {
   if (!r.ok) {
-    QMessageBox::information(this, title, r.message);
+    Notify::information(this, title, r.message);
     return;
   }
   m_scene->rebuild();
@@ -1529,7 +1536,7 @@ void MainWindow::convertSelectionConstruction(bool toConstruction)
   const ConstructionGeometry::Result probe =
       ConstructionGeometry::setSelectedConstruction(trial, toConstruction);
   if (!probe.ok) {
-    QMessageBox::information(this, "Construction Geometry", probe.message);
+    Notify::information(this, "Construction Geometry", probe.message);
     return;
   }
   snapshotForUndo();
@@ -1665,7 +1672,7 @@ void MainWindow::onImportDxfTriggered()
   double suggestedTolerance = 0;
   QString error;
   if (!DxfIO::parseDxf(path, parsed, suggestedTolerance, error)) {
-    QMessageBox::warning(this, "Import DXF", error);
+    Notify::warning(this, "Import DXF", error);
     return;
   }
 
@@ -1706,7 +1713,7 @@ void MainWindow::onExportDxfTriggered()
     return;
   QString error;
   if (!DxfIO::exportDxf(path, m_problem, error))
-    QMessageBox::warning(this, "Export DXF", error);
+    Notify::warning(this, "Export DXF", error);
   else
     statusBar()->showMessage(QString("Exported %1").arg(path));
 }
@@ -1752,7 +1759,7 @@ void MainWindow::onCopyBitmapTriggered()
 void MainWindow::onDeleteSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Delete", "Nothing selected.");
+    Notify::information(this, "Delete", "Nothing selected.");
     return;
   }
   m_scene->deleteSelectedItem();
@@ -1771,7 +1778,7 @@ void MainWindow::onOpenSelectedTriggered()
   FemmItemKind kind;
   QVector<int> indices;
   if (!m_scene->selectedEntities(kind, indices)) {
-    QMessageBox::information(this, "Open Selected",
+    Notify::information(this, "Open Selected",
         m_scene->hasSelection() ? "Select entities of only one kind (nodes, segments, arcs, or block labels) at a time." : "Nothing selected.");
     return;
   }
@@ -2242,7 +2249,7 @@ void MainWindow::onUndoTriggered()
 void MainWindow::onMoveSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Move", "Nothing selected.");
+    Notify::information(this, "Move", "Nothing selected.");
     return;
   }
   MoveCopyDialog dlg(/*isMove=*/true, this);
@@ -2268,7 +2275,7 @@ void MainWindow::onMoveSelectedTriggered()
 void MainWindow::onCopySelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Copy", "Nothing selected.");
+    Notify::information(this, "Copy", "Nothing selected.");
     return;
   }
   MoveCopyDialog dlg(/*isMove=*/false, this);
@@ -2290,7 +2297,7 @@ void MainWindow::onCopySelectedTriggered()
 void MainWindow::onScaleSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Scale", "Nothing selected.");
+    Notify::information(this, "Scale", "Nothing selected.");
     return;
   }
   bool ok = false;
@@ -2316,7 +2323,7 @@ void MainWindow::onScaleSelectedTriggered()
 void MainWindow::onMirrorSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Mirror", "Nothing selected.");
+    Notify::information(this, "Mirror", "Nothing selected.");
     return;
   }
   bool ok = false;
@@ -2384,7 +2391,7 @@ void MainWindow::onCoincidentConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (nodes.size() != 2 || !segments.isEmpty() || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Coincident", "Select exactly 2 nodes.");
+    Notify::information(this, "Coincident", "Select exactly 2 nodes.");
     return;
   }
   FemmConstraint c;
@@ -2399,7 +2406,7 @@ void MainWindow::onHorizontalConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Horizontal", "Select exactly 1 segment.");
+    Notify::information(this, "Horizontal", "Select exactly 1 segment.");
     return;
   }
   FemmConstraint c;
@@ -2413,7 +2420,7 @@ void MainWindow::onVerticalConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Vertical", "Select exactly 1 segment.");
+    Notify::information(this, "Vertical", "Select exactly 1 segment.");
     return;
   }
   FemmConstraint c;
@@ -2427,7 +2434,7 @@ void MainWindow::onParallelConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Parallel", "Select exactly 2 segments.");
+    Notify::information(this, "Parallel", "Select exactly 2 segments.");
     return;
   }
   FemmConstraint c;
@@ -2442,7 +2449,7 @@ void MainWindow::onPerpendicularConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Perpendicular", "Select exactly 2 segments.");
+    Notify::information(this, "Perpendicular", "Select exactly 2 segments.");
     return;
   }
   FemmConstraint c;
@@ -2467,7 +2474,7 @@ void MainWindow::onEqualConstraintTriggered()
     c.refA = arcs[0];
     c.refB = arcs[1];
   } else {
-    QMessageBox::information(this, "Equal", "Select exactly 2 segments, or exactly 2 arcs.");
+    Notify::information(this, "Equal", "Select exactly 2 segments, or exactly 2 arcs.");
     return;
   }
   applyConstraint(c);
@@ -2488,7 +2495,7 @@ void MainWindow::onTangentConstraintTriggered()
     c.refA = arcs[0];
     c.refB = arcs[1];
   } else {
-    QMessageBox::information(this, "Tangent", "Select exactly 1 segment + 1 arc, or exactly 2 arcs.");
+    Notify::information(this, "Tangent", "Select exactly 1 segment + 1 arc, or exactly 2 arcs.");
     return;
   }
   applyConstraint(c);
@@ -2499,7 +2506,7 @@ void MainWindow::onConcentricConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (arcs.size() != 2 || !nodes.isEmpty() || !segments.isEmpty()) {
-    QMessageBox::information(this, "Concentric", "Select exactly 2 arcs.");
+    Notify::information(this, "Concentric", "Select exactly 2 arcs.");
     return;
   }
   FemmConstraint c;
@@ -2514,7 +2521,7 @@ void MainWindow::onSymmetricConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (nodes.size() != 2 || segments.size() != 1 || !arcs.isEmpty()) {
-    QMessageBox::information(this, "Symmetric", "Select exactly 2 nodes and 1 segment (the mirror line).");
+    Notify::information(this, "Symmetric", "Select exactly 2 nodes and 1 segment (the mirror line).");
     return;
   }
   FemmConstraint c;
@@ -2598,7 +2605,7 @@ void MainWindow::onCreateMeshTriggered()
   }
 
   if (hasAppliedPeriodicBoundary()) {
-    QMessageBox::warning(this, "Cannot Mesh",
+    Notify::warning(this, "Cannot Mesh",
         "This problem uses a periodic or antiperiodic boundary condition, "
         "which this Qt GUI doesn't support meshing for yet. Open it in the "
         "classic FEMMX GUI instead.");
@@ -2618,7 +2625,7 @@ void MainWindow::onCreateMeshTriggered()
   QApplication::restoreOverrideCursor();
   if (!ok) {
     statusBar()->showMessage("Meshing failed");
-    QMessageBox::warning(this, "Mesh Failed", error);
+    Notify::warning(this, "Mesh Failed", error);
     return;
   }
 
@@ -2627,7 +2634,7 @@ void MainWindow::onCreateMeshTriggered()
   MeshOverlay mesh;
   if (!MeshOverlayIO::load(rootPath, mesh, error)) {
     statusBar()->showMessage("Meshing failed");
-    QMessageBox::warning(this, "Mesh Failed", error);
+    Notify::warning(this, "Mesh Failed", error);
     return;
   }
 
@@ -2676,7 +2683,7 @@ void MainWindow::onSelectByGroupTriggered()
 void MainWindow::onSetGroupTriggered()
 {
   if (!m_scene->hasSelection()) {
-    QMessageBox::information(this, "Set Group", "Nothing selected.");
+    Notify::information(this, "Set Group", "Nothing selected.");
     return;
   }
   bool ok = false;
@@ -2724,7 +2731,7 @@ void MainWindow::onOpenRecentFile()
     return;
   QString path = action->data().toString();
   if (!QFileInfo::exists(path)) {
-    QMessageBox::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
+    Notify::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
     QSettings settings;
     QStringList recent = settings.value("recentFiles").toStringList();
     recent.removeAll(path);
@@ -2756,7 +2763,7 @@ void MainWindow::onHelpTopicsTriggered()
       return;
     }
   }
-  QMessageBox::information(this, "Help Topics",
+  Notify::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
 }
@@ -2821,7 +2828,7 @@ void MainWindow::onLicenseTriggered()
   QString exeDir = QCoreApplication::applicationDirPath();
   QFile file(exeDir + "/license.txt");
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    QMessageBox::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
+    Notify::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
     return;
   }
   QString text = QString::fromUtf8(file.readAll());
@@ -2886,9 +2893,10 @@ bool MainWindow::confirmDiscardUnsavedChanges()
 {
   if (!m_dirty)
     return true;
-  auto result = QMessageBox::question(this, "Unsaved Changes",
+  auto result = Notify::question(this, "Unsaved Changes",
       "The current problem has unsaved changes. Discard them?",
-      QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
+      QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel,
+      QMessageBox::Cancel);
   return result == QMessageBox::Discard;
 }
 

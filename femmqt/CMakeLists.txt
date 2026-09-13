@@ -104,6 +104,8 @@ qt_add_library(femmqt_core STATIC
   GuiSwitch.cpp
   FileRouting.h
   FileRouting.cpp
+  Notify.h
+  Notify.cpp
   SketchFileIO.h
   SketchFileIO.cpp
   SnapEngine.h
@@ -375,6 +377,12 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_type_independence_tests
     tests/tst_type_independence.cpp
   )
+  # Drives the real femmqt.exe as a child process, with a hard time cap:
+  # the defect it guards is a HANG, and an untimed assertion against a
+  # process that never exits does not fail, it hangs too (#85).
+  qt_add_executable(femmqt_headless_cli_tests
+    tests/tst_headless_cli.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -410,6 +418,7 @@ if(TARGET Qt6::Test)
     femmqt_solution_field_tests
     femmqt_solution_integral_tests
     femmqt_type_independence_tests
+    femmqt_headless_cli_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -451,6 +460,16 @@ if(TARGET Qt6::Test)
   add_test(NAME femmqt_solution_field COMMAND femmqt_solution_field_tests)
   add_test(NAME femmqt_solution_integrals COMMAND femmqt_solution_integral_tests)
   add_test(NAME femmqt_type_independence COMMAND femmqt_type_independence_tests)
+  # This one spawns femmqt.exe rather than linking against it, so the
+  # dependency is not implied by the link graph and has to be stated.
+  # Without it the test binary can be up to date while the executable it
+  # drives is missing or stale -- which fails loudly (initTestCase
+  # refuses to run vacuously) but for a confusing reason.
+  add_dependencies(femmqt_headless_cli_tests femmqt)
+
+  add_test(NAME femmqt_headless_cli COMMAND femmqt_headless_cli_tests)
+  # Spawns femmqt.exe, which must exist first.
+  set_tests_properties(femmqt_headless_cli PROPERTIES TIMEOUT 600)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without

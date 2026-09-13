@@ -17,6 +17,7 @@
 #include "FemmProblemEdit.h"
 #include "FileRouting.h"
 #include "MainWindow.h"
+#include "Notify.h"
 #include "MeshSolution.h"
 #include "SolutionView.h"
 
@@ -235,6 +236,18 @@ int main(int argc, char* argv[])
 
   const QStringList args = app.arguments();
 
+  // Issue #85: decide ONCE, before any window exists, whether there is
+  // anybody to answer a dialog. Every option below is a batch entry
+  // point, usually with no desktop at all, and a modal QMessageBox on
+  // one of them is not an error report -- it is a hang that only a
+  // timeout can distinguish from a slow model. See Notify.h.
+  //
+  // Keyed on "argv[1] starts with --" rather than on each flag
+  // individually, so an option added later is headless by default
+  // instead of by being remembered.
+  if (args.size() >= 2 && args.at(1).startsWith(QLatin1String("--")))
+    Notify::setHeadless(true);
+
   if (args.size() >= 3 && args.at(1) == "--convert-ansx")
     return convertAnsxCli(args.at(2));
 
@@ -275,6 +288,25 @@ int main(int argc, char* argv[])
 
     const bool isSolution = FileRouting::isSolutionFile(in);
 
+    // Issue #85: refuse an extension neither window understands, here,
+    // rather than letting it fall through to the geometry editor. That
+    // path used to pop a modal "not a FEMM model file" warning and hang;
+    // with Notify it no longer hangs, but it would still leave an empty
+    // scene to render and exit 0 -- a valid PNG of nothing, which is in
+    // some ways worse than the hang, because nothing reports it. Name
+    // the extension: the usual cause is a typo, or a solver that wrote
+    // its output somewhere other than where the caller looked.
+    FemmProblemKind modelKind = FemmProblemKind::Magnetics;
+    if (!isSolution && !ProblemKind::kindForPath(in, modelKind)) {
+      const QString suffix = QFileInfo(in).suffix();
+      fprintf(stderr,
+          "--render-png: %s: unrecognised extension \"%s\". Models are .fem, "
+          ".fee, .feh, .fec; solutions are .ans, .res, .anh, .anc.\n",
+          qPrintable(in),
+          qPrintable(suffix.isEmpty() ? QStringLiteral("(none)") : suffix));
+      return 1;
+    }
+
     // Optional scene-space crop: --render-png in out w h x0 y0 x1 y1.
     // Renders a zoomed-in region without a GUI, which matters because the
     // density plot's color banding is scaled to whatever is VISIBLE (see
@@ -296,7 +328,11 @@ int main(int argc, char* argv[])
       // #83: openSolutionFile routes .ans/.ansx down the unchanged
       // magnetics path and .res/.anh/.anc through the shared reader, so
       // --render-png works for every solver's output.
-      window.openSolutionFile(in);
+      if (!window.openSolutionFile(in)) {
+        // Notify has already said what went wrong on stderr; the exit
+        // code is what a batch caller actually branches on.
+        return 1;
+      }
       // Modified by Claude (Anthropic), noreply@anthropic.com: found while
       // trying to visually verify an unrelated density-plot fix -- this
       // call was never here. selectDensityPlot() existed and --density
@@ -311,7 +347,8 @@ int main(int argc, char* argv[])
     } else {
       MainWindow window;
       window.resize(w, h);
-      window.openFile(in);
+      if (!window.openFile(in))
+        return 1;
       image = window.renderToImage(QSize(w, h), source);
     }
 

@@ -46,6 +46,8 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+
+#include "Notify.h"
 #include <QMouseEvent>
 #ifdef FEMMQT_HAVE_OPENGL
 #include <QOpenGLWidget>
@@ -2153,7 +2155,7 @@ QRectF SolutionWindow::rebuildSceneForSolution()
 }
 
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#83).
-void SolutionWindow::openSolutionFile(const QString& path)
+bool SolutionWindow::openSolutionFile(const QString& path)
 {
   FemmProblemKind kind = FemmProblemKind::Magnetics;
   const bool known = SolutionFileIO::kindForSolutionPath(path, kind);
@@ -2169,24 +2171,23 @@ void SolutionWindow::openSolutionFile(const QString& path)
     m_kind = FemmProblemKind::Magnetics;
     if (m_item)
       m_item->setFieldLabelOverride(QString());
-    openAnsFile(path);
-    return;
+    return openAnsFile(path);
   }
 
   FemmProblem problem;
   SolvedMesh solved;
   QString error;
   if (!SolutionFileIO::read(path, problem, solved, error)) {
-    QMessageBox::warning(this, "Open Failed", error);
-    return;
+    Notify::warning(this, "Open Failed", error);
+    return false;
   }
 
   MeshSolution adapted;
   if (!SolutionAdapter::toMeshSolution(solved, problem, adapted)) {
-    QMessageBox::warning(this, "Open Failed",
+    Notify::warning(this, "Open Failed",
         QStringLiteral("\"%1\" contains no mesh elements.")
             .arg(QFileInfo(path).fileName()));
-    return;
+    return false;
   }
 
   m_kind = kind;
@@ -2212,9 +2213,10 @@ void SolutionWindow::openSolutionFile(const QString& path)
 
   setWindowTitle(QStringLiteral("%1 Solution -- %2")
                      .arg(ProblemKind::displayName(kind), QFileInfo(path).fileName()));
+  return true;
 }
 
-void SolutionWindow::openAnsFile(const QString& path)
+bool SolutionWindow::openAnsFile(const QString& path)
 {
   QFileInfo pathInfo(path);
   QString ansPath = path;
@@ -2245,13 +2247,13 @@ void SolutionWindow::openAnsFile(const QString& path)
   if (!loadedFromAnsx) {
     FemmProblem problem;
     if (!QFileInfo::exists(ansPath)) {
-      QMessageBox::warning(this, "Open Failed",
+      Notify::warning(this, "Open Failed",
           QStringLiteral("\"%1\" doesn't exist and no matching .ansx cache was found.").arg(ansPath));
-      return;
+      return false;
     }
     if (!AnsFileIO::readAns(ansPath, problem, m_solution, error)) {
-      QMessageBox::warning(this, "Open Failed", error);
-      return;
+      Notify::warning(this, "Open Failed", error);
+      return false;
     }
     m_axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
     m_frequency = problem.frequency;
@@ -2309,6 +2311,7 @@ void SolutionWindow::openAnsFile(const QString& path)
   statusBar()->showMessage(statusMsg);
   setWindowTitle(QString("FEMMX (Qt) - Solution Viewer - %1").arg(path));
   addToRecentFiles(path);
+  return true;
 }
 
 void SolutionWindow::buildSpatialIndex() const
@@ -2727,7 +2730,7 @@ QString lengthUnitsName(FemmLengthUnits u)
 void SolutionWindow::showContourIntegral()
 {
   if (m_contourPoints.size() < 2) {
-    QMessageBox::information(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
+    Notify::information(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
     return;
   }
 
@@ -2860,7 +2863,7 @@ void SolutionWindow::showAreaIntegral()
   // plausible-looking but subtly wrong number, those show a plain
   // "not available" message instead.
   if (!m_item || !m_item->hasBlockLabelSelection()) {
-    QMessageBox::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
+    Notify::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
     return;
   }
   const QSet<int>& labels = m_item->selectedBlockLabels();
@@ -3124,14 +3127,14 @@ void SolutionWindow::onPlotXYTriggered()
       return;
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text) || file.write(csv.toUtf8()) < 0)
-      QMessageBox::warning(&dlg, "Export CSV", "Could not write \"" + path + "\".");
+      Notify::warning(&dlg, "Export CSV", "Could not write \"" + path + "\".");
   });
   connect(exportPngButton, &QPushButton::clicked, &dlg, [&dlg, chart]() {
     QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as PNG", QString(), "PNG Files (*.png)");
     if (path.isEmpty())
       return;
     if (!chart->grab().save(path, "PNG"))
-      QMessageBox::warning(&dlg, "Export PNG", "Could not write \"" + path + "\".");
+      Notify::warning(&dlg, "Export PNG", "Could not write \"" + path + "\".");
   });
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   layout->addWidget(buttons);
@@ -3172,7 +3175,7 @@ void SolutionWindow::onIntegrateTriggered()
 void SolutionWindow::onReloadTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    QMessageBox::information(this, "Reload", "No solution loaded.");
+    Notify::information(this, "Reload", "No solution loaded.");
     return;
   }
   openAnsFile(m_currentPath);
@@ -3181,7 +3184,7 @@ void SolutionWindow::onReloadTriggered()
 void SolutionWindow::onDensityOptionsTriggered()
 {
   if (!m_item) {
-    QMessageBox::information(this, "Density Plot Options", "No solution loaded.");
+    Notify::information(this, "Density Plot Options", "No solution loaded.");
     return;
   }
   // Triggering this via the Density Plot action itself (part of an
@@ -3206,7 +3209,7 @@ void SolutionWindow::onDensityOptionsTriggered()
 void SolutionWindow::onContourOptionsTriggered()
 {
   if (!m_item) {
-    QMessageBox::information(this, "Contour Plot", "No solution loaded.");
+    Notify::information(this, "Contour Plot", "No solution loaded.");
     return;
   }
   // See onDensityOptionsTriggered's identical reasoning.
@@ -3226,7 +3229,7 @@ void SolutionWindow::onContourOptionsTriggered()
 void SolutionWindow::onProblemInfoTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    QMessageBox::information(this, "Problem Info", "No solution loaded.");
+    Notify::information(this, "Problem Info", "No solution loaded.");
     return;
   }
   FemmProblem problem;
@@ -3239,7 +3242,7 @@ void SolutionWindow::onProblemInfoTriggered()
   // m_solution anyway).
   bool ok = FemmFileIO::readFem(m_currentPath, problem, error);
   if (!ok) {
-    QMessageBox::warning(this, "Problem Info", error);
+    Notify::warning(this, "Problem Info", error);
     return;
   }
 
@@ -3292,22 +3295,22 @@ void SolutionWindow::onProblemInfoTriggered()
 void SolutionWindow::onCircuitPropsTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    QMessageBox::information(this, "Circuit Properties", "No solution loaded.");
+    Notify::information(this, "Circuit Properties", "No solution loaded.");
     return;
   }
   FemmProblem problem;
   QString error;
   if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
-    QMessageBox::warning(this, "Circuit Properties", error);
+    Notify::warning(this, "Circuit Properties", error);
     return;
   }
   if (problem.circuitProps.isEmpty()) {
-    QMessageBox::information(this, "Circuit Properties", "This problem has no circuits defined.");
+    Notify::information(this, "Circuit Properties", "This problem has no circuits defined.");
     return;
   }
   QVector<CircuitAnalysis::BlockCircuitInfo> blockCircuitInfo;
   if (!CircuitAnalysis::readBlockCircuitInfo(m_currentPath, blockCircuitInfo, error)) {
-    QMessageBox::warning(this, "Circuit Properties", error);
+    Notify::warning(this, "Circuit Properties", error);
     return;
   }
 
@@ -3373,13 +3376,13 @@ void SolutionWindow::onBhCurvesTriggered()
   // MaterialPropDialog): this just re-displays whichever nonlinear
   // materials this *solved* problem used, for reference, not editing.
   if (m_currentPath.isEmpty()) {
-    QMessageBox::information(this, "BH Curves", "No solution loaded.");
+    Notify::information(this, "BH Curves", "No solution loaded.");
     return;
   }
   FemmProblem problem;
   QString error;
   if (!FemmFileIO::readFem(m_currentPath, problem, error)) {
-    QMessageBox::warning(this, "BH Curves", error);
+    Notify::warning(this, "BH Curves", error);
     return;
   }
   QVector<int> nonlinear;
@@ -3387,7 +3390,7 @@ void SolutionWindow::onBhCurvesTriggered()
     if (!problem.materialProps[i].bhData.isEmpty())
       nonlinear.push_back(i);
   if (nonlinear.isEmpty()) {
-    QMessageBox::information(this, "BH Curves", "No nonlinear materials in this solution.");
+    Notify::information(this, "BH Curves", "No nonlinear materials in this solution.");
     return;
   }
 
@@ -3559,7 +3562,7 @@ void SolutionWindow::onPanDown()
 void SolutionWindow::onCopyBitmapTriggered()
 {
   if (!m_item) {
-    QMessageBox::information(this, "Copy as Bitmap", "No solution loaded.");
+    Notify::information(this, "Copy as Bitmap", "No solution loaded.");
     return;
   }
   QPixmap pixmap = m_view->viewport()->grab();
@@ -3612,12 +3615,12 @@ void SolutionWindow::onPrintSetupTriggered()
 void SolutionWindow::onSwitchToClassicTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    QMessageBox::information(this, "Switch GUI", "No solution loaded.");
+    Notify::information(this, "Switch GUI", "No solution loaded.");
     return;
   }
   GuiSwitch::writePreferredGui(GuiSwitch::PreferredGui::Classic);
   if (!GuiSwitch::launchClassicGui(m_currentPath)) {
-    QMessageBox::warning(this, "Switch Failed", "Couldn't find or start femmx.exe next to femmqt.exe.");
+    Notify::warning(this, "Switch Failed", "Couldn't find or start femmx.exe next to femmqt.exe.");
     return;
   }
   close();
@@ -3677,7 +3680,7 @@ void SolutionWindow::onOpenRecentFile()
     return;
   QString path = action->data().toString();
   if (!QFileInfo::exists(path)) {
-    QMessageBox::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
+    Notify::warning(this, "Open Failed", QStringLiteral("\"%1\" no longer exists.").arg(path));
     QSettings settings;
     QStringList recent = settings.value("recentFiles").toStringList();
     recent.removeAll(path);
@@ -3713,7 +3716,7 @@ void SolutionWindow::onHelpTopicsTriggered()
       return;
     }
   }
-  QMessageBox::information(this, "Help Topics",
+  Notify::information(this, "Help Topics",
       "manual.pdf wasn't found. Build it with manual/build_manual.bat, "
       "or see the FEMM documentation at https://www.femm.info/.");
 }
@@ -3764,7 +3767,7 @@ void SolutionWindow::onLicenseTriggered()
   QString exeDir = QCoreApplication::applicationDirPath();
   QFile file(exeDir + "/license.txt");
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    QMessageBox::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
+    Notify::information(this, "License", "license.txt wasn't found next to femmqt.exe.");
     return;
   }
   QString text = QString::fromUtf8(file.readAll());
