@@ -18,6 +18,7 @@
 #include "FileRouting.h"
 #include "MainWindow.h"
 #include "Notify.h"
+#include "PlotStateArgs.h"
 #include "MeshSolution.h"
 #include "SolutionView.h"
 
@@ -268,8 +269,26 @@ int main(int argc, char* argv[])
   if (args.size() >= 4 && args.at(1) == "--render-png") {
     const QString in = args.at(2);
     const QString out = args.at(3);
-    const int w = (args.size() >= 6) ? args.at(4).toInt() : 1024;
-    const int h = (args.size() >= 6) ? args.at(5).toInt() : 768;
+    // The positional arguments are recognised by SHAPE, not by count.
+    // Issue #86 appends named options after them, so `--render-png in
+    // out 600 450 --quantity bmag --bounds 0 2` has ten arguments and
+    // the old count-based rule would have read "--quantity" and "bmag"
+    // as crop coordinates -- toDouble()ing both to 0 and rendering an
+    // empty region with nothing said.
+    auto positionalNumber = [&args](int index, double& out) {
+      if (index >= args.size() || args.at(index).startsWith(QLatin1String("--")))
+        return false;
+      bool ok = false;
+      const double v = args.at(index).toDouble(&ok);
+      if (ok)
+        out = v;
+      return ok;
+    };
+
+    double wd = 1024, hd = 768;
+    const bool haveSize = positionalNumber(4, wd) && positionalNumber(5, hd);
+    const int w = haveSize ? (int)wd : 1024;
+    const int h = haveSize ? (int)hd : 768;
     if (w <= 0 || h <= 0) {
       fprintf(stderr, "--render-png: bad size %dx%d\n", w, h);
       return 1;
@@ -312,10 +331,27 @@ int main(int argc, char* argv[])
     // density plot's color banding is scaled to whatever is VISIBLE (see
     // MeshSolutionItem::paintDensity) -- so a full-model render cannot
     // reproduce, or regress-test, how a zoomed-in view actually looks.
+    // Issue #86: the plot state the classic post-processor was showing
+    // when the script called mo_savepng. Parsed before anything is
+    // constructed so a bad option fails immediately -- and a bad option
+    // IS a failure: silently rendering defaults after being told what
+    // to draw is the bug being fixed, not a fallback.
+    PlotState plot;
+    QString plotError;
+    if (!PlotStateArgs::parse(args.mid(2), plot, plotError)) {
+      fprintf(stderr, "--render-png: %s\n", qPrintable(plotError));
+      return 1;
+    }
+    if (!plot.isEmpty() && !isSolution) {
+      fprintf(stderr, "--render-png: plot options apply to a solution; \"%s\" "
+                      "is a model\n", qPrintable(in));
+      return 1;
+    }
+
     QRectF source;
-    if (args.size() >= 10) {
-      const double x0 = args.at(6).toDouble(), y0 = args.at(7).toDouble();
-      const double x1 = args.at(8).toDouble(), y1 = args.at(9).toDouble();
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    if (haveSize && positionalNumber(6, x0) && positionalNumber(7, y0)
+        && positionalNumber(8, x1) && positionalNumber(9, y1)) {
       source = QRectF(QPointF(x0, y0), QPointF(x1, y1)).normalized();
     }
 
@@ -333,6 +369,17 @@ int main(int argc, char* argv[])
         // code is what a batch caller actually branches on.
         return 1;
       }
+      // Issue #86: the post-processor's view state, forwarded by
+      // mo_savepng. Applied AFTER the load, because everything it
+      // touches lives on the item the load creates -- and the return
+      // value is checked, because a state that silently failed to
+      // apply produces exactly the defect this fixes: a valid PNG of
+      // the wrong plot.
+      if (!plot.isEmpty() && !window.applyPlotState(plot)) {
+        fprintf(stderr, "--render-png: plot options were given but no solution "
+                        "loaded to apply them to\n");
+        return 1;
+      }
       // Modified by Claude (Anthropic), noreply@anthropic.com: found while
       // trying to visually verify an unrelated density-plot fix -- this
       // call was never here. selectDensityPlot() existed and --density
@@ -341,8 +388,10 @@ int main(int argc, char* argv[])
       // that commit silently stayed in the viewer's default Contour mode
       // instead. Every "density" screenshot taken via this CLI path
       // before this fix was actually a contour plot.
-      if (args.contains("--density"))
-        window.selectDensityPlot();
+      // The plot mode used to be applied here as well as in
+      // applyPlotState. Two paths setting the same thing is how one of
+      // them stops being exercised without anything noticing -- the
+      // mode now crosses exactly once, through the state.
       image = window.renderToImage(QSize(w, h), source);
     } else {
       MainWindow window;

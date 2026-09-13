@@ -485,6 +485,19 @@ class SolutionGraphicsView : public QGraphicsView {
   // the legend-visible flag itself.
   void setLegendItem(MeshSolutionItem* item);
   void setLegendVisible(bool visible);
+
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #86). Draws the legend into an offscreen render.
+  //
+  // The legend is a child widget of the viewport, not an item in the
+  // scene -- so SolutionWindow::renderToImage, which renders the SCENE,
+  // left it out. A --render-png density plot therefore came back
+  // without the colour key that the same plot shows on screen and that
+  // the classic GUI's own mo_savepng output always includes: the two
+  // GUIs produced pictures of the same data that could not be compared
+  // side by side. It also meant a script asking for the legend to be
+  // hidden and one asking for it to be shown got identical files.
+  void renderLegendInto(QPainter& painter, QSize imageSize);
   bool legendVisible() const { return m_legendEnabled; }
   void refreshLegend();
 
@@ -587,6 +600,19 @@ class SolutionWindow : public QMainWindow {
   // The viewer opens in Contour mode; the offscreen --render-png
   // path needs a way to ask for Density without a menu.
   void selectDensityPlot();
+
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #86). Applies the post-processor view state a script
+  // configured in the classic GUI before calling mo_savepng under
+  // setgui("qt"). Only the fields the caller actually set are touched,
+  // so a render with no state behaves exactly as before.
+  //
+  // Must be called AFTER the file is open: everything it touches lives
+  // on m_item, which the load creates. Returns false if nothing is
+  // loaded, which is the caller's signal that the state was dropped
+  // rather than applied -- silently rendering defaults is the defect
+  // this exists to fix.
+  bool applyPlotState(const struct PlotState& state);
 
 
   private slots:

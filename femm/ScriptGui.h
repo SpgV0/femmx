@@ -45,9 +45,74 @@ const char* ScriptGuiName(ScriptGui g);
 // process-wide token: nothing initialises one at startup today.
 BOOL SaveHBitmapAsPng(HBITMAP hBmp, const char* pngPath);
 
+// The post-processor view state that crosses to femmqt.
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+// (issue #86). femmqt is a separate process: it opens the solution
+// fresh, with its own defaults, and can see nothing the script
+// configured here. Before this, the shell-out passed a size and
+// nothing else, so
+//
+//     mo_showdensityplot(1, 0, 2.0, 0, "bmag")
+//     mo_savepng("out.png")
+//
+// under setgui("qt") produced femmqt's default CONTOUR plot -- 59% of
+// pixels different from what was asked for, and no error to say so.
+//
+// WHAT DOES NOT CROSS, and why it is listed rather than quietly
+// dropped:
+//
+//   Vector plot   femmqt has no vector overlay at all -- it was removed
+//                 at the user's request. mo_showvectorplot has no
+//                 effect on a Qt render.
+//   Contours      the mask/Re-vs-Im contour selection (ShowAr/ShowAi/
+//                 ShowMask) has no femmqt equivalent yet; the contour
+//                 COUNT and bounds do cross.
+//   Smoothing,    femmqt has its own settings for these and they are
+//   points, mesh  not part of what mo_savepng asks for.
+//
+// See manual_qt for the same list in prose.
+struct QtPlotState {
+  // Nothing set: render with femmqt's own defaults. This is what the
+  // pre-processor's mi_savepng passes, having no plot state at all.
+  BOOL haveState;
+
+  BOOL density;       // FALSE renders contour lines
+  CString quantity;   // "bmag".."logb", the mo_showdensityplot vocabulary
+  BOOL haveBounds;
+  double lower, upper;
+  BOOL greyscale;
+  BOOL legend;
+  int numContours;    // 0 leaves femmqt's default
+
+  // The visible region in model coordinates. It matters for more than
+  // framing: the density plot's colour banding is scaled to what is
+  // VISIBLE, so a full-model render cannot reproduce a zoomed-in view's
+  // colours.
+  BOOL haveCrop;
+  double x0, y0, x1, y1;
+
+  QtPlotState()
+      : haveState(FALSE), density(FALSE), haveBounds(FALSE), lower(0), upper(0),
+        greyscale(FALSE), legend(TRUE), numContours(0), haveCrop(FALSE), x0(0),
+        y0(0), x1(0), y1(0)
+  {
+  }
+};
+
+// Turns the classic post-processor's DensityPlot index into the name
+// femmqt's --quantity expects. The index means DIFFERENT THINGS at DC
+// and AC -- 2 is Re(B) in a harmonic problem and |H| in a static one --
+// so the frequency is required, and passing the raw integer across
+// would be silently wrong for half of all problems. Returns an empty
+// string for 0 (density plot off) or an index out of range.
+CString QtDensityQuantityName(int densityPlot, double frequency);
+
 // Renders an already-saved document to PNG by shelling out to
 // femmqt.exe --render-png, and WAITS for it. binDir must end in a
-// separator (the CFemmeView/CFemmviewView BinDir convention). errOut, if
-// given, receives a human-readable reason on failure.
+// separator (the CFemmeView/CFemmviewView BinDir convention). plot may
+// be NULL, meaning "femmqt's defaults". errOut, if given, receives a
+// human-readable reason on failure.
 BOOL RenderPngViaQtGui(const char* binDir, const char* docPath,
-    const char* pngPath, int width, int height, CString* errOut);
+    const char* pngPath, int width, int height, const QtPlotState* plot,
+    CString* errOut);

@@ -2269,7 +2269,10 @@ int CFemmeDoc::lua_savepng(lua_State* L)
       return 0;
     }
     CString err;
-    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &err)) {
+    // NULL: the pre-processor is geometry, with no plot state to carry
+    // (#86).
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, NULL,
+            &err)) {
       CString msg;
       msg.Format("mi_savepng: %s", (const char*)err);
       lua_error(L, msg.GetBuffer(1));

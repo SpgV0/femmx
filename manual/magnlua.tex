@@ -1101,6 +1101,42 @@ it offscreen with its own antialiased density and contour plotting. An
 optional pixel size may be given as {\tt mo\_savepng("filename",w,h)}; it
 applies only to the Qt renderer, since the classic one can only capture
 its window at the size that window actually is.
+
+Under {\tt setgui("qt")} the post-processor's current view settings are
+carried across to the Qt renderer, so that {\tt mo\_showdensityplot} and
+friends affect the saved image as they do the on-screen one. What
+crosses:
+
+\begin{itemize}
+\item the plot mode --- density or contour;
+\item the density quantity ({\tt "bmag"}, {\tt "hreal"}, {\tt "logb"} and
+      the rest), correctly interpreted for DC or AC, since the same
+      index means different quantities in the two cases;
+\item the density plot's lower and upper bounds;
+\item the greyscale flag and the legend flag;
+\item the number of contour lines;
+\item the visible region. This matters for more than framing: the
+      density plot's colour banding is scaled to what is {\em visible},
+      so a full-model render cannot reproduce a zoomed-in view's
+      colours.
+\end{itemize}
+
+What does {\em not} cross, and why:
+
+\begin{itemize}
+\item {\tt mo\_showvectorplot} --- the Qt viewer has no vector overlay
+      at all, so a vector plot has no counterpart to render;
+\item the contour mask and the real/imaginary contour selection
+      ({\tt mo\_showcontourplot}'s {\tt "real"}/{\tt "imag"}/{\tt "both"}
+      argument) --- the contour {\em count} and bounds do cross, the
+      selection does not;
+\item smoothing, mesh display and point display, which are the Qt
+      viewer's own settings rather than part of what a saved image was
+      asked for.
+\end{itemize}
+
+If you need any of those in a saved image, use {\tt setgui("classic")},
+which captures exactly what the traditional post-processor is showing.
 \item{\tt mo\_savemetafile("filename")} saves a metafile screenshot of the current
 view to the file specified by {\tt "filename"}, subject to the {\tt
 printf}-type formatting explained previously for the {\tt

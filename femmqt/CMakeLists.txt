@@ -106,6 +106,8 @@ qt_add_library(femmqt_core STATIC
   FileRouting.cpp
   Notify.h
   Notify.cpp
+  PlotStateArgs.h
+  PlotStateArgs.cpp
   SketchFileIO.h
   SketchFileIO.cpp
   SnapEngine.h
@@ -383,6 +385,11 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_headless_cli_tests
     tests/tst_headless_cli.cpp
   )
+  # Also drives femmqt.exe: the question "did the render obey the plot
+  # state" can only be asked of an actual image (#86).
+  qt_add_executable(femmqt_plot_state_tests
+    tests/tst_plot_state.cpp
+  )
   # The toolbar icon resource. Every button rendered as bare text and
   # nothing said why, because an empty QIcon draws exactly like a
   # deliberately text-only button.
@@ -419,6 +426,7 @@ if(TARGET Qt6::Test)
     femmqt_solution_integral_tests
     femmqt_type_independence_tests
     femmqt_headless_cli_tests
+    femmqt_plot_state_tests
     femmqt_icon_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
@@ -466,8 +474,11 @@ if(TARGET Qt6::Test)
   # drives is missing or stale -- which fails loudly (initTestCase
   # refuses to run vacuously) but for a confusing reason.
   add_dependencies(femmqt_headless_cli_tests femmqt)
+  add_dependencies(femmqt_plot_state_tests femmqt)
 
   add_test(NAME femmqt_headless_cli COMMAND femmqt_headless_cli_tests)
+  add_test(NAME femmqt_plot_state COMMAND femmqt_plot_state_tests)
+  set_tests_properties(femmqt_plot_state PROPERTIES TIMEOUT 900)
   # Spawns femmqt.exe, which must exist first.
   set_tests_properties(femmqt_headless_cli PROPERTIES TIMEOUT 600)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)

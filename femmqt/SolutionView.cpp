@@ -1,5 +1,7 @@
 #define _USE_MATH_DEFINES
 #include "SolutionView.h"
+
+#include "PlotStateArgs.h"
 #include "SolutionFileIO.h"
 #include "SolutionField.h"
 #include "SolutionAdapter.h"
@@ -1652,6 +1654,34 @@ void SolutionGraphicsView::refreshLegend()
   m_legend->show();
   m_legend->raise();
   m_legend->update();
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#86).
+void SolutionGraphicsView::renderLegendInto(QPainter& painter, QSize imageSize)
+{
+  // Same three conditions refreshLegend() uses to decide whether the
+  // legend belongs on screen, so an offscreen render and a window show
+  // the same thing rather than two rules drifting apart.
+  if (!m_legend || !m_legendEnabled || !m_legendItem)
+    return;
+  if (m_legendItem->plotMode() != MeshSolutionItem::PlotMode::Density)
+    return;
+
+  // The window behind an offscreen render was never shown, so the
+  // legend has never been laid out; its size comes from font metrics,
+  // which do not need one.
+  m_legend->updateGeometry();
+  if (m_legend->width() <= 0 || m_legend->height() <= 0)
+    return;
+
+  // renderToImage flips the y axis so the y-up scene comes out the
+  // right way up. The legend is device-space furniture and must not
+  // inherit that, or it would be drawn upside down in the wrong corner.
+  painter.save();
+  painter.resetTransform();
+  m_legend->render(&painter,
+      QPoint(imageSize.width() - m_legend->width() - 8, 8));
+  painter.restore();
 }
 
 void SolutionGraphicsView::resizeEvent(QResizeEvent* event)
@@ -3460,6 +3490,53 @@ void SolutionWindow::selectDensityPlot()
     m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#86).
+bool SolutionWindow::applyPlotState(const PlotState& state)
+{
+  if (!m_item)
+    return false;
+
+  if (state.mode == PlotState::Mode::Density)
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+  else if (state.mode == PlotState::Mode::Contour)
+    m_item->setPlotMode(MeshSolutionItem::PlotMode::Contour);
+
+  if (state.quantity >= 0 && state.quantity < MeshSolutionItem::kDensityQuantityCount)
+    m_item->setDensityQuantity((MeshSolutionItem::DensityQuantity)state.quantity);
+
+  // Bounds belong to a quantity, so they are set after it -- setting
+  // them first would attach the script's range to whichever quantity
+  // happened to be selected, which is how a custom range ends up on
+  // the wrong plot.
+  if (state.haveBounds) {
+    const MeshSolutionItem::DensityQuantity q = m_item->densityQuantity();
+    if (state.lower == state.upper)
+      m_item->clearCustomRange(q); // an empty range means "auto", not "one colour"
+    else
+      m_item->setCustomRange(q, state.lower, state.upper);
+  }
+
+  if (state.greyscale >= 0)
+    m_item->setGrayscale(state.greyscale != 0);
+
+  if (state.numContours > 0)
+    m_item->setNumContours(state.numContours);
+  if (state.haveContourBounds) {
+    if (state.contourLower == state.contourUpper)
+      m_item->clearContourRange();
+    else
+      m_item->setContourRange(state.contourLower, state.contourUpper);
+  }
+
+  if (state.legend >= 0 && m_view) {
+    m_view->setLegendVisible(state.legend != 0);
+    m_view->refreshLegend();
+  }
+
+  m_item->update();
+  return true;
+}
+
 QImage SolutionWindow::renderToImage(QSize size, QRectF source)
 {
   if (m_item == nullptr || size.isEmpty())
@@ -3479,6 +3556,12 @@ QImage SolutionWindow::renderToImage(QSize size, QRectF source)
   m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
       source.isEmpty() ? m_item->boundingRect() : source,
       Qt::KeepAspectRatio);
+
+  // #86: the legend is viewport furniture rather than a scene item, so
+  // it has to be drawn separately or a rendered density plot comes back
+  // with no colour key at all.
+  if (m_view)
+    m_view->renderLegendInto(painter, size);
   return image;
 }
 

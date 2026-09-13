@@ -1235,8 +1235,41 @@ int CFemmviewDoc::lua_savepng(lua_State* L)
       lua_error(L, msg.GetBuffer(1));
       return 0;
     }
+    // Issue #86: carry this post-processor's view state across the
+    // process boundary. Without it femmqt opened the .ans with its own
+    // defaults, so mo_showdensityplot(...) followed by mo_savepng(...)
+    // returned a CONTOUR plot -- a valid image of the wrong plot, with
+    // nothing to say so.
+    QtPlotState plot;
+    plot.haveState = TRUE;
+    plot.density = (theView->DensityPlot > 0);
+    plot.quantity = QtDensityQuantityName(theView->DensityPlot, thisDoc->Frequency);
+    plot.greyscale = theView->GreyContours;
+    plot.legend = theView->LegendFlag;
+    plot.numContours = theView->NumContours;
+    if (theView->DensityPlot > 0 && theView->DensityPlot <= 10) {
+      plot.haveBounds = TRUE;
+      plot.lower = thisDoc->PlotBounds[theView->DensityPlot - 1][0];
+      plot.upper = thisDoc->PlotBounds[theView->DensityPlot - 1][1];
+    }
+
+    // The visible region, in model coordinates. This is a correctness
+    // matter and not just framing: the density plot's colour banding is
+    // scaled to what is VISIBLE, so a full-model render cannot
+    // reproduce a zoomed-in view's colours. ox/oy are the lower-left
+    // corner and mag the pixels-per-unit scale -- the same relation
+    // CFemmviewView::ScreenToDwg inverts.
+    if (theView->mag > 0) {
+      plot.haveCrop = TRUE;
+      plot.x0 = theView->ox;
+      plot.y0 = theView->oy;
+      plot.x1 = theView->ox + (double)cap.cx / theView->mag;
+      plot.y1 = theView->oy + (double)cap.cy / theView->mag;
+    }
+
     CString err;
-    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &err)) {
+    if (!RenderPngViaQtGui(theView->BinDir, pn, filename, width, height, &plot,
+            &err)) {
       CString msg;
       msg.Format("mo_savepng: %s", (const char*)err);
       lua_error(L, msg.GetBuffer(1));

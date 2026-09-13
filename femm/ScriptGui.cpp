@@ -157,8 +157,38 @@ BOOL SaveHBitmapAsPng(HBITMAP hBmp, const char* pngPath)
   return ok;
 }
 
+CString QtDensityQuantityName(int densityPlot, double frequency)
+{
+  if (densityPlot <= 0)
+    return CString("");
+
+  // Mirrors femm/femmviewLua.cpp's lua_showdensity, which builds this
+  // same index from these same names -- read backwards.
+  if (frequency == 0) {
+    switch (densityPlot) {
+    case 1:
+      return CString("bmag");
+    case 2:
+      return CString("hmag");
+    case 3:
+      return CString("jmag");
+    case 4:
+      return CString("logb");
+    default:
+      return CString("");
+    }
+  }
+
+  static const char* const kAc[10] = { "bmag", "breal", "bimag", "hmag", "hreal",
+    "himag", "jmag", "jreal", "jimag", "logb" };
+  if (densityPlot >= 1 && densityPlot <= 10)
+    return CString(kAc[densityPlot - 1]);
+  return CString("");
+}
+
 BOOL RenderPngViaQtGui(const char* binDir, const char* docPath,
-    const char* pngPath, int width, int height, CString* errOut)
+    const char* pngPath, int width, int height, const QtPlotState* plot,
+    CString* errOut)
 {
   CString exe;
   exe.Format("%sfemmqt.exe", binDir);
@@ -172,6 +202,40 @@ BOOL RenderPngViaQtGui(const char* binDir, const char* docPath,
   CString cmd;
   cmd.Format("\"%s\" --render-png \"%s\" \"%s\" %d %d",
       (const char*)exe, docPath, pngPath, width, height);
+
+  // Issue #86: the view state the script configured. The crop is
+  // positional and must stay immediately after the size; the named
+  // options follow it.
+  if (plot != NULL && plot->haveState) {
+    if (plot->haveCrop) {
+      CString crop;
+      crop.Format(" %.10g %.10g %.10g %.10g", plot->x0, plot->y0, plot->x1,
+          plot->y1);
+      cmd += crop;
+    }
+
+    cmd += plot->density ? " --density" : " --contour";
+
+    if (plot->quantity.GetLength() > 0) {
+      CString q;
+      q.Format(" --quantity %s", (const char*)plot->quantity);
+      cmd += q;
+    }
+    if (plot->haveBounds) {
+      CString b;
+      b.Format(" --bounds %.10g %.10g", plot->lower, plot->upper);
+      cmd += b;
+    }
+    CString flags;
+    flags.Format(" --greyscale %d --legend %d", plot->greyscale ? 1 : 0,
+        plot->legend ? 1 : 0);
+    cmd += flags;
+    if (plot->numContours > 0) {
+      CString c;
+      c.Format(" --contours %d", plot->numContours);
+      cmd += c;
+    }
+  }
 
   STARTUPINFO si = { 0 };
   PROCESS_INFORMATION pi;
