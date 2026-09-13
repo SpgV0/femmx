@@ -8,6 +8,7 @@
 #include "FemmProblem.h"
 #include "ConstructionGeometry.h"
 #include "GeometryScene.h"
+#include "ProblemKind.h"
 #include "SketchTransform.h"
 #include "GeometryView.h"
 
@@ -175,6 +176,9 @@ class MainWindow : public QMainWindow {
   // #31. Not slots: called from the Construction Geometry submenu's own
   // lambdas, which supply the direction.
   void reportSketchTransform(const QString& title, const SketchTransform::Report& r);
+  // #81: the property list for any category of any kind that has a
+  // field spec. Not a slot -- the four menu items route into it.
+  void showPropertyList(ProblemKind::Category category);
   void convertSelectionConstruction(bool toConstruction);
   void applyConstructionResult(const QString& title,
       const ConstructionGeometry::Result& r);

@@ -28,6 +28,7 @@
 #include "FemmProblemEdit.h"
 #include "ProblemFileIO.h"
 #include "ProblemKind.h"
+#include "PropertyFields.h"
 
 #include <QTemporaryDir>
 
@@ -119,6 +120,12 @@ class TestProblemKinds : public QObject
   void deletingAConductorFixesNodeSegmentAndArcReferences();
   void deletingACircuitFixesBlockLabelReferences();
   void referenceCountAnswersBeforeTheDelete();
+
+  void everyCategoryOfEveryNewKindHasAnEditableSpec();
+  void aSpecWritesBackIntoTheRecordItDescribes();
+  void heatFlowBoundaryTypesEnableExactlyWhatTheClassicDialogDoes();
+  void electrostaticsAndCurrentFlowBoundaryTypesMatchTheirClassicDialogs();
+  void magneticsKeepsItsOwnDialogs();
 };
 
 // ---------------------------------------------------------------------------
@@ -869,6 +876,161 @@ void TestProblemKinds::referenceCountAnswersBeforeTheDelete()
   // Out of range answers zero rather than reading past the end -- this
   // is called from a list whose selection can go stale.
   QCOMPARE(ProblemKind::referenceCount(p, ProblemKind::Category::Material, 7), 0);
+}
+
+// ---------------------------------------------------------------------------
+// The per-kind field specs (issue #81)
+// ---------------------------------------------------------------------------
+//
+// The dialog itself needs widgets and is checked by eye; the SPEC is
+// data and is checked here. What matters is that every category of every
+// kind produces something editable, that writing through a spec lands in
+// the right member, and that each boundary-condition type enables
+// exactly the fields the classic dialog enables -- the last one being
+// the requirement #81 states outright.
+
+void TestProblemKinds::everyCategoryOfEveryNewKindHasAnEditableSpec()
+{
+  for (FemmProblemKind kind : { FemmProblemKind::Electrostatics,
+           FemmProblemKind::HeatFlow, FemmProblemKind::CurrentFlow }) {
+    FemmProblem p;
+    p.kind = kind;
+    for (ProblemKind::Category cat : { ProblemKind::Category::Point,
+             ProblemKind::Category::Boundary, ProblemKind::Category::Material,
+             ProblemKind::Category::Source }) {
+      QVERIFY2(PropertyFields::hasSpec(p, cat), "a new kind reported no spec");
+      const int i = ProblemKind::addDefault(p, cat);
+      const PropertyFields::Spec spec = PropertyFields::specFor(p, cat, i);
+
+      QVERIFY2(!spec.title.isEmpty(), "a spec came back with no title");
+      QVERIFY2(spec.getName && spec.setName, "a spec cannot read or write its name");
+      QVERIFY2(!spec.fields.isEmpty(),
+          qPrintable(QStringLiteral("kind %1 category %2 produced a spec with no "
+                                    "fields, so the dialog would be an empty box")
+                         .arg((int)kind).arg((int)cat)));
+      for (const PropertyFields::Field& f : spec.fields) {
+        QVERIFY2(!f.label.isEmpty(), "a field has no label");
+        QVERIFY2(f.get && f.set, "a field cannot read or write its value");
+      }
+    }
+  }
+}
+
+void TestProblemKinds::aSpecWritesBackIntoTheRecordItDescribes()
+{
+  // A spec whose setter writes the wrong member is the silent failure
+  // here: the dialog closes, the value is gone, and nothing says so.
+  FemmProblem p;
+  p.kind = FemmProblemKind::HeatFlow;
+  const int i = ProblemKind::addDefault(p, ProblemKind::Category::Material);
+  PropertyFields::Spec spec = PropertyFields::specFor(p, ProblemKind::Category::Material, i);
+
+  spec.setName("copper");
+  QCOMPARE(p.htMaterialProps[i].name, QStringLiteral("copper"));
+
+  // Four fields, in the order the classic dialog lists them: kx, ky,
+  // volumetric heat capacity, volume heat generation.
+  QCOMPARE(spec.fields.size(), 4);
+  spec.fields[0].set("401");
+  spec.fields[1].set("402");
+  spec.fields[2].set("3.45");
+  spec.fields[3].set("1000");
+  QCOMPARE(p.htMaterialProps[i].Kx, 401.0);
+  QCOMPARE(p.htMaterialProps[i].Ky, 402.0);
+  QCOMPARE(p.htMaterialProps[i].Kt, 3.45);
+  QCOMPARE(p.htMaterialProps[i].qv, 1000.0);
+
+  // And reading comes back from the same members.
+  QCOMPARE(spec.fields[0].get().toDouble(), 401.0);
+  QCOMPARE(spec.fields[3].get().toDouble(), 1000.0);
+}
+
+void TestProblemKinds::heatFlowBoundaryTypesEnableExactlyWhatTheClassicDialogDoes()
+{
+  // Straight from femm/hd_BdryDlg.cpp's OnSelchangeBdryformat:
+  //   0 Fixed Temperature -> Tset
+  //   1 Heat Flux         -> qs
+  //   2 Convection        -> qs, h, Tinf
+  //   3 Radiation         -> qs, h, Tinf, beta, TinfRad
+  FemmProblem p;
+  p.kind = FemmProblemKind::HeatFlow;
+  const int i = ProblemKind::addDefault(p, ProblemKind::Category::Boundary);
+  const PropertyFields::Spec spec =
+      PropertyFields::specFor(p, ProblemKind::Category::Boundary, i);
+
+  QCOMPARE(spec.selector.options.size(), 4);
+  QCOMPARE(spec.fields.size(), 6);
+
+  const QVector<QVector<int>> expected = {
+    { 0 },          // Tset
+    { 1, 2, 3 },    // qs
+    { 2, 3 },       // h
+    { 2, 3 },       // Tinf
+    { 3 },          // beta
+    { 3 },          // TinfRad
+  };
+  for (int f = 0; f < expected.size(); f++) {
+    QVERIFY2(spec.fields[f].enabledForOptions == expected[f],
+        qPrintable(QStringLiteral("field %1 (%2) is enabled for the wrong "
+                                  "boundary types")
+                       .arg(f).arg(spec.fields[f].label)));
+  }
+}
+
+void TestProblemKinds::electrostaticsAndCurrentFlowBoundaryTypesMatchTheirClassicDialogs()
+{
+  // femm/bd_BdryDlg.cpp and cd_BdryDlg.cpp have the identical switch:
+  //   0 Fixed Voltage -> the voltage field(s)
+  //   1 Mixed         -> c0, c1
+  //   2 Surface       -> the surface density field(s)
+  {
+    FemmProblem p;
+    p.kind = FemmProblemKind::Electrostatics;
+    const int i = ProblemKind::addDefault(p, ProblemKind::Category::Boundary);
+    const PropertyFields::Spec spec =
+        PropertyFields::specFor(p, ProblemKind::Category::Boundary, i);
+    QCOMPARE(spec.selector.options.size(), 3);
+    QCOMPARE(spec.fields.size(), 4);
+    QCOMPARE(spec.fields[0].enabledForOptions, QVector<int>({ 0 })); // Vs
+    QCOMPARE(spec.fields[1].enabledForOptions, QVector<int>({ 2 })); // qs
+    QCOMPARE(spec.fields[2].enabledForOptions, QVector<int>({ 1 })); // c0
+    QCOMPARE(spec.fields[3].enabledForOptions, QVector<int>({ 1 })); // c1
+  }
+  {
+    FemmProblem p;
+    p.kind = FemmProblemKind::CurrentFlow;
+    const int i = ProblemKind::addDefault(p, ProblemKind::Category::Boundary);
+    const PropertyFields::Spec spec =
+        PropertyFields::specFor(p, ProblemKind::Category::Boundary, i);
+    QCOMPARE(spec.selector.options.size(), 3);
+    // Current flow is complex everywhere, so each of the three groups is
+    // a real/imaginary pair.
+    QCOMPARE(spec.fields.size(), 8);
+    QCOMPARE(spec.fields[0].enabledForOptions, QVector<int>({ 0 }));
+    QCOMPARE(spec.fields[1].enabledForOptions, QVector<int>({ 0 }));
+    QCOMPARE(spec.fields[2].enabledForOptions, QVector<int>({ 2 }));
+    QCOMPARE(spec.fields[3].enabledForOptions, QVector<int>({ 2 }));
+    QCOMPARE(spec.fields[4].enabledForOptions, QVector<int>({ 1 }));
+    QCOMPARE(spec.fields[7].enabledForOptions, QVector<int>({ 1 }));
+  }
+}
+
+void TestProblemKinds::magneticsKeepsItsOwnDialogs()
+{
+  // Deliberate, and worth asserting so it is a decision rather than an
+  // oversight: the magnetics dialogs already match the classic ones
+  // field for field, and two of them do things a flat field list cannot
+  // describe -- the BH curve editor, and the point property's radio pair
+  // that ZEROES the other pair rather than merely disabling it.
+  FemmProblem p;
+  p.kind = FemmProblemKind::Magnetics;
+  for (ProblemKind::Category cat : { ProblemKind::Category::Point,
+           ProblemKind::Category::Boundary, ProblemKind::Category::Material,
+           ProblemKind::Category::Source }) {
+    QVERIFY2(!PropertyFields::hasSpec(p, cat),
+        "magnetics reported a field spec, which would route it away from its "
+        "own dialogs and lose the BH curve editor");
+  }
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)

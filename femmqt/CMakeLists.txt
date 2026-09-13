@@ -124,6 +124,10 @@ qt_add_library(femmqt_core STATIC
   PropertyCodec.cpp
   ProblemFileIO.h
   ProblemFileIO.cpp
+  PropertyFields.h
+  PropertyFields.cpp
+  PropertyEditDialog.h
+  PropertyEditDialog.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h

@@ -34,6 +34,8 @@
 #include "PointPropDialog.h"
 #include "PreferencesDialog.h"
 #include "ProblemPropertiesDialog.h"
+#include "PropertyEditDialog.h"
+#include "PropertyFields.h"
 #include "PropertyListDialog.h"
 #include "SegmentPropDialog.h"
 #include "SolutionView.h"
@@ -1768,8 +1770,57 @@ void MainWindow::onOpenSelectedTriggered()
   openEntityProperties(kind, indices);
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#81).
+//
+// The property-list handler for every category of every problem kind
+// that has a field spec. The list itself was already generic
+// (PropertyListDialog takes callbacks); what is new is that the count,
+// the names, the add, the delete and the reference count all go through
+// ProblemKind, and the edit dialog is built from a field spec instead of
+// being a hand-written class per physics.
+//
+// Magnetics still takes the branch below this one: its four dialogs
+// already match the classic ones field for field, and two of them do
+// things a flat field list does not describe -- the BH curve editor, and
+// the point property's radio pair that ZEROES the other pair rather than
+// just grasying it out. Rewriting those to gain uniformity would risk a
+// regression in the one physics that already works.
+void MainWindow::showPropertyList(ProblemKind::Category category)
+{
+  PropertyListDialog::Callbacks cb;
+  cb.count = [this, category]() { return ProblemKind::count(m_problem, category); };
+  cb.nameAt = [this, category](int i) { return ProblemKind::name(m_problem, category, i); };
+  cb.editAt = [this, category](int i) {
+    PropertyEditDialog dlg(PropertyFields::specFor(m_problem, category, i), this);
+    if (dlg.exec() == QDialog::Accepted) {
+      m_scene->rebuild();
+      markEdited();
+    }
+  };
+  cb.addNew = [this, category]() {
+    ProblemKind::addDefault(m_problem, category);
+    markEdited();
+  };
+  cb.referenceCount = [this, category](int i) {
+    return ProblemKind::referenceCount(m_problem, category, i);
+  };
+  cb.remove = [this, category](int i) {
+    ProblemKind::remove(m_problem, category, i);
+    m_scene->rebuild();
+    markEdited();
+  };
+
+  const QString label = ProblemKind::categoryLabel(m_problem.kind, category);
+  PropertyListDialog dlg(label, label.toLower(), cb, this);
+  dlg.exec();
+}
+
 void MainWindow::onMaterialsTriggered()
 {
+  if (PropertyFields::hasSpec(m_problem, ProblemKind::Category::Material)) {
+    showPropertyList(ProblemKind::Category::Material);
+    return;
+  }
   PropertyListDialog::Callbacks cb;
   cb.count = [this]() { return m_problem.materialProps.size(); };
   cb.nameAt = [this](int i) { return m_problem.materialProps[i].name; };
@@ -1796,6 +1847,10 @@ void MainWindow::onMaterialsTriggered()
 
 void MainWindow::onBoundaryPropsTriggered()
 {
+  if (PropertyFields::hasSpec(m_problem, ProblemKind::Category::Boundary)) {
+    showPropertyList(ProblemKind::Category::Boundary);
+    return;
+  }
   PropertyListDialog::Callbacks cb;
   cb.count = [this]() { return m_problem.boundaryProps.size(); };
   cb.nameAt = [this](int i) { return m_problem.boundaryProps[i].name; };
@@ -1822,6 +1877,10 @@ void MainWindow::onBoundaryPropsTriggered()
 
 void MainWindow::onCircuitsTriggered()
 {
+  if (PropertyFields::hasSpec(m_problem, ProblemKind::Category::Source)) {
+    showPropertyList(ProblemKind::Category::Source);
+    return;
+  }
   PropertyListDialog::Callbacks cb;
   cb.count = [this]() { return m_problem.circuitProps.size(); };
   cb.nameAt = [this](int i) { return m_problem.circuitProps[i].name; };
@@ -1848,6 +1907,10 @@ void MainWindow::onCircuitsTriggered()
 
 void MainWindow::onPointPropsTriggered()
 {
+  if (PropertyFields::hasSpec(m_problem, ProblemKind::Category::Point)) {
+    showPropertyList(ProblemKind::Category::Point);
+    return;
+  }
   PropertyListDialog::Callbacks cb;
   cb.count = [this]() { return m_problem.pointProps.size(); };
   cb.nameAt = [this](int i) { return m_problem.pointProps[i].name; };
