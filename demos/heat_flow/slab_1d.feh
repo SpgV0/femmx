@@ -1,0 +1,57 @@
+[Format]      =  1
+[Precision]   =  1.0000000000000001e-09
+[GPUAccel]    =  0
+[MinAngle]    =  30
+[DoSmartMesh] =  1
+[Depth]       =  1
+[LengthUnits] =  millimeters
+[ProblemType] =  planar
+[Coordinates] =  cartesian
+[PrevSoln] = ""
+[dT] = 0
+[Comment]     =  "FEMMX demo: 1-D slab. A slab held at 400 K on one face and 300 K on the other. Temperature falls linearly and the heat flux is uniform."
+[PointProps]   = 0
+[BdryProps]   = 2
+  <BeginBdry>
+    <BdryName> = "Thot"
+    <BdryType> = 0
+    <Tset> = 400
+    <qs>   = 0
+    <beta> = 0
+    <h>    = 0
+    <Tinf> = 0
+    <TinfRad> = 0
+  <EndBdry>
+  <BeginBdry>
+    <BdryName> = "Tcold"
+    <BdryType> = 0
+    <Tset> = 300
+    <qs>   = 0
+    <beta> = 0
+    <h>    = 0
+    <Tinf> = 0
+    <TinfRad> = 0
+  <EndBdry>
+[BlockProps]  = 1
+  <BeginBlock>
+    <BlockName> = "slab"
+    <Kx> = 5
+    <Ky> = 5
+    <Kt> = 0
+    <qv> = 0
+  <EndBlock>
+[ConductorProps]  = 0
+[NumPoints] = 4
+0	0	0	0	0
+10	0	0	0	0
+10	4	0	0	0
+0	4	0	0	0
+[NumSegments] = 4
+0	1	-1	0	0	0	0
+1	2	-1	2	0	0	0
+2	3	-1	0	0	0	0
+3	0	-1	1	0	0	0
+[NumArcSegments] = 0
+[NumHoles] = 0
+[NumBlockLabels] = 1
+5	2	1	-1	0	0

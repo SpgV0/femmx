@@ -1,0 +1,109 @@
+{
+  "formatVersion": 1,
+  "demos": [
+    {
+      "file": "magnetics/straight_wire.fem",
+      "title": "Straight wire",
+      "problemType": "magnetics",
+      "description": "A single 10 A conductor in an open-boundary air region. The simplest magnetostatic model in the library, and a good first look at the editor.",
+      "analyticReference": "B = mu0*I/(2*pi*r)",
+      "derivedFrom": "test/results/straight_wire_field/straight_wire_field.fem"
+    },
+    {
+      "file": "magnetics/coax_cable.fem",
+      "title": "Coaxial cable",
+      "problemType": "magnetics",
+      "description": "Coaxial cable carrying equal and opposite currents. Shows B inside the inner conductor, between the conductors, and the external inductance recovered from stored energy.",
+      "analyticReference": "L' = (mu0/2pi)*ln(b/a); B = mu0*I/(2*pi*r)",
+      "derivedFrom": "test/results/magnetics_analytic/coax_inductance.fem"
+    },
+    {
+      "file": "magnetics/circular_loop_axi.fem",
+      "title": "Circular loop (axisymmetric)",
+      "problemType": "magnetics",
+      "description": "A single-turn circular loop solved as an axisymmetric problem -- the standard introduction to axisymmetric modelling.",
+      "analyticReference": "B_axis = mu0*I*a^2 / (2*(a^2+z^2)^(3/2))",
+      "derivedFrom": "test/results/magnetics_analytic/loop.fem"
+    },
+    {
+      "file": "magnetics/solenoid_axi.fem",
+      "title": "Short solenoid (axisymmetric)",
+      "problemType": "magnetics",
+      "description": "A finite solenoid, short enough that end effects matter: the centre field falls well below the infinite-solenoid value mu0*n*I.",
+      "analyticReference": "finite-solenoid on-axis closed form",
+      "derivedFrom": "test/results/magnetics_analytic/solenoid_short.fem"
+    },
+    {
+      "file": "magnetics/two_wires_force.fem",
+      "title": "Force between two wires",
+      "problemType": "magnetics",
+      "description": "Two parallel current-carrying wires. Demonstrates force extraction, and lets the Lorentz and weighted stress tensor methods be compared on the same block.",
+      "analyticReference": "F/L = mu0*I1*I2/(2*pi*d)",
+      "derivedFrom": "test/results/magnetics_analytic/two_wires.fem"
+    },
+    {
+      "file": "magnetics/saturating_core.fem",
+      "title": "Saturating iron core",
+      "problemType": "magnetics",
+      "description": "A nonlinear B-H core driven hard into saturation: relative permeability collapses from roughly 13000 at low drive to about 100 here. Shows the nonlinear solver and B-H curve handling.",
+      "analyticReference": "no closed form -- compare mu_r against the material's B-H curve",
+      "derivedFrom": "test/results/magnetics_analytic/frame_high.fem"
+    },
+    {
+      "file": "magnetics/skin_effect_ac.fem",
+      "title": "Skin effect at 100 kHz",
+      "problemType": "magnetics",
+      "description": "A time-harmonic problem: current density in a 5 mm conductor at 100 kHz, where the skin depth is about 0.21 mm, so the current crowds into a thin surface layer.",
+      "analyticReference": "delta = sqrt(2/(omega*mu*sigma))",
+      "derivedFrom": "test/results/magnetics_analytic/skin.fem"
+    },
+    {
+      "file": "electrostatics/parallel_plate.fee",
+      "title": "Parallel-plate capacitor",
+      "problemType": "electrostatics",
+      "description": "Two plates with periodic side boundaries, which removes fringing and leaves a uniform field -- the cleanest check of an electrostatic solve.",
+      "analyticReference": "C = eps*A/d; E = V/d",
+      "derivedFrom": "test/results/analytic_fields/parallel_plate.fee"
+    },
+    {
+      "file": "electrostatics/coax_capacitor_axi.fee",
+      "title": "Coaxial capacitor (axisymmetric)",
+      "problemType": "electrostatics",
+      "description": "Coaxial conductors held at fixed potentials. The potential falls logarithmically between them.",
+      "analyticReference": "C' = 2*pi*eps/ln(b/a)",
+      "derivedFrom": "test/results/analytic_fields/coax.fee"
+    },
+    {
+      "file": "heat_flow/slab_1d.feh",
+      "title": "1-D slab",
+      "problemType": "heat_flow",
+      "description": "A slab held at 400 K on one face and 300 K on the other. Temperature falls linearly and the heat flux is uniform.",
+      "analyticReference": "q = k*dT/L",
+      "derivedFrom": "test/results/analytic_fields/slab.feh"
+    },
+    {
+      "file": "heat_flow/cylindrical_shell_axi.feh",
+      "title": "Cylindrical shell (axisymmetric)",
+      "problemType": "heat_flow",
+      "description": "Radial conduction through a cylindrical shell, giving a logarithmic temperature profile rather than a linear one.",
+      "analyticReference": "T(r) logarithmic; q'' = k*dT/(r*ln(b/a))",
+      "derivedFrom": "test/results/analytic_fields/shell.feh"
+    },
+    {
+      "file": "heat_flow/convection_wall.feh",
+      "title": "Wall with convection",
+      "problemType": "heat_flow",
+      "description": "A wall losing heat to ambient through a convection boundary condition -- the outer face temperature is set by the surface balance rather than prescribed.",
+      "analyticReference": "q'' = h*(T_surface - T_inf)",
+      "derivedFrom": "test/results/analytic_fields/convection.feh"
+    },
+    {
+      "file": "current_flow/conducting_bar.fec",
+      "title": "Conducting bar",
+      "problemType": "current_flow",
+      "description": "A rectangular bar between two fixed potentials, carrying a uniform current density. Resistance and total current both follow from the solve.",
+      "analyticReference": "R = rho*L/A",
+      "derivedFrom": "test/results/analytic_fields/bar.fec"
+    }
+  ]
+}

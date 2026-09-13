@@ -1,0 +1,50 @@
+[Format]      =  1
+[Precision]   =  1.0000000000000001e-09
+[GPUAccel]    =  0
+[MinAngle]    =  30
+[DoSmartMesh] =  1
+[Depth]       =  1
+[LengthUnits] =  millimeters
+[ProblemType] =  planar
+[Coordinates] =  cartesian
+[Comment]     =  "FEMMX demo: Parallel-plate capacitor. Two plates with periodic side boundaries, which removes fringing and leaves a uniform field -- the cleanest check of an electrostatic solve."
+[PointProps]   = 0
+[BdryProps]   = 2
+  <BeginBdry>
+    <BdryName> = "Vlow"
+    <BdryType> = 0
+    <Vs> = 0
+    <qs> = 0
+    <c0> = 0
+    <c1> = 0
+  <EndBdry>
+  <BeginBdry>
+    <BdryName> = "Vhigh"
+    <BdryType> = 0
+    <Vs> = 100
+    <qs> = 0
+    <c0> = 0
+    <c1> = 0
+  <EndBdry>
+[BlockProps]  = 1
+  <BeginBlock>
+    <BlockName> = "dielectric"
+    <ex> = 1
+    <ey> = 1
+    <qv> = 0
+  <EndBlock>
+[ConductorProps]  = 0
+[NumPoints] = 4
+0	0	0	0	0
+20	0	0	0	0
+20	5	0	0	0
+0	5	0	0	0
+[NumSegments] = 4
+0	1	-1	1	0	0	0
+1	2	-1	0	0	0	0
+2	3	-1	2	0	0	0
+3	0	-1	0	0	0	0
+[NumArcSegments] = 0
+[NumHoles] = 0
+[NumBlockLabels] = 1
+10	2.5	1	-1	0	0
