@@ -116,6 +116,12 @@ qt_add_library(femmqt_core STATIC
   ConstructionGeometry.cpp
   SketchTransform.h
   SketchTransform.cpp
+  ProblemKind.h
+  ProblemKind.cpp
+  FemmTextFormat.h
+  FemmTextFormat.cpp
+  PropertyCodec.h
+  PropertyCodec.cpp
   FemxFileIO.h
   FemxFileIO.cpp
   ProblemPropertiesDialog.h

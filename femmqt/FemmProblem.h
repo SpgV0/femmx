@@ -73,6 +73,149 @@ struct FemmCircuitProp {
   double voltGradientRe = 0, voltGradientIm = 0;
 };
 
+// ---------------------------------------------------------------------------
+// The four problem kinds (issue #80)
+// ---------------------------------------------------------------------------
+//
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13.
+//
+// FEMM has four physics, four file formats and four solvers that all
+// already ship. They share an identical geometry skeleton -- [NumPoints],
+// [NumSegments], [NumArcSegments], [NumBlockLabels] and the
+// <BeginPoint>/<BeginBdry>/<BeginBlock> record structure are the same in
+// all four -- and differ only in the PROPERTY payloads. That is why the
+// CAD layer (GeometryScene, ConstraintSolver, dimensions, snapping)
+// transfers to all four for free: it touches nodes, segments, arcs and
+// block labels and never touches a property.
+//
+// A document is ONE kind, chosen at New and inferred from the extension
+// at Open, exactly like the classic GUI and exactly like the formats.
+// This is deliberately not the reverted thermal attempt (8e88951), which
+// gave every entity a parallel index per physics; that does not map onto
+// any of the on-disk formats, where there is exactly one [PointProps],
+// one [BdryProps], one [BlockProps] and one source list per file.
+enum class FemmProblemKind {
+  Magnetics,      // .fem  -> fkn.exe
+  Electrostatics, // .fee  -> belasolv.exe
+  HeatFlow,       // .feh  -> hsolv.exe
+  CurrentFlow,    // .fec  -> csolv.exe
+};
+
+// Field names below are the tags each format actually uses, taken from
+// the four classic writers (femm/FemmeDoc.cpp, beladrawDoc.cpp,
+// hdrawDoc.cpp, cdrawDoc.cpp) rather than from memory. The tags are the
+// contract with the solvers, so a rename here is a file-format change.
+
+// --- Electrostatics (.fee) -------------------------------------------------
+
+struct FemmEsPointProp {
+  QString name; // <PointName>
+  double Vp = 0; // <Vp>, prescribed potential, V
+  double qp = 0; // <qp>, point charge density, C/m
+};
+
+struct FemmEsBoundaryProp {
+  QString name; // <BdryName>
+  int bdryFormat = 0; // <BdryType>
+  double Vs = 0; // <Vs>, fixed voltage
+  double qs = 0; // <qs>, surface charge density
+  double c0 = 0, c1 = 0; // <c0>, <c1>, mixed BC coefficients
+};
+
+struct FemmEsMaterialProp {
+  QString name; // <BlockName>
+  double ex = 1, ey = 1; // <ex>, <ey>, relative permittivity
+  double qv = 0; // <qv>, volume charge density
+};
+
+// --- Heat flow (.feh) ------------------------------------------------------
+
+struct FemmHtPointProp {
+  QString name; // <PointName>
+  double Tp = 0; // <Tp>, prescribed temperature, K
+  double qp = 0; // <qp>, point heat generation, W/m
+};
+
+struct FemmHtBoundaryProp {
+  QString name; // <BdryName>
+  int bdryFormat = 0; // <BdryType>
+  double Tset = 0; // <Tset>, fixed temperature
+  double qs = 0; // <qs>, heat flux
+  double beta = 0; // <beta>, emissivity for radiation
+  double h = 0; // <h>, convection coefficient
+  double Tinf = 0; // <Tinf>, ambient temperature for convection
+  double TinfRad = 0; // <TinfRad>, ambient temperature for radiation
+};
+
+struct FemmHtMaterialProp {
+  QString name; // <BlockName>
+  double Kx = 0, Ky = 0; // <Kx>, <Ky>, thermal conductivity, W/(m*K)
+  double Kt = 0; // <Kt>, volumetric heat capacity, MJ/(m^3*K)
+  double qv = 0; // <qv>, volumetric heat generation, W/m^3
+  // <TKPoints>: a temperature-dependent conductivity curve, the thermal
+  // counterpart of magnetics' BH curve. Empty means constant Kx/Ky.
+  QVector<QPair<double, double>> tkData;
+};
+
+// --- Current flow (.fec) ---------------------------------------------------
+//
+// The only one of the three whose properties are COMPLEX: current flow is
+// solved at a frequency, so a prescribed potential has a real and an
+// imaginary part.
+
+struct FemmCfPointProp {
+  QString name; // <PointName>
+  double vpr = 0, vpi = 0; // <vpr>, <vpi>, prescribed voltage
+  double qpr = 0, qpi = 0; // <qpr>, <qpi>, point current
+};
+
+struct FemmCfBoundaryProp {
+  QString name; // <BdryName>
+  int bdryFormat = 0; // <BdryType>
+  double vsr = 0, vsi = 0; // <vsr>, <vsi>, fixed voltage
+  double qsr = 0, qsi = 0; // <qsr>, <qsi>, surface current density
+  double c0r = 0, c0i = 0, c1r = 0, c1i = 0; // <c0r>..<c1i>, mixed BC
+};
+
+struct FemmCfMaterialProp {
+  QString name; // <BlockName>
+  double ox = 0, oy = 0; // <ox>, <oy>, conductivity, S/m
+  double ex = 1, ey = 1; // <ex>, <ey>, relative permittivity
+  double ltx = 0, lty = 0; // <ltx>, <lty>, dielectric loss tangent
+};
+
+// --- Sources ---------------------------------------------------------------
+//
+// Magnetics has circuits (FemmCircuitProp above); the other three have
+// CONDUCTORS, which are a different thing: a circuit carries a current
+// through a region, a conductor is an equipotential surface with either
+// its potential or its total flux prescribed.
+//
+// One struct for all three rather than three near-identical ones,
+// because the record genuinely is the same shape in each -- a prescribed
+// value, a prescribed flux, and which of the two is set. What differs is
+// what the value MEANS, and the tag it is written under, which is the
+// codec's business:
+//
+//   kind             value            flux
+//   Electrostatics   <Vc>  volts      <qc>  charge
+//   HeatFlow         <Tc>  kelvin     <qc>  heat flux
+//   CurrentFlow      <vcr>/<vci>      <qcr>/<qci>
+//
+// Only current flow uses the imaginary halves; the other two leave them
+// at zero. Naming them for their ROLE rather than for one kind's tag is
+// deliberate -- a field called Vc holding a temperature is exactly the
+// kind of thing that misleads later.
+struct FemmConductorProp {
+  QString name; // <ConductorName>
+  double valueRe = 0, valueIm = 0;
+  double fluxRe = 0, fluxIm = 0;
+  // <ConductorType>: 0 = prescribed flux, 1 = prescribed value. Matches
+  // the classic dialogs' "Prescribed total charge/heat flux" vs
+  // "Prescribed voltage/temperature" radio pair.
+  int conductorType = 0;
+};
+
 struct FemmNode {
   double x = 0, y = 0;
   // 0 = none, else 1-based index into pointProps -- NOT boundaryProps.
@@ -87,6 +230,22 @@ struct FemmNode {
   // be missed again.
   int pointPropIndex = 0;
   int inGroup = 0;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #80). 0 = none, else 1-based into FemmProblem::conductorProps.
+  //
+  // Electrostatics, heat flow and current flow attach a conductor to
+  // NODES, SEGMENTS and ARCS -- their .fee/.feh/.fec rows carry an extra
+  // column for it that the magnetics .fem row does not have. Magnetics'
+  // equivalent, a circuit, attaches to BLOCK LABELS instead
+  // (FemmBlockLabel::circuitIndex), because a circuit carries current
+  // through a region while a conductor is an equipotential surface.
+  //
+  // This is the one place the four formats' geometry sections genuinely
+  // differ; #79 described the skeleton as identical, and it is identical
+  // apart from this column and the block-label row. Unused and left at 0
+  // for magnetics. The CAD layer never reads it, so the sketch layer
+  // stays type-blind either way.
+  int conductorIndex = 0;
   bool isSelected = false;
   // See FemmSegment::isConstruction (issue #31). A node is only dropped
   // from the exported .fem if nothing surviving still references it: a
@@ -101,6 +260,22 @@ struct FemmSegment {
   int boundaryMarker = 0;
   bool hidden = false;
   int inGroup = 0;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #80). 0 = none, else 1-based into FemmProblem::conductorProps.
+  //
+  // Electrostatics, heat flow and current flow attach a conductor to
+  // NODES, SEGMENTS and ARCS -- their .fee/.feh/.fec rows carry an extra
+  // column for it that the magnetics .fem row does not have. Magnetics'
+  // equivalent, a circuit, attaches to BLOCK LABELS instead
+  // (FemmBlockLabel::circuitIndex), because a circuit carries current
+  // through a region while a conductor is an equipotential surface.
+  //
+  // This is the one place the four formats' geometry sections genuinely
+  // differ; #79 described the skeleton as identical, and it is identical
+  // apart from this column and the block-label row. Unused and left at 0
+  // for magnetics. The CAD layer never reads it, so the sketch layer
+  // stays type-blind either way.
+  int conductorIndex = 0;
   bool isSelected = false;
   // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
   // (issue #31): construction geometry -- a centreline, a bolt circle, a
@@ -122,6 +297,22 @@ struct FemmArcSegment {
   int boundaryMarker = 0;
   bool hidden = false;
   int inGroup = 0;
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #80). 0 = none, else 1-based into FemmProblem::conductorProps.
+  //
+  // Electrostatics, heat flow and current flow attach a conductor to
+  // NODES, SEGMENTS and ARCS -- their .fee/.feh/.fec rows carry an extra
+  // column for it that the magnetics .fem row does not have. Magnetics'
+  // equivalent, a circuit, attaches to BLOCK LABELS instead
+  // (FemmBlockLabel::circuitIndex), because a circuit carries current
+  // through a region while a conductor is an equipotential surface.
+  //
+  // This is the one place the four formats' geometry sections genuinely
+  // differ; #79 described the skeleton as identical, and it is identical
+  // apart from this column and the block-label row. Unused and left at 0
+  // for magnetics. The CAD layer never reads it, so the sketch layer
+  // stays type-blind either way.
+  int conductorIndex = 0;
   double mySideLength = 1;
   bool isSelected = false;
   // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
@@ -284,12 +475,47 @@ struct FemmProblem {
 #endif
   int prevType = 0;
   QString prevSoln;
+  // <dT>, heat flow only: the time step hsolv uses for a transient
+  // run. Read and written so a .feh round-trips; femmqt does not
+  // expose it, since transient thermal is not in scope here.
+  double heatTimeStep = 0;
   QString comment;
 
-  QVector<FemmPointProp> pointProps;
-  QVector<FemmBoundaryProp> boundaryProps;
-  QVector<FemmMaterialProp> materialProps;
-  QVector<FemmCircuitProp> circuitProps;
+  // Which physics this document is (issue #80). Defaults to Magnetics so
+  // every existing model, and every code path that has not been taught
+  // about the others yet, behaves exactly as before.
+  FemmProblemKind kind = FemmProblemKind::Magnetics;
+
+  // Properties, one set per kind. Only the set matching `kind` is
+  // populated -- an empty QVector costs nothing, and keeping them as
+  // separate typed lists means each field keeps the name its own file
+  // format uses instead of a union of four vocabularies.
+  //
+  // The per-ENTITY indices (FemmNode::pointPropIndex,
+  // FemmSegment::boundaryMarker, FemmBlockLabel::blockTypeIndex and the
+  // circuit/conductor index) are NOT duplicated per kind: each file has
+  // exactly one of each list, so an entity has exactly one of each
+  // reference. Only what the index points AT changes with the kind.
+  QVector<FemmPointProp> pointProps;         // Magnetics
+  QVector<FemmBoundaryProp> boundaryProps;   // Magnetics
+  QVector<FemmMaterialProp> materialProps;   // Magnetics
+  QVector<FemmCircuitProp> circuitProps;     // Magnetics
+
+  QVector<FemmEsPointProp> esPointProps;
+  QVector<FemmEsBoundaryProp> esBoundaryProps;
+  QVector<FemmEsMaterialProp> esMaterialProps;
+
+  QVector<FemmHtPointProp> htPointProps;
+  QVector<FemmHtBoundaryProp> htBoundaryProps;
+  QVector<FemmHtMaterialProp> htMaterialProps;
+
+  QVector<FemmCfPointProp> cfPointProps;
+  QVector<FemmCfBoundaryProp> cfBoundaryProps;
+  QVector<FemmCfMaterialProp> cfMaterialProps;
+
+  // Electrostatics, heat flow and current flow all use conductors where
+  // magnetics uses circuits -- see FemmConductorProp.
+  QVector<FemmConductorProp> conductorProps;
 
   QVector<FemmNode> nodes;
   QVector<FemmSegment> segments;

@@ -515,22 +515,48 @@ bool FemxFileIO::readFemx(const QString& femxPath, FemmProblem& p, QString& erro
   if (!readArray(file, nodeRecs, header.nodeCount, errorMessage, femxPath))
     return false;
   p.nodes.resize(nodeRecs.size());
-  for (int i = 0; i < nodeRecs.size(); i++)
-    p.nodes[i] = { nodeRecs[i].x, nodeRecs[i].y, nodeRecs[i].pointPropIndex, nodeRecs[i].inGroup, false };
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #80): these three were positional aggregate initialisers.
+  // Adding conductorIndex to the middle of the geometry structs shifted
+  // every value after it by one member; it happened to fail to compile
+  // because an int met a double, which is luck rather than safety -- two
+  // adjacent ints would have been accepted silently and written the
+  // wrong field into every arc in the cache. Assigned by name so the
+  // next field added cannot do that.
+  for (int i = 0; i < nodeRecs.size(); i++) {
+    p.nodes[i].x = nodeRecs[i].x;
+    p.nodes[i].y = nodeRecs[i].y;
+    p.nodes[i].pointPropIndex = nodeRecs[i].pointPropIndex;
+    p.nodes[i].inGroup = nodeRecs[i].inGroup;
+  }
 
   QVector<FemxSegmentRecord> segRecs;
   if (!readArray(file, segRecs, header.segmentCount, errorMessage, femxPath))
     return false;
   p.segments.resize(segRecs.size());
-  for (int i = 0; i < segRecs.size(); i++)
-    p.segments[i] = { segRecs[i].n0, segRecs[i].n1, segRecs[i].maxSideLength, segRecs[i].boundaryMarker, segRecs[i].hidden != 0, segRecs[i].inGroup, false };
+  for (int i = 0; i < segRecs.size(); i++) {
+    p.segments[i].n0 = segRecs[i].n0;
+    p.segments[i].n1 = segRecs[i].n1;
+    p.segments[i].maxSideLength = segRecs[i].maxSideLength;
+    p.segments[i].boundaryMarker = segRecs[i].boundaryMarker;
+    p.segments[i].hidden = segRecs[i].hidden != 0;
+    p.segments[i].inGroup = segRecs[i].inGroup;
+  }
 
   QVector<FemxArcRecord> arcRecs;
   if (!readArray(file, arcRecs, header.arcCount, errorMessage, femxPath))
     return false;
   p.arcSegments.resize(arcRecs.size());
-  for (int i = 0; i < arcRecs.size(); i++)
-    p.arcSegments[i] = { arcRecs[i].n0, arcRecs[i].n1, arcRecs[i].arcLength, arcRecs[i].maxSideLength, arcRecs[i].boundaryMarker, arcRecs[i].hidden != 0, arcRecs[i].inGroup, arcRecs[i].mySideLength, false };
+  for (int i = 0; i < arcRecs.size(); i++) {
+    p.arcSegments[i].n0 = arcRecs[i].n0;
+    p.arcSegments[i].n1 = arcRecs[i].n1;
+    p.arcSegments[i].arcLength = arcRecs[i].arcLength;
+    p.arcSegments[i].maxSideLength = arcRecs[i].maxSideLength;
+    p.arcSegments[i].boundaryMarker = arcRecs[i].boundaryMarker;
+    p.arcSegments[i].hidden = arcRecs[i].hidden != 0;
+    p.arcSegments[i].inGroup = arcRecs[i].inGroup;
+    p.arcSegments[i].mySideLength = arcRecs[i].mySideLength;
+  }
 
   QVector<FemxBlockLabelRecord> blockRecs;
   if (!readArray(file, blockRecs, header.blockLabelCount, errorMessage, femxPath))
