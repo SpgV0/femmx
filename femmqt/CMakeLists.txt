@@ -104,6 +104,8 @@ qt_add_library(femmqt_core STATIC
   GuiSwitch.cpp
   FileRouting.h
   FileRouting.cpp
+  DemoLibrary.h
+  DemoLibrary.cpp
   Notify.h
   Notify.cpp
   PlotStateArgs.h
@@ -385,6 +387,11 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_headless_cli_tests
     tests/tst_headless_cli.cpp
   )
+  # The shipped demo library, and the guarantee that opening one never
+  # touches it (#89/#91).
+  qt_add_executable(femmqt_demo_library_tests
+    tests/tst_demo_library.cpp
+  )
   # Also drives femmqt.exe: the question "did the render obey the plot
   # state" can only be asked of an actual image (#86).
   qt_add_executable(femmqt_plot_state_tests
@@ -426,6 +433,7 @@ if(TARGET Qt6::Test)
     femmqt_solution_integral_tests
     femmqt_type_independence_tests
     femmqt_headless_cli_tests
+    femmqt_demo_library_tests
     femmqt_plot_state_tests
     femmqt_icon_tests
   )
@@ -477,6 +485,7 @@ if(TARGET Qt6::Test)
   add_dependencies(femmqt_plot_state_tests femmqt)
 
   add_test(NAME femmqt_headless_cli COMMAND femmqt_headless_cli_tests)
+  add_test(NAME femmqt_demo_library COMMAND femmqt_demo_library_tests)
   add_test(NAME femmqt_plot_state COMMAND femmqt_plot_state_tests)
   set_tests_properties(femmqt_plot_state PROPERTIES TIMEOUT 900)
   # Spawns femmqt.exe, which must exist first.

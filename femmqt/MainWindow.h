@@ -31,6 +31,17 @@ class MainWindow : public QMainWindow {
   // rather than stopping on a dialog nobody can dismiss (#85).
   bool openFile(const QString& path);
 
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
+  // (issue #91). Opens a shipped demo as a WORKING COPY -- never the
+  // installed original, because three separate code paths write beside
+  // whatever model is open (the .femx cache, the .fes sketch sidecar,
+  // and the whole solve pipeline, which sets its working directory to
+  // the model's own folder). See DemoLibrary.h.
+  //
+  // `title` is the demo's name from the manifest, used in the window
+  // title so the Save prompt is not a surprise.
+  bool openDemo(const QString& demoPath, const QString& title);
+
   // Renders the loaded geometry offscreen to an image, for the
   // `femmqt.exe --render-png` CLI mode that Lua's mi_savepng/mo_savepng
   // shell out to when a script has called setgui("qt"). Draws the SCENE
@@ -192,6 +203,12 @@ class MainWindow : public QMainWindow {
   GeometryView* m_view = nullptr;
   FemmProblem m_problem;
   QString m_currentPath;
+  // Set while the open document is a working copy of a shipped demo:
+  // Save asks where to put it rather than writing back over the copy,
+  // which is in a temporary directory nobody would think to look in.
+  // Cleared by a Save As, at which point it is an ordinary document.
+  bool m_isDemoCopy = false;
+  QString m_demoTitle;
   bool m_dirty = false;
   // Updated by onMousePositionChanged; used as onEnterPointTriggered's
   // starting point, matching femm/FemmeView.cpp's EnterPoint() defaulting

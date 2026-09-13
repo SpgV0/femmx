@@ -303,6 +303,22 @@ Section
     File "scifemm\scifemm.sci"
     File /nonfatal "scifemm\scilink.dll"
 
+    # Demo models (#89/#91). Grouped by problem type, with demos.json
+    # as the manifest femmqt's Demo Models browser reads. Opening one
+    # takes a working copy elsewhere -- see femmqt/DemoLibrary.h for
+    # why the installed originals must never be the file that is open.
+    SetOutPath "$INSTDIR\demos"
+    File "demos\demos.json"
+    File "demos\README.md"
+    SetOutPath "$INSTDIR\demos\current_flow"
+    File "demos\current_flow\*.fec"
+    SetOutPath "$INSTDIR\demos\electrostatics"
+    File "demos\electrostatics\*.fee"
+    SetOutPath "$INSTDIR\demos\heat_flow"
+    File "demos\heat_flow\*.feh"
+    SetOutPath "$INSTDIR\demos\magnetics"
+    File "demos\magnetics\*.fem"
+
     # register the femm.ActiveFEMM COM automation class (see the
     # FEMM_COM_CLSID comment above) -- HKCU only, no admin rights needed
     ;
@@ -380,6 +396,7 @@ Section "uninstall"
     RMDir /r "$INSTDIR\mathfemm"
     RMDir /r "$INSTDIR\mfiles"
     RMDir /r "$INSTDIR\scifemm"
+    RMDir /r "$INSTDIR\demos"
 
     # delete top-level docs
     Delete "$INSTDIR\README.md"

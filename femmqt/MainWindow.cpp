@@ -61,6 +61,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 
+#include "DemoLibrary.h"
 #include "Notify.h"
 #include <QPageSetupDialog>
 #include <QPainter>
@@ -896,6 +897,33 @@ void MainWindow::onOpenTriggered()
   openFile(path);
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#91).
+bool MainWindow::openDemo(const QString& demoPath, const QString& title)
+{
+  QString error;
+  const QString copy = DemoLibrary::makeWorkingCopy(demoPath, error);
+  if (copy.isEmpty()) {
+    Notify::warning(this, "Open Demo",
+        QStringLiteral("Couldn't make a working copy of this demo: %1").arg(error));
+    return false;
+  }
+
+  // Deliberately the copy's path, not the original's: the solve
+  // pipeline derives its working directory from whatever is open, so
+  // this is what keeps triangle.exe and the solver out of the installed
+  // demos directory.
+  if (!openFile(copy))
+    return false;
+
+  m_isDemoCopy = true;
+  m_demoTitle = title;
+  updateTitle();
+  statusBar()->showMessage(
+      QStringLiteral("Opened a working copy of \"%1\" -- Save will ask where to "
+                     "keep it").arg(title));
+  return true;
+}
+
 bool MainWindow::openFile(const QString& path)
 {
   QFileInfo pathInfo(path);
@@ -992,6 +1020,11 @@ bool MainWindow::openFile(const QString& path)
 
   m_problem = problem;
   m_currentPath = femPath;
+  // Cleared here rather than by each caller: every ordinary open goes
+  // through this function, and a stale flag would make Save prompt for
+  // a document that has a perfectly good path of its own (#91).
+  m_isDemoCopy = false;
+  m_demoTitle.clear();
   m_scene->setProblem(&m_problem);
   QRectF problemBounds = m_scene->computeProblemBounds();
   m_view->fitInViewSafe(problemBounds);
@@ -1019,7 +1052,13 @@ bool MainWindow::openFile(const QString& path)
 
 void MainWindow::onSaveTriggered()
 {
-  if (m_currentPath.isEmpty()) {
+  // Issue #91: a demo's working copy lives in a temporary directory,
+  // so writing back to it silently would put the user's work somewhere
+  // they would never find it. Ask where it should go instead -- this
+  // is the menu action only; saveAs() below is still what every
+  // internal save (including the one before a solve) calls, and that
+  // must not stop to ask.
+  if (m_currentPath.isEmpty() || m_isDemoCopy) {
     onSaveAsTriggered();
     return;
   }
@@ -1073,6 +1112,13 @@ bool MainWindow::saveAs(const QString& path)
     statusBar()->showMessage(
         QStringLiteral("Saved %1, but its constraints and dimensions were "
                        "not: %2").arg(path, sketchError));
+  }
+
+  // A saved-somewhere-else copy is an ordinary document; only a save
+  // that lands back on the working copy itself leaves it a demo (#91).
+  if (m_isDemoCopy && path != m_currentPath) {
+    m_isDemoCopy = false;
+    m_demoTitle.clear();
   }
 
   m_currentPath = path;
@@ -2859,6 +2905,14 @@ void MainWindow::onAboutTriggered()
 void MainWindow::updateTitle()
 {
   QString name = m_currentPath.isEmpty() ? QStringLiteral("Untitled") : m_currentPath;
+  // Issue #91: say that this is a copy, and of what. Without it the
+  // title would show a path in the temp directory and Save asking for
+  // a location would look like a bug.
+  if (m_isDemoCopy) {
+    name = QStringLiteral("%1 (demo copy)")
+               .arg(m_demoTitle.isEmpty() ? QFileInfo(m_currentPath).fileName()
+                                          : m_demoTitle);
+  }
   QString title = QString("FEMMX (Qt) - %1%2").arg(name, m_dirty ? "*" : "");
   setWindowTitle(title);
 }
