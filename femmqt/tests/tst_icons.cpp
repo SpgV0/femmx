@@ -30,6 +30,9 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QRegularExpression>
+#include <QToolBar>
+#include "MainWindow.h"
+#include "AppTheme.h"
 #include <QSet>
 
 namespace {
@@ -86,6 +89,9 @@ private slots:
   void everyIconTheUiAsksForIsInTheQrc();
   void theIconResourceIsLinkedIn();
   void aThemedIconIsNotBlank();
+  void everyThemedIconIsRegisteredForRethemeing();
+  void everyThemedIconIsRegisteredForRethemeing_data();
+  void everyToolbarIconFollowsALiveThemeSwitch();
 };
 
 // ---------------------------------------------------------------------------
@@ -210,5 +216,156 @@ void TestIcons::aThemedIconIsNotBlank()
 // QTEST_MAIN, not GUILESS: rasterising an SVG into a QPixmap needs a
 // QGuiApplication and a paint device, so this runs under the offscreen
 // QPA plugin the CMake harness deploys.
+// ---------------------------------------------------------------------------
+// Re-theming (issue #92)
+// ---------------------------------------------------------------------------
+
+void TestIcons::everyThemedIconIsRegisteredForRethemeing_data()
+{
+  QTest::addColumn<QString>("file");
+  QTest::newRow("MainWindow.cpp") << "MainWindow.cpp";
+  QTest::newRow("SolutionView.cpp") << "SolutionView.cpp";
+}
+
+void TestIcons::everyThemedIconIsRegisteredForRethemeing()
+{
+  QFETCH(QString, file);
+
+  // IconTheme::themedToolIcon() bakes in whichever palette is current
+  // when it is called, and a QAction never re-queries its icon. So an
+  // action created with addAction(themedToolIcon(...)) shows the right
+  // artwork exactly until the user picks View > Dark Theme, and then
+  // shows the wrong artwork forever.
+  //
+  // That is not hypothetical and it is not loud: seven actions -- Trim,
+  // Extend, Split and the four dimension tools -- sat as a grey run in
+  // the middle of a white toolbar after a live switch, and were noticed
+  // from a screenshot rather than from anything failing. A session that
+  // STARTS dark is fine, because main() sets the theme before any
+  // window exists, so the path people actually look at hides it.
+  //
+  // The rule that prevents it: every themed icon goes in through a
+  // helper that also records it for refreshToolbarIcons(). A raw
+  // addAction(themedToolIcon(...)) is what drift looks like, so the
+  // helpers are the only place it may appear.
+  QFile f(QStringLiteral(FEMMQT_SOURCE_DIR) + "/" + file);
+  QVERIFY2(f.open(QIODevice::ReadOnly | QIODevice::Text),
+      qPrintable(file + " did not read"));
+  const QString code = QString::fromUtf8(f.readAll());
+
+  const QRegularExpression raw(
+      QStringLiteral("addAction\\s*\\(\\s*IconTheme::themedToolIcon\\s*\\(([^)]*)\\)"));
+
+  QStringList offenders;
+  QRegularExpressionMatchIterator it = raw.globalMatch(code);
+  while (it.hasNext()) {
+    const QRegularExpressionMatch m = it.next();
+    // The helpers themselves pass the path through as a variable and
+    // register it on the next line; every other caller names a literal
+    // ":/icons/....svg", which is the shape that skips registration.
+    const QString argument = m.captured(1).trimmed();
+    if (!argument.startsWith('"'))
+      continue;
+    const int line = code.left(m.capturedStart()).count('\n') + 1;
+    offenders << QStringLiteral("%1:%2 (%3)").arg(file).arg(line).arg(argument);
+  }
+
+  QVERIFY2(offenders.isEmpty(),
+      qPrintable(QStringLiteral("a toolbar icon is set directly instead of "
+                                "through a helper that records it, so it will "
+                                "keep its old artwork when the theme is "
+                                "switched at runtime: %1")
+                     .arg(offenders.join(", "))));
+
+  // And the hand-kept list that caused the drift must not come back:
+  // refreshToolbarIcons is one loop over one list, not a loop plus a
+  // column of setIcon calls that somebody has to remember to extend.
+  const int at = code.indexOf(QStringLiteral("::refreshToolbarIcons"));
+  if (at < 0)
+    return; // SolutionView has one; a file without one has nothing to check
+  int end = code.indexOf(QStringLiteral("\n}"), at);
+  QVERIFY(end > at);
+  const QString body = code.mid(at, end - at);
+  QVERIFY2(!body.contains(QStringLiteral("themedToolIcon(\":/icons/")),
+      qPrintable(QStringLiteral("%1's refreshToolbarIcons names icons by hand. "
+                                "That list drifted from the actions that "
+                                "actually exist once already (#92) -- register "
+                                "them instead.").arg(file)));
+}
+
+void TestIcons::everyToolbarIconFollowsALiveThemeSwitch()
+{
+  // The source-level guard above says every icon is registered. This
+  // says the registration actually reaches the screen, by doing what
+  // the user did: open the window and pick View > Dark Theme.
+  //
+  // Worth having as well as the text scan, because the two fail for
+  // different reasons -- a helper that records the action but forgets
+  // to re-set its icon would pass the scan and fail here.
+  const bool wasDark = AppTheme::isDark();
+  const QString cfg = QCoreApplication::applicationDirPath() + "/femm.cfg";
+  const bool hadCfg = QFile::exists(cfg);
+  QByteArray savedCfg;
+  if (hadCfg) {
+    QFile f(cfg);
+    if (f.open(QIODevice::ReadOnly))
+      savedCfg = f.readAll();
+  }
+
+  {
+    MainWindow window;
+    // Every toolbar, not the first: the window has a horizontal tool
+    // strip and a vertical one down the left, and checking one of them
+    // would miss whichever half the next mistake lands in.
+    const QList<QToolBar*> bars = window.findChildren<QToolBar*>();
+    QVERIFY2(!bars.isEmpty(), "the main window has no toolbar");
+
+    QVector<QAction*> icons;
+    for (QToolBar* bar : bars) {
+      for (QAction* a : bar->actions()) {
+        if (!a->isSeparator() && !a->icon().isNull())
+          icons << a;
+      }
+    }
+    QVERIFY2(icons.size() > 20,
+        qPrintable(QStringLiteral("only %1 toolbar icons found -- this case "
+                                  "would pass by checking almost nothing")
+                       .arg(icons.size())));
+
+    QVector<qint64> before;
+    for (QAction* a : icons)
+      before << a->icon().cacheKey();
+
+    // The user's route in, found the way a user finds it.
+    QAction* darkTheme = nullptr;
+    for (QAction* a : window.findChildren<QAction*>()) {
+      if (a->text().contains(QStringLiteral("Dark Theme")))
+        darkTheme = a;
+    }
+    QVERIFY2(darkTheme, "there is no Dark Theme action to trigger");
+    darkTheme->setChecked(!darkTheme->isChecked()); // fires onDarkThemeToggled
+
+    QStringList unchanged;
+    for (int i = 0; i < icons.size(); i++) {
+      if (icons[i]->icon().cacheKey() == before[i])
+        unchanged << icons[i]->text();
+    }
+    QVERIFY2(unchanged.isEmpty(),
+        qPrintable(QStringLiteral("%1 toolbar icon(s) kept their old artwork "
+                                  "through a theme switch, so they now sit at "
+                                  "the wrong contrast against the rest: %2")
+                       .arg(unchanged.size()).arg(unchanged.join(", "))));
+  }
+
+  AppTheme::setDark(wasDark);
+  if (hadCfg) {
+    QFile f(cfg);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+      f.write(savedCfg);
+  } else {
+    QFile::remove(cfg);
+  }
+}
+
 QTEST_MAIN(TestIcons)
 #include "tst_icons.moc"

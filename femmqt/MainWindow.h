@@ -200,6 +200,19 @@ class MainWindow : public QMainWindow {
 
   QAction* addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)());
 
+  // Adds a toolbar action whose icon follows the theme, WITHOUT wiring a
+  // slot -- for the checkable tool-mode actions, which join a
+  // QActionGroup and are connected separately.
+  //
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+  // (issue #92). These used to call bar->addAction(themedToolIcon(...))
+  // directly, which paints the right icon once and registers nothing, so
+  // they were invisible to refreshToolbarIcons(). Seven of them kept
+  // their light artwork through a live theme switch and sat as a grey
+  // run in the middle of a white toolbar. Every themed icon now has one
+  // way in.
+  QAction* addThemedToolAction(QToolBar* bar, const QString& iconPath, const QString& text);
+
   GeometryScene* m_scene = nullptr;
   GeometryView* m_view = nullptr;
   FemmProblem m_problem;

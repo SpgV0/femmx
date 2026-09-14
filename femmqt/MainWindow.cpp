@@ -420,14 +420,14 @@ MainWindow::MainWindow(QWidget* parent)
   auto* toolGroup = new QActionGroup(this);
   toolGroup->setExclusive(true);
 
-  m_selectToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/select.svg"), "Select");
+  m_selectToolAction = addThemedToolAction(toolBar, ":/icons/select.svg", "Select");
   m_selectToolAction->setToolTip("Select -- click or rubber-band-select existing geometry to edit it");
   m_selectToolAction->setCheckable(true);
   m_selectToolAction->setChecked(true);
   toolGroup->addAction(m_selectToolAction);
   connect(m_selectToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Select); });
 
-  m_addNodeToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_node.svg"), "Add Node");
+  m_addNodeToolAction = addThemedToolAction(toolBar, ":/icons/add_node.svg", "Add Node");
   m_addNodeToolAction->setToolTip("Add Node -- click to place a new node");
   m_addNodeToolAction->setCheckable(true);
   // Single-key tool shortcut, per direct user request for CAD-style
@@ -439,7 +439,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addNodeToolAction);
   connect(m_addNodeToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddNode); });
 
-  m_addSegmentToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_segment.svg"), "Add Segment");
+  m_addSegmentToolAction = addThemedToolAction(toolBar, ":/icons/add_segment.svg", "Add Segment");
   m_addSegmentToolAction->setToolTip("Add Segment -- click two nodes to connect them with a straight line");
   m_addSegmentToolAction->setCheckable(true);
   // Single-key tool shortcut, per direct user request for CAD-style
@@ -451,7 +451,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addSegmentToolAction);
   connect(m_addSegmentToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddSegment); });
 
-  m_addArcToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_arc.svg"), "Add Arc");
+  m_addArcToolAction = addThemedToolAction(toolBar, ":/icons/add_arc.svg", "Add Arc");
   m_addArcToolAction->setToolTip("Add Arc -- click two nodes to connect them with a circular arc");
   m_addArcToolAction->setCheckable(true);
   // Single-key tool shortcut, per direct user request for CAD-style
@@ -463,7 +463,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addArcToolAction);
   connect(m_addArcToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddArc); });
 
-  m_addBlockLabelToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_block_label.svg"), "Add Block Label");
+  m_addBlockLabelToolAction = addThemedToolAction(toolBar, ":/icons/add_block_label.svg", "Add Block Label");
   m_addBlockLabelToolAction->setToolTip("Add Block Label -- click to mark a region and assign it a material");
   m_addBlockLabelToolAction->setCheckable(true);
   toolGroup->addAction(m_addBlockLabelToolAction);
@@ -473,7 +473,7 @@ MainWindow::MainWindow(QWidget* parent)
   // own comment), a new CAD-style convenience: drag out a rectangle/circle
   // in one gesture instead of placing each node and connecting segment/
   // arc by hand.
-  m_addRectangleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"), "Draw Rectangle");
+  m_addRectangleToolAction = addThemedToolAction(toolBar, ":/icons/add_rectangle.svg", "Draw Rectangle");
   m_addRectangleToolAction->setToolTip("Draw Rectangle -- drag between two diagonal corners");
   m_addRectangleToolAction->setCheckable(true);
   // Single-key tool shortcut, per direct user request for CAD-style
@@ -485,7 +485,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_addRectangleToolAction);
   connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
 
-  m_addCircleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/add_circle.svg"), "Draw Circle");
+  m_addCircleToolAction = addThemedToolAction(toolBar, ":/icons/add_circle.svg", "Draw Circle");
   m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
   m_addCircleToolAction->setCheckable(true);
   // Single-key tool shortcut, per direct user request for CAD-style
@@ -509,7 +509,7 @@ MainWindow::MainWindow(QWidget* parent)
   // click means something different (it picks a PIECE, not a position).
   toolBar->addSeparator();
 
-  m_trimToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/trim.svg"), "Trim");
+  m_trimToolAction = addThemedToolAction(toolBar, ":/icons/trim.svg", "Trim");
   m_trimToolAction->setToolTip("Trim -- click the piece of a line or arc to remove. "
                                "The piece runs to the nearest crossing on each side; "
                                "with nothing crossing it, the whole entity goes.");
@@ -520,7 +520,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_trimToolAction);
   connect(m_trimToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Trim); });
 
-  m_extendToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/extend.svg"), "Extend");
+  m_extendToolAction = addThemedToolAction(toolBar, ":/icons/extend.svg", "Extend");
   m_extendToolAction->setToolTip("Extend -- click near the end of a line or arc to grow it "
                                  "until it meets the next entity in its path.");
   m_extendToolAction->setCheckable(true);
@@ -528,7 +528,7 @@ MainWindow::MainWindow(QWidget* parent)
   toolGroup->addAction(m_extendToolAction);
   connect(m_extendToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::Extend); });
 
-  m_splitToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/split.svg"), "Split");
+  m_splitToolAction = addThemedToolAction(toolBar, ":/icons/split.svg", "Split");
   m_splitToolAction->setToolTip("Split -- click a line or arc to cut it in two at that point, "
                                 "moving nothing.");
   m_splitToolAction->setCheckable(true);
@@ -544,19 +544,19 @@ MainWindow::MainWindow(QWidget* parent)
   // drawings"). Also reachable from the Tools menu, like every other
   // drawing-tool button above -- see toolsMenu's population just below.
   toolBar->addSeparator();
-  m_addDimensionDistanceToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_distance.svg"), "Distance Dimension");
+  m_addDimensionDistanceToolAction = addThemedToolAction(toolBar, ":/icons/dimension_distance.svg", "Distance Dimension");
   m_addDimensionDistanceToolAction->setToolTip("Distance Dimension -- click two nodes, then enter the distance");
   m_addDimensionDistanceToolAction->setCheckable(true);
   toolGroup->addAction(m_addDimensionDistanceToolAction);
   connect(m_addDimensionDistanceToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionDistance); });
 
-  m_addDimensionRadiusToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_radius.svg"), "Radius Dimension");
+  m_addDimensionRadiusToolAction = addThemedToolAction(toolBar, ":/icons/dimension_radius.svg", "Radius Dimension");
   m_addDimensionRadiusToolAction->setToolTip("Radius Dimension -- click an arc, then enter the radius");
   m_addDimensionRadiusToolAction->setCheckable(true);
   toolGroup->addAction(m_addDimensionRadiusToolAction);
   connect(m_addDimensionRadiusToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::AddDimensionRadius); });
 
-  m_addDimensionAngleToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_angle.svg"), "Angle Dimension");
+  m_addDimensionAngleToolAction = addThemedToolAction(toolBar, ":/icons/dimension_angle.svg", "Angle Dimension");
   m_addDimensionAngleToolAction->setToolTip("Angle Dimension -- click two lines, move to place, then type the angle. The lines need not touch.");
   m_addDimensionAngleToolAction->setCheckable(true);
   toolGroup->addAction(m_addDimensionAngleToolAction);
@@ -591,7 +591,7 @@ MainWindow::MainWindow(QWidget* parent)
   // handleToolClick's SmartDimension case for the actual click dispatch
   // (segment -> Distance on its own 2 endpoints, arc -> Radius, node ->
   // 2-click Distance).
-  m_smartDimensionToolAction = toolBar->addAction(IconTheme::themedToolIcon(":/icons/dimension_smart.svg"), "Smart Dimension");
+  m_smartDimensionToolAction = addThemedToolAction(toolBar, ":/icons/dimension_smart.svg", "Smart Dimension");
   m_smartDimensionToolAction->setToolTip("Smart Dimension (D) -- click a line for its length, an arc for its radius, or two nodes for the distance between them");
   m_smartDimensionToolAction->setCheckable(true);
   m_smartDimensionToolAction->setShortcut(QKeySequence(Qt::Key_D));
@@ -2981,6 +2981,15 @@ QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, con
   return action;
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14 (#92).
+QAction* MainWindow::addThemedToolAction(QToolBar* bar, const QString& iconPath,
+    const QString& text)
+{
+  QAction* action = bar->addAction(IconTheme::themedToolIcon(iconPath), text);
+  m_themedActions.push_back({ action, iconPath });
+  return action;
+}
+
 void MainWindow::refreshToolbarIcons()
 {
   // IconTheme::themedToolIcon() bakes in whatever QApplication::palette()
@@ -2988,13 +2997,14 @@ void MainWindow::refreshToolbarIcons()
   // already right by then, see main.cpp's AppTheme::setDark() call before
   // any window is created) but stale once AppTheme::setDark() flips it
   // afterward, since QAction doesn't re-query its icon automatically.
-  m_selectToolAction->setIcon(IconTheme::themedToolIcon(":/icons/select.svg"));
-  m_addNodeToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_node.svg"));
-  m_addSegmentToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_segment.svg"));
-  m_addArcToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_arc.svg"));
-  m_addBlockLabelToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_block_label.svg"));
-  m_addRectangleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_rectangle.svg"));
-  m_addCircleToolAction->setIcon(IconTheme::themedToolIcon(":/icons/add_circle.svg"));
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+  // (issue #92): seven icons used to be re-set by hand here, above this
+  // loop, because the checkable tool-mode actions had no way into
+  // m_themedActions. Seven MORE actions of the same shape were added
+  // later and nobody extended the list -- nothing said it existed --
+  // so Trim, Extend, Split and the four dimension tools kept their
+  // light artwork through a theme switch. They all register now, and
+  // this is one loop over one list.
   for (const auto& entry : m_themedActions)
     entry.first->setIcon(IconTheme::themedToolIcon(entry.second));
 }
