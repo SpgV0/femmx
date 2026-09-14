@@ -48,6 +48,30 @@ if (NOT Qt6_FOUND)
 endif()
 qt_standard_project_setup()
 
+# Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14.
+#
+# WHERE QT ACTUALLY IS, as opposed to where FEMMQT_QT6_DIR guesses.
+#
+# FEMMQT_QT6_DIR is a HINT: it is appended to CMAKE_PREFIX_PATH above so
+# find_package can find a local Online Installer kit without being told.
+# It is not an answer. CI installs Qt somewhere else entirely
+# (jurplel/install-qt-action unpacks into the workspace and exports
+# CMAKE_PREFIX_PATH), so find_package succeeds against THAT kit while
+# FEMMQT_QT6_DIR still points at a C:/Qt path the runner does not have.
+#
+# Reading the plugin and tool paths out of FEMMQT_QT6_DIR therefore
+# worked locally and failed on CI -- and failed late, at the
+# qoffscreen.dll existence check, with a message blaming a missing
+# plugin when the real problem was that it was looking in the wrong
+# installation. Derive the prefix from the package that was found:
+# Qt6_DIR is <prefix>/lib/cmake/Qt6, which holds in every kit layout.
+if(QT6_INSTALL_PREFIX)
+  set(FEMMQT_QT_PREFIX "${QT6_INSTALL_PREFIX}")
+else()
+  get_filename_component(FEMMQT_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+endif()
+message(STATUS "femmqt: using the Qt6 kit at ${FEMMQT_QT_PREFIX}")
+
 # Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-10:
 # split into a femmqt_core static library plus a thin executable, so the
 # app's own code can be linked into a QTest binary (issue #11). Before
@@ -553,10 +577,16 @@ if(TARGET Qt6::Test)
   # silent-skip the comment directly above warns about, one level up: the
   # careful FATAL_ERROR for a missing qoffscreen.dll was unreachable,
   # because the `if` guarding it was already false.
-  find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${FEMMQT_QT6_DIR}/bin")
+  #
+  # Modified 2026-09-14: hinted at the FOUND kit's bin directory, not at
+  # FEMMQT_QT6_DIR's. Deploying with one kit's windeployqt while linking
+  # against another's is a mismatch that produces a runnable-looking
+  # build with the wrong DLLs beside it.
+  find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt
+    HINTS "${FEMMQT_QT_PREFIX}/bin" "${FEMMQT_QT6_DIR}/bin")
   if(WIN32 AND NOT FEMMQT_WINDEPLOYQT_EXECUTABLE)
     message(FATAL_ERROR
-      "femmqt: windeployqt was not found in \"${FEMMQT_QT6_DIR}/bin\". "
+      "femmqt: windeployqt was not found in \"${FEMMQT_QT_PREFIX}/bin\". "
       "The test binaries need the Qt runtime, Qt6Test.dll and the "
       "offscreen QPA plugin copied next to them, and without it they do "
       "not start at all -- silently, with no output, which ctest reports "
@@ -565,14 +595,32 @@ if(TARGET Qt6::Test)
       "GUI with -DSKIP_femmqt=ON.")
   endif()
   if(WIN32 AND FEMMQT_WINDEPLOYQT_EXECUTABLE)
-    set(_femmqt_offscreen "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
-    if(NOT EXISTS "${_femmqt_offscreen}")
-      message(FATAL_ERROR
-        "femmqt: the offscreen QPA plugin is missing from the Qt kit "
-        "(looked for \"${_femmqt_offscreen}\"). The headless tests cannot "
-        "run without it, and without this check they would hang at their "
-        "ctest timeout rather than fail. Install the Qt kit's platform "
-        "plugins, or pass -DFEMMQT_QT6_DIR=<a complete Qt6 MSVC kit>.")
+    # Modified 2026-09-14: ask the found Qt where its offscreen plugin
+    # is, rather than assuming FEMMQT_QT6_DIR's layout.
+    #
+    # Qt ships the QPA plugins as imported targets, so
+    # Qt6::QOffscreenIntegrationPlugin resolves to the exact DLL in
+    # whichever kit find_package settled on, per configuration. The
+    # path fallback is for a kit old or trimmed enough not to define
+    # the target -- and it searches the FOUND prefix first, which is
+    # the whole point of the change.
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+      set(_femmqt_offscreen "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>")
+    else()
+      set(_femmqt_offscreen "${FEMMQT_QT_PREFIX}/plugins/platforms/qoffscreen.dll")
+      if(NOT EXISTS "${_femmqt_offscreen}")
+        set(_femmqt_offscreen "${FEMMQT_QT6_DIR}/plugins/platforms/qoffscreen.dll")
+      endif()
+      if(NOT EXISTS "${_femmqt_offscreen}")
+        message(FATAL_ERROR
+          "femmqt: the offscreen QPA plugin is missing from the Qt kit at "
+          "\"${FEMMQT_QT_PREFIX}\" (no Qt6::QOffscreenIntegrationPlugin "
+          "target, and no plugins/platforms/qoffscreen.dll). The headless "
+          "tests cannot run without it, and without this check they would "
+          "hang at their ctest timeout rather than fail. Install the Qt "
+          "kit's platform plugins, or pass -DFEMMQT_QT6_DIR=<a complete "
+          "Qt6 MSVC kit>.")
+      endif()
     endif()
     foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
       add_custom_command(TARGET ${_femmqt_test} POST_BUILD
@@ -603,7 +651,8 @@ if(WIN32)
   # Already located above, before the test-deployment block that also
   # needs it -- kept here as a no-op for the SKIP_femmqt_tests path,
   # where that block never runs. find_program is a cache lookup once set.
-  find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${FEMMQT_QT6_DIR}/bin")
+  find_program(FEMMQT_WINDEPLOYQT_EXECUTABLE windeployqt
+    HINTS "${FEMMQT_QT_PREFIX}/bin" "${FEMMQT_QT6_DIR}/bin")
   if(FEMMQT_WINDEPLOYQT_EXECUTABLE)
     add_custom_command(TARGET femmqt POST_BUILD
       COMMAND "${FEMMQT_WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:femmqt>"
