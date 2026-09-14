@@ -198,6 +198,21 @@ def test_contour_render(request):
     check_render(request, "contour", MODEL_ANS)
 
 
+# The density renders below pass --legend 0.
+#
+# Issue #86 put the colour-key legend into femmqt's offscreen renders --
+# it is a viewport widget, not a scene item, so it had never appeared in
+# a --render-png output at all. That is the right behaviour and it has
+# its own test (femmqt/tests/tst_plot_state.cpp), but it makes a
+# golden-image comparison depend on TEXT: the legend is labels and
+# numbers, and text rasterisation varies with the Qt version and the
+# fonts a machine happens to have. These goldens are compared on a 2%
+# pixel budget across machines and CI runners, so they have to stay
+# font-independent. The legend's own test asserts where it lands and
+# that toggling it changes the image, neither of which depends on how
+# the glyphs come out.
+
+
 def test_density_render(request):
     """--density must actually produce a density plot.
 
@@ -207,7 +222,8 @@ def test_density_render(request):
     and test_density_differs_from_contour below catches it even if both
     goldens were regenerated from a broken build.
     """
-    check_render(request, "density", MODEL_ANS, extra=["--density"])
+    check_render(request, "density", MODEL_ANS,
+                 extra=["--density", "--legend", "0"])
 
 
 def test_crop_render(request):
@@ -219,7 +235,7 @@ def test_crop_render(request):
     cannot stand in for a zoomed one.
     """
     check_render(request, "crop_density", MODEL_ANS,
-                 extra=[-20, -15, 20, 15, "--density"])
+                 extra=[-20, -15, 20, 15, "--density", "--legend", "0"])
 
 
 # ---------------------------------------------------------------------------
