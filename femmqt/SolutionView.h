@@ -13,6 +13,7 @@
 
 #include "FemmProblem.h"
 #include "MeshSolution.h"
+#include "SolutionField.h"
 #include "ViewPanning.h"
 
 #include <complex>
@@ -618,6 +619,25 @@ class SolutionWindow : public QMainWindow {
   // so a request for a different one has to be refused rather than
   // drawn as the one they do have (issue #87).
   bool applyPlotState(const struct PlotState& state, QString* error = nullptr);
+
+  private:
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+  // (issue #93). What to call the two values a point readout shows, for
+  // whichever physics this solution is.
+  //
+  // The point readouts -- hover text, Point Properties, Plot X-Y --
+  // hardcoded magnetics' letters and units, so a heat-flow solution
+  // reported tesla and webers over temperatures in kelvin while the
+  // density legend beside it read W/m^2 correctly.
+  //
+  // Carries magnetics' axisymmetric distinction, which is real (classic
+  // labels the same nodal value "A ... Wb/m" planar and "Flux ... Wb"
+  // axisymmetric) and has no meaning for the other three.
+  SolutionField::Quantity pointPotential() const;
+  SolutionField::Quantity pointField() const;
+  bool isMagnetics() const { return m_kind == FemmProblemKind::Magnetics; }
+
+  public:
 
 
   private slots:

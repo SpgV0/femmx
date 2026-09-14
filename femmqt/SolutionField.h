@@ -53,6 +53,12 @@ struct Vector2 {
 struct Quantity {
   QString name; // "Flux density |B|"
   QString unit; // "T"
+  // The bare letter, for the places that label components rather than
+  // a plot: "B1 (re, im)", "|B|". Added 2026-09-14 (issue #93) so the
+  // point readouts stop hardcoding magnetics' letters -- picking them
+  // out of `name` by looking between the bars would work until a name
+  // changed.
+  QString symbol; // "B"
 };
 
 // What this physics can plot, primary quantity first. The order is the

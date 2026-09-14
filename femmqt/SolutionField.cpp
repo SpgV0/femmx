@@ -42,14 +42,18 @@ SolutionField::Quantity SolutionField::fieldQuantity(FemmProblemKind kind)
 {
   switch (kind) {
   case FemmProblemKind::Magnetics:
-    return { QStringLiteral("Flux density |B|"), QStringLiteral("T") };
+    return { QStringLiteral("Flux density |B|"), QStringLiteral("T"),
+      QStringLiteral("B") };
   case FemmProblemKind::Electrostatics:
     // D, not E -- elementField multiplies through by eps0*er.
-    return { QStringLiteral("Flux density |D|"), QStringLiteral("C/m^2") };
+    return { QStringLiteral("Flux density |D|"), QStringLiteral("C/m^2"),
+      QStringLiteral("D") };
   case FemmProblemKind::HeatFlow:
-    return { QStringLiteral("Heat flux |F|"), QStringLiteral("W/m^2") };
+    return { QStringLiteral("Heat flux |F|"), QStringLiteral("W/m^2"),
+      QStringLiteral("F") };
   case FemmProblemKind::CurrentFlow:
-    return { QStringLiteral("Current density |J|"), QStringLiteral("A/m^2") };
+    return { QStringLiteral("Current density |J|"), QStringLiteral("A/m^2"),
+      QStringLiteral("J") };
   }
   return {};
 }
@@ -90,12 +94,12 @@ SolutionField::Quantity SolutionField::potentialQuantity(FemmProblemKind kind)
 {
   switch (kind) {
   case FemmProblemKind::Magnetics:
-    return { QStringLiteral("A"), QStringLiteral("Wb/m") };
+    return { QStringLiteral("A"), QStringLiteral("Wb/m"), QStringLiteral("A") };
   case FemmProblemKind::Electrostatics:
   case FemmProblemKind::CurrentFlow:
-    return { QStringLiteral("V"), QStringLiteral("V") };
+    return { QStringLiteral("V"), QStringLiteral("V"), QStringLiteral("V") };
   case FemmProblemKind::HeatFlow:
-    return { QStringLiteral("T"), QStringLiteral("K") };
+    return { QStringLiteral("T"), QStringLiteral("K"), QStringLiteral("T") };
   }
   return {};
 }

@@ -30,6 +30,11 @@
 #include "SolutionView.h"
 
 #include <QComboBox>
+#include <QFileInfo>
+#include <QFile>
+#include <QLabel>
+#include "SolutionFileIO.h"
+#include "AnsFileIO.h"
 
 namespace {
 
@@ -65,6 +70,10 @@ class TestDensityUnits : public QObject
   void magneticsKeepsAllTenQuantities();
   void theComboAndTheLegendAgree();
   void theComboAndTheLegendAgree_data();
+
+  // Issue #93.
+  void theHoverReadoutUsesThisPhysicsUnits();
+  void theHoverReadoutUsesThisPhysicsUnits_data();
 
   private:
   MeshSolution m_empty;
@@ -191,6 +200,140 @@ void TestDensityUnits::theComboAndTheLegendAgree()
   const QString legend = item.legendTitle(MeshSolutionItem::DensityQuantity::BMag);
   QVERIFY2(legend.contains(unit), qPrintable(legend));
   QVERIFY2(combo->itemText(0).contains(unit), qPrintable(combo->itemText(0)));
+}
+
+// ---------------------------------------------------------------------------
+// The point readouts (issue #93)
+// ---------------------------------------------------------------------------
+//
+// The density legend was fixed first, and the hover readout, Point
+// Properties and Plot X-Y kept reporting magnetics' letters and units
+// over the other three physics' data -- tesla and webers on top of
+// temperatures in kelvin, updating on every mouse move, right next to a
+// legend that said W/m^2 correctly.
+//
+// Driven through the real window rather than by reading the format
+// strings: the labels are assembled from several pieces, and a scan
+// that saw the right pieces in the source would still miss them being
+// put together for the wrong branch.
+
+namespace {
+
+// A point guaranteed to be inside the mesh: the centroid of its first
+// element, read from the solution file itself. Picking coordinates by
+// hand would silently start missing if a fixture were regenerated.
+bool firstElementCentroid(const QString& path, FemmProblemKind kind, QPointF& out)
+{
+  if (kind == FemmProblemKind::Magnetics) {
+    FemmProblem problem;
+    MeshSolution mesh;
+    QString error;
+    if (!AnsFileIO::readAns(path, problem, mesh, error) || mesh.elements.isEmpty())
+      return false;
+    const MeshSolutionElement& e = mesh.elements.first();
+    out = QPointF((mesh.nodes[e.p0].x + mesh.nodes[e.p1].x + mesh.nodes[e.p2].x) / 3.0,
+        (mesh.nodes[e.p0].y + mesh.nodes[e.p1].y + mesh.nodes[e.p2].y) / 3.0);
+    return true;
+  }
+
+  FemmProblem problem;
+  SolvedMesh mesh;
+  QString error;
+  if (!SolutionFileIO::read(path, problem, mesh, error) || mesh.elements.isEmpty())
+    return false;
+  const SolutionElement& e = mesh.elements.first();
+  out = QPointF((mesh.nodes[e.p0].x + mesh.nodes[e.p1].x + mesh.nodes[e.p2].x) / 3.0,
+      (mesh.nodes[e.p0].y + mesh.nodes[e.p1].y + mesh.nodes[e.p2].y) / 3.0);
+  return true;
+}
+
+QString repoRoot()
+{
+  return QFileInfo(QFileInfo(QStringLiteral(FEMMQT_SOURCE_DIR)).absoluteFilePath())
+      .absolutePath();
+}
+
+} // namespace
+
+void TestDensityUnits::theHoverReadoutUsesThisPhysicsUnits_data()
+{
+  QTest::addColumn<int>("kind");
+  QTest::addColumn<QString>("fixture");
+  QTest::addColumn<QStringList>("expected");
+  QTest::addColumn<QStringList>("forbidden");
+
+  QTest::newRow("magnetics")
+      << (int)FemmProblemKind::Magnetics
+      << "manual_qt/images/example.ans"
+      << QStringList{ "|B|", "T", "|H|", "A/m" }
+      << QStringList{ "W/m^2", "C/m^2", " K" };
+
+  QTest::newRow("heat flow")
+      << (int)FemmProblemKind::HeatFlow
+      << "manual_qt/images/example.anh"
+      << QStringList{ "|F|", "W/m^2", "T =", "K" }
+      // Magnetics' vocabulary, none of which describes a temperature.
+      << QStringList{ "Wb", "MA/m^2", "|B|", "|H|", "Js+Je" };
+
+  QTest::newRow("electrostatics")
+      << (int)FemmProblemKind::Electrostatics
+      << "test/fixtures/solutions/parallel_plate.res"
+      << QStringList{ "|D|", "C/m^2", "V =" }
+      << QStringList{ "Wb", "MA/m^2", "|B|", "|H|", "Js+Je" };
+
+  QTest::newRow("current flow")
+      << (int)FemmProblemKind::CurrentFlow
+      << "test/fixtures/solutions/current_bar.anc"
+      << QStringList{ "|J|", "A/m^2", "V =" }
+      << QStringList{ "Wb", "MA/m^2", "|B|", "|H|", "Js+Je" };
+}
+
+void TestDensityUnits::theHoverReadoutUsesThisPhysicsUnits()
+{
+  QFETCH(int, kind);
+  QFETCH(QString, fixture);
+  QFETCH(QStringList, expected);
+  QFETCH(QStringList, forbidden);
+  const FemmProblemKind k = (FemmProblemKind)kind;
+
+  const QString path = repoRoot() + "/" + fixture;
+  QVERIFY2(QFile::exists(path), qPrintable(path + " is missing"));
+
+  QPointF inside;
+  QVERIFY2(firstElementCentroid(path, k, inside),
+      qPrintable(QStringLiteral("could not find a mesh element in %1").arg(fixture)));
+
+  SolutionWindow window;
+  QVERIFY2(window.openSolutionFile(path), qPrintable("could not open " + fixture));
+
+  // The slot the canvas calls on mouse move.
+  QVERIFY2(QMetaObject::invokeMethod(&window, "onCanvasHovered",
+               Q_ARG(QPointF, inside)),
+      "onCanvasHovered is no longer an invokable slot");
+
+  // The status bar's readout: the label that starts with the coordinates.
+  QString readout;
+  for (QLabel* l : window.findChildren<QLabel*>()) {
+    if (l->text().startsWith(QStringLiteral("x =")))
+      readout = l->text();
+  }
+  QVERIFY2(!readout.isEmpty(),
+      qPrintable(QStringLiteral("no hover readout appeared for %1 -- the point "
+                                "%2,%3 may be outside the mesh, which would make "
+                                "this case pass by checking nothing")
+                     .arg(fixture).arg(inside.x()).arg(inside.y())));
+
+  for (const QString& want : expected) {
+    QVERIFY2(readout.contains(want),
+        qPrintable(QStringLiteral("%1: the readout does not mention \"%2\": %3")
+                       .arg(fixture, want, readout)));
+  }
+  for (const QString& nope : forbidden) {
+    QVERIFY2(!readout.contains(nope),
+        qPrintable(QStringLiteral("%1: the readout says \"%2\", which is not this "
+                                  "physics' unit: %3")
+                       .arg(fixture, nope, readout)));
+  }
 }
 
 QTEST_MAIN(TestDensityUnits)

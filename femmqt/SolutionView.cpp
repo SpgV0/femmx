@@ -2512,32 +2512,66 @@ void SolutionWindow::onCanvasHovered(QPointF scenePos)
     // (MeshSolutionNode::Are/Aim, interpolated above), no conversion, just
     // the right label/unit for whichever this solution is (m_axisymmetric,
     // set once in openAnsFile).
-    const char* aLabel = m_axisymmetric ? "Flux" : "A";
-    const char* aUnit = m_axisymmetric ? "Wb" : "Wb/m";
-    statusText = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   %6 = %7 %8")
-                     .arg(scenePos.x(), 0, 'g', 6)
-                     .arg(scenePos.y(), 0, 'g', 6)
-                     .arg(bMag, 0, 'g', 4)
-                     .arg(hMag, 0, 'g', 4)
-                     .arg(jMag, 0, 'g', 4)
-                     .arg(aLabel)
-                     .arg(A.real(), 0, 'g', 4)
-                     .arg(aUnit);
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+    // (issue #93): these three lines were magnetics' labels and units
+    // unconditionally, so hovering a heat-flow solution reported tesla,
+    // amperes per metre and MA/m^2 over temperature and heat-flux data
+    // -- on every mouse move, beside a density legend that read W/m^2.
+    //
+    // |H| and |Js+Je| are dropped outside magnetics rather than
+    // relabelled: they are derived from permeability and conductivity,
+    // which the other three formats do not carry, so the numbers are
+    // not that physics' anything.
+    const SolutionField::Quantity pot = pointPotential();
+    const SolutionField::Quantity fld = pointField();
+    if (isMagnetics()) {
+      statusText = QString("x = %1, y = %2   |B| = %3 T   |H| = %4 A/m   |Js+Je| = %5 MA/m^2   %6 = %7 %8")
+                       .arg(scenePos.x(), 0, 'g', 6)
+                       .arg(scenePos.y(), 0, 'g', 6)
+                       .arg(bMag, 0, 'g', 4)
+                       .arg(hMag, 0, 'g', 4)
+                       .arg(jMag, 0, 'g', 4)
+                       .arg(pot.symbol)
+                       .arg(A.real(), 0, 'g', 4)
+                       .arg(pot.unit);
+    } else {
+      statusText = QString("x = %1, y = %2   |%3| = %4 %5   %6 = %7 %8")
+                       .arg(scenePos.x(), 0, 'g', 6)
+                       .arg(scenePos.y(), 0, 'g', 6)
+                       .arg(fld.symbol)
+                       .arg(bMag, 0, 'g', 4)
+                       .arg(fld.unit)
+                       .arg(pot.symbol)
+                       .arg(A.real(), 0, 'g', 4)
+                       .arg(pot.unit);
+    }
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
     // the floating cursor tooltip (unlike the status bar, which stays a
     // single conventional line) is stacked one value per line per user
     // request ("have them one above another") -- the single-line version
     // was wide enough to run off the edge of the view at typical window
     // sizes.
-    tooltipText = QString("x = %1, y = %2\n|B| = %3 T\n|H| = %4 A/m\n|Js+Je| = %5 MA/m^2\n%6 = %7 %8")
-                      .arg(scenePos.x(), 0, 'g', 6)
-                      .arg(scenePos.y(), 0, 'g', 6)
-                      .arg(bMag, 0, 'g', 4)
-                      .arg(hMag, 0, 'g', 4)
-                      .arg(jMag, 0, 'g', 4)
-                      .arg(aLabel)
-                      .arg(A.real(), 0, 'g', 4)
-                      .arg(aUnit);
+    if (isMagnetics()) {
+      tooltipText = QString("x = %1, y = %2\n|B| = %3 T\n|H| = %4 A/m\n|Js+Je| = %5 MA/m^2\n%6 = %7 %8")
+                        .arg(scenePos.x(), 0, 'g', 6)
+                        .arg(scenePos.y(), 0, 'g', 6)
+                        .arg(bMag, 0, 'g', 4)
+                        .arg(hMag, 0, 'g', 4)
+                        .arg(jMag, 0, 'g', 4)
+                        .arg(pot.symbol)
+                        .arg(A.real(), 0, 'g', 4)
+                        .arg(pot.unit);
+    } else {
+      tooltipText = QString("x = %1, y = %2\n|%3| = %4 %5\n%6 = %7 %8")
+                        .arg(scenePos.x(), 0, 'g', 6)
+                        .arg(scenePos.y(), 0, 'g', 6)
+                        .arg(fld.symbol)
+                        .arg(bMag, 0, 'g', 4)
+                        .arg(fld.unit)
+                        .arg(pot.symbol)
+                        .arg(A.real(), 0, 'g', 4)
+                        .arg(pot.unit);
+    }
   }
   m_positionLabel->setText(statusText);
   m_view->setTooltipText(tooltipText);
@@ -2614,8 +2648,12 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21:
     // same A/Flux label+unit fix as onCanvasHovered -- see that method's
     // comment.
-    QString aLabel = m_axisymmetric ? "Flux (re, im)" : "A (re, im)";
-    QString aUnit = m_axisymmetric ? "Wb" : "Wb/m";
+    // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+    // (issue #93): was magnetics' labelling for every physics.
+    const SolutionField::Quantity pot = pointPotential();
+    const SolutionField::Quantity fld = pointField();
+    const QString aLabel = QStringLiteral("%1 (re, im)").arg(pot.symbol);
+    const QString aUnit = pot.unit;
 
     // Matches femm/FemmviewView.cpp's DisplayPointProperties, which also
     // shows mu_x/mu_y and, for a permanent-magnet material (Hc != 0), the
@@ -2655,34 +2693,67 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
     auto* form = new QFormLayout(&dlg);
     form->addRow("x, y:", new QLabel(QString("%1, %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6)));
     form->addRow(aLabel + ":", new QLabel(QString("%1, %2 %3").arg(A.real(), 0, 'g', 6).arg(A.imag(), 0, 'g', 6).arg(aUnit)));
-    form->addRow("B1 (re, im):", new QLabel(QString("%1, %2").arg(e.B1re, 0, 'g', 6).arg(e.B1im, 0, 'g', 6)));
-    form->addRow("B2 (re, im):", new QLabel(QString("%1, %2").arg(e.B2re, 0, 'g', 6).arg(e.B2im, 0, 'g', 6)));
-    form->addRow("|B|:", new QLabel(QString("%1 T").arg(bMag, 0, 'g', 6)));
-    form->addRow("H1 (re, im):", new QLabel(QString("%1, %2").arg(h1re, 0, 'g', 6).arg(h1im, 0, 'g', 6)));
-    form->addRow("H2 (re, im):", new QLabel(QString("%1, %2").arg(h2re, 0, 'g', 6).arg(h2im, 0, 'g', 6)));
-    form->addRow("|H|:", new QLabel(QString("%1 A/m").arg(hMag, 0, 'g', 6)));
-    if (!muLine.isEmpty())
-      form->addRow("mu_x, mu_y:", new QLabel(muLine));
-    if (!bhLine.isEmpty())
-      form->addRow("B.H:", new QLabel(bhLine));
-    form->addRow("Js+Je (re, im):", new QLabel(QString("%1, %2").arg(e.jRe, 0, 'g', 6).arg(e.jIm, 0, 'g', 6)));
-    form->addRow("|Js+Je|:", new QLabel(QString("%1 MA/m^2").arg(jMag, 0, 'g', 6)));
+    // The field's two components and its magnitude, named for this
+    // physics. B1/B2 hold whatever field SolutionAdapter carried in --
+    // D, heat flux, J -- so calling them B was wrong for three of the
+    // four (#93).
+    form->addRow(QStringLiteral("%1 1 (re, im):").arg(fld.symbol),
+        new QLabel(QString("%1, %2").arg(e.B1re, 0, 'g', 6).arg(e.B1im, 0, 'g', 6)));
+    form->addRow(QStringLiteral("%1 2 (re, im):").arg(fld.symbol),
+        new QLabel(QString("%1, %2").arg(e.B2re, 0, 'g', 6).arg(e.B2im, 0, 'g', 6)));
+    form->addRow(QStringLiteral("|%1|:").arg(fld.symbol),
+        new QLabel(QString("%1 %2").arg(bMag, 0, 'g', 6).arg(fld.unit)));
+    // H, Js+Je, mu and the B.H energy product exist only in magnetics:
+    // they come from permeability and conductivity, which the other
+    // three formats do not carry. Showing them filled with the
+    // placeholder zeros those fields default to would be worse than
+    // leaving them out.
+    if (isMagnetics()) {
+      form->addRow("H1 (re, im):", new QLabel(QString("%1, %2").arg(h1re, 0, 'g', 6).arg(h1im, 0, 'g', 6)));
+      form->addRow("H2 (re, im):", new QLabel(QString("%1, %2").arg(h2re, 0, 'g', 6).arg(h2im, 0, 'g', 6)));
+      form->addRow("|H|:", new QLabel(QString("%1 A/m").arg(hMag, 0, 'g', 6)));
+      if (!muLine.isEmpty())
+        form->addRow("mu_x, mu_y:", new QLabel(muLine));
+      if (!bhLine.isEmpty())
+        form->addRow("B.H:", new QLabel(bhLine));
+      form->addRow("Js+Je (re, im):", new QLabel(QString("%1, %2").arg(e.jRe, 0, 'g', 6).arg(e.jIm, 0, 'g', 6)));
+      form->addRow("|Js+Je|:", new QLabel(QString("%1 MA/m^2").arg(jMag, 0, 'g', 6)));
+    }
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     form->addRow(buttons);
-    appendOutput(QString("Point: x=%1, y=%2  %12=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T  |H|=%10 A/m  |Js+Je|=%11 MA/m^2")
-                      .arg(scenePos.x(), 0, 'g', 6)
-                      .arg(scenePos.y(), 0, 'g', 6)
-                      .arg(A.real(), 0, 'g', 6)
-                      .arg(A.imag(), 0, 'g', 6)
-                      .arg(e.B1re, 0, 'g', 6)
-                      .arg(e.B1im, 0, 'g', 6)
-                      .arg(e.B2re, 0, 'g', 6)
-                      .arg(e.B2im, 0, 'g', 6)
-                      .arg(bMag, 0, 'g', 6)
-                      .arg(hMag, 0, 'g', 6)
-                      .arg(jMag, 0, 'g', 6)
-                      .arg(m_axisymmetric ? "Flux" : "A"));
+    // The output log gets the same treatment: it is what a user copies
+    // out, so a magnetics unit on a heat number travels further than the
+    // dialog does (#93).
+    if (isMagnetics()) {
+      appendOutput(QString("Point: x=%1, y=%2  %12=(%3, %4)  B1=(%5, %6)  B2=(%7, %8)  |B|=%9 T  |H|=%10 A/m  |Js+Je|=%11 MA/m^2")
+                        .arg(scenePos.x(), 0, 'g', 6)
+                        .arg(scenePos.y(), 0, 'g', 6)
+                        .arg(A.real(), 0, 'g', 6)
+                        .arg(A.imag(), 0, 'g', 6)
+                        .arg(e.B1re, 0, 'g', 6)
+                        .arg(e.B1im, 0, 'g', 6)
+                        .arg(e.B2re, 0, 'g', 6)
+                        .arg(e.B2im, 0, 'g', 6)
+                        .arg(bMag, 0, 'g', 6)
+                        .arg(hMag, 0, 'g', 6)
+                        .arg(jMag, 0, 'g', 6)
+                        .arg(pot.symbol));
+    } else {
+      appendOutput(QString("Point: x=%1, y=%2  %3=%4 %5  %6 1=(%7, %8)  %6 2=(%9, %10)  |%6|=%11 %12")
+                        .arg(scenePos.x(), 0, 'g', 6)
+                        .arg(scenePos.y(), 0, 'g', 6)
+                        .arg(pot.symbol)
+                        .arg(A.real(), 0, 'g', 6)
+                        .arg(pot.unit)
+                        .arg(fld.symbol)
+                        .arg(e.B1re, 0, 'g', 6)
+                        .arg(e.B1im, 0, 'g', 6)
+                        .arg(e.B2re, 0, 'g', 6)
+                        .arg(e.B2im, 0, 'g', 6)
+                        .arg(bMag, 0, 'g', 6)
+                        .arg(fld.unit));
+    }
     dlg.exec();
     break;
   }
@@ -3097,10 +3168,26 @@ void SolutionWindow::onPlotXYTriggered()
   // contour segment's own local direction) that isn't built yet; adding
   // them is a real, scoped follow-up, not attempted here as a partial
   // version that only covers some of the missing quantities.
-  const QString qtyALabel = "|A|";
-  const QString qtyBLabel = "|B|";
-  const QString qtyAUnit = m_axisymmetric ? "Wb" : "Wb/m";
-  const QString qtyBUnit = "T";
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
+  // (issue #93): these four were magnetics' labels for every physics,
+  // so a heat-flow contour plot offered "|A| (Wb)" and "|B| (T)" and
+  // charted temperatures in kelvin under them. They feed the combo, the
+  // chart titles, the Table tab AND the CSV export, so the wrong names
+  // left with the data.
+  const SolutionField::Quantity pot = pointPotential();
+  const SolutionField::Quantity fld = pointField();
+  // Magnetics plots |A|: for a harmonic solution the potential is
+  // complex and its magnitude is the meaningful scalar. Temperature and
+  // voltage are SIGNED -- a coax at -50 V, or a model in Celsius below
+  // zero, would be plotted positive and look fine -- so those are shown
+  // as themselves, and the label says so by carrying no bars.
+  const bool potentialIsMagnitude = isMagnetics();
+  const QString qtyALabel = potentialIsMagnitude
+      ? QStringLiteral("|%1|").arg(pot.symbol)
+      : pot.symbol;
+  const QString qtyBLabel = QStringLiteral("|%1|").arg(fld.symbol);
+  const QString qtyAUnit = pot.unit;
+  const QString qtyBUnit = fld.unit;
 
   QVector<double> arcLen, xs, ys, aMags, bMags;
   QString csv = QString("arc length,x,y,%1,%2\n").arg(qtyALabel, qtyBLabel);
@@ -3120,7 +3207,7 @@ void SolutionWindow::onPlotXYTriggered()
     double aMag = 0, bMag = 0;
     if (elem >= 0) {
       std::complex<double> A = interpolateA(pt, elem);
-      aMag = std::abs(A);
+      aMag = potentialIsMagnitude ? std::abs(A) : A.real();
       const MeshSolutionElement& e = m_solution.elements[elem];
       bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
     }
@@ -3516,6 +3603,26 @@ void SolutionWindow::selectDensityPlot()
 {
   if (m_item)
     m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14 (#93).
+SolutionField::Quantity SolutionWindow::pointPotential() const
+{
+  SolutionField::Quantity q = SolutionField::potentialQuantity(m_kind);
+  // Magnetics only: the same solved nodal value is "A, Wb/m" in a planar
+  // problem and "Flux, Wb" in an axisymmetric one. Volts are volts and
+  // kelvin are kelvin in both.
+  if (m_kind == FemmProblemKind::Magnetics && m_axisymmetric) {
+    q.name = QStringLiteral("Flux");
+    q.unit = QStringLiteral("Wb");
+    q.symbol = QStringLiteral("Flux");
+  }
+  return q;
+}
+
+SolutionField::Quantity SolutionWindow::pointField() const
+{
+  return SolutionField::fieldQuantity(m_kind);
 }
 
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#86).
