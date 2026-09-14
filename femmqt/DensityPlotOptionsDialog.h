@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QVector>
 
+#include "FemmProblem.h"
 #include "SolutionView.h"
 
 class QCheckBox;
@@ -51,7 +52,24 @@ class DensityPlotOptionsDialog : public QDialog {
   // (matches ContourPlotOptionsDialog's identically-named parameter and
   // its caller, SolutionWindow::onDensityOptionsTriggered) -- AC gets all
   // 10 quantities, DC only the 4 that make sense without a Re/Im split.
-  explicit DensityPlotOptionsDialog(MeshSolutionItem* item, bool legendVisible, bool isAcSolution, QWidget* parent = nullptr);
+  // `kind` decides WHICH quantities exist, and is not cosmetic.
+  //
+  // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14,
+  // per direct user report ("the density plots in the problems other
+  // than magnetics have the wrong units"). This combo offered
+  // magnetics' ten quantities -- "|B| (Tesla)", "|H| (Amp/m)",
+  // "|J| (MA/m^2)" -- for every physics, so a heat-flow solution was
+  // labelled in Tesla in the combo while the range box beside it,
+  // which asks the item for its legend title, correctly said W/m^2.
+  // Two units for one plot, on the same dialog.
+  //
+  // The other three physics render exactly ONE density quantity: the
+  // field their solver stores, which is what SolutionAdapter carries
+  // onto the renderer (see #87). H and J are derived from magnetics'
+  // permeability and conductivity, which mean something else or
+  // nothing at all in those formats.
+  explicit DensityPlotOptionsDialog(MeshSolutionItem* item, bool legendVisible,
+      bool isAcSolution, FemmProblemKind kind, QWidget* parent = nullptr);
 
   bool legendVisible() const { return m_showLegend; }
 

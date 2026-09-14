@@ -1,4 +1,6 @@
 #include "DensityPlotOptionsDialog.h"
+#include "SolutionField.h"
+#include "ProblemKind.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -37,7 +39,8 @@ const char* kQuantityLabels[DensityPlotOptionsDialog::kNumQuantities] = {
 const int kDcQuantityOrder[] = { 0, 3, 6, 9 }; // BMag, HMag, JMag, LogBMag
 }
 
-DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool legendVisible, bool isAcSolution, QWidget* parent)
+DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item,
+    bool legendVisible, bool isAcSolution, FemmProblemKind kind, QWidget* parent)
     : QDialog(parent)
     , m_item(item)
     , m_showLegend(legendVisible)
@@ -48,7 +51,23 @@ DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item, bool 
 
   auto* form = new QFormLayout;
   m_quantityCombo = new QComboBox(this);
-  if (isAcSolution) {
+  if (kind != FemmProblemKind::Magnetics) {
+    // One quantity, named in ITS units. The labels above are magnetics'
+    // and saying "|B| (Tesla)" over a heat-flux plot is the defect this
+    // fixes, not a harmless caption.
+    const SolutionField::Quantity f = SolutionField::fieldQuantity(kind);
+    m_comboToQuantity.push_back(static_cast<int>(MeshSolutionItem::DensityQuantity::BMag));
+    m_quantityCombo->addItem(QStringLiteral("%1 (%2)").arg(f.name, f.unit));
+    // Disabled rather than hidden: an empty row would read as a missing
+    // feature, where the real answer is that this physics has one field.
+    m_quantityCombo->setEnabled(false);
+    m_quantityCombo->setToolTip(
+        QStringLiteral("%1 solutions carry one field quantity. The others in "
+                       "this list are magnetics': |H| and |J| come from "
+                       "permeability and conductivity, which mean something "
+                       "else in this format.")
+            .arg(ProblemKind::displayName(kind)));
+  } else if (isAcSolution) {
     for (int i = 0; i < kNumQuantities; i++) {
       m_comboToQuantity.push_back(i);
       m_quantityCombo->addItem(kQuantityLabels[i]);

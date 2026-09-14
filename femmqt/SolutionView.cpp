@@ -19,6 +19,7 @@
 #include "FemmFileIO.h"
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
+#include "FileRouting.h"
 #include "GuiSwitch.h"
 #include "HoverTooltip.h"
 #include "IconTheme.h"
@@ -2137,11 +2138,17 @@ SolutionWindow::SolutionWindow(QWidget* parent)
 
 void SolutionWindow::onOpenTriggered()
 {
-  QString path = QFileDialog::getOpenFileName(this, "Open Solved Magnetics Problem", QString(),
-      "FEMM Solution Files (*.ans *.ansx)");
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14.
+  // The filter listed *.ans and *.ansx only, so the viewer that #83
+  // taught to read all four solution formats could not be asked to open
+  // three of them -- they were not selectable in its own File > Open.
+  QString path = QFileDialog::getOpenFileName(this, "Open Solved Problem", QString(),
+      "FEMM Solution Files (*.ans *.ansx *.res *.anh *.anc);;"
+      "Magnetics (*.ans *.ansx);;Electrostatics (*.res);;"
+      "Heat Flow (*.anh);;Current Flow (*.anc)");
   if (path.isEmpty())
     return;
-  openAnsFile(path);
+  openSolutionFile(path);
 }
 
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13 (#83).
@@ -3220,7 +3227,15 @@ void SolutionWindow::onReloadTriggered()
     Notify::information(this, "Reload", "No solution loaded.");
     return;
   }
-  openAnsFile(m_currentPath);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14:
+  // was openAnsFile, the magnetics-only path, for whatever happened to
+  // be open. Reloading a heat-flow solution re-read it as magnetics --
+  // and since a .anh parses cleanly as a .ans, that meant a temperature
+  // in kelvin redisplayed as a vector potential under a legend reading
+  // "|B|, Tesla". The #88 guard in AnsFileIO turns that into an error
+  // rather than a wrong picture, but the right answer is to reload it
+  // as what it is.
+  openSolutionFile(m_currentPath);
 }
 
 void SolutionWindow::onDensityOptionsTriggered()
@@ -3235,7 +3250,8 @@ void SolutionWindow::onDensityOptionsTriggered()
   // below can put the checkmark back where it belongs instead of leaving
   // Density checked despite nothing having actually switched.
   bool wasContour = m_item->plotMode() == MeshSolutionItem::PlotMode::Contour;
-  DensityPlotOptionsDialog dlg(m_item, m_view->legendVisible(), m_frequency != 0, this);
+  DensityPlotOptionsDialog dlg(m_item, m_view->legendVisible(),
+      m_frequency != 0, m_kind, this);
   if (dlg.exec() == QDialog::Accepted) {
     m_item->setPlotMode(MeshSolutionItem::PlotMode::Density);
     if (m_densityAction)
@@ -3804,17 +3820,24 @@ void SolutionWindow::onOpenRecentFile()
     updateRecentFilesMenu();
     return;
   }
-  // A recent-files entry might be a .fem (geometry, from MainWindow's own
-  // shared list) rather than a solved .ans/.ansx -- route it back to a
+  // A recent-files entry might be a model (geometry, from MainWindow's
+  // own shared list) rather than a solution -- route it back to a
   // geometry editor window instead of trying to open it here.
-  QString suffix = QFileInfo(path).suffix();
-  if (suffix.compare("ans", Qt::CaseInsensitive) != 0 && suffix.compare("ansx", Qt::CaseInsensitive) != 0) {
+  //
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14:
+  // the test was a hand-written .ans/.ansx comparison, so a recent
+  // .res/.anh/.anc went to the geometry EDITOR. That is not a clean
+  // failure: a solution file is its input file with a section appended,
+  // so it opened as a perfectly valid unsolved model with the solution
+  // silently dropped -- the exact outcome FileRouting exists to
+  // prevent, reimplemented next to it.
+  if (!FileRouting::isSolutionFile(path)) {
     auto* window = new MainWindow();
     window->show();
     window->openFile(path);
     return;
   }
-  openAnsFile(path);
+  openSolutionFile(path);
 }
 
 void SolutionWindow::onHelpTopicsTriggered()
