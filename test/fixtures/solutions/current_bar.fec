@@ -1,0 +1,62 @@
+[Format]      =  1
+[Precision]   =  1e-08
+[GPUAccel]    =  1
+[Frequency]   =  1e-08
+[MinAngle]    =  30
+[DoSmartMesh] =  1
+[Depth]       =  30
+[LengthUnits] =  millimeters
+[ProblemType] =  planar
+[Coordinates] =  cartesian
+[Comment]     =  "Add comments here."
+[PointProps]   = 0
+[BdryProps]   = 2
+  <BeginBdry>
+    <BdryName> = "Vhigh"
+    <BdryType> = 0
+    <vsr> = 1
+    <vsi> = 0
+    <qsr> = 0
+    <qsi> = 0
+    <c0r>  = 0
+    <c0i>  = 0
+    <c1r>  = 0
+    <c1i>  = 0
+  <EndBdry>
+  <BeginBdry>
+    <BdryName> = "Vlow"
+    <BdryType> = 0
+    <vsr> = 0
+    <vsi> = 0
+    <qsr> = 0
+    <qsi> = 0
+    <c0r>  = 0
+    <c0i>  = 0
+    <c1r>  = 0
+    <c1i>  = 0
+  <EndBdry>
+[BlockProps]  = 1
+  <BeginBlock>
+    <BlockName> = "conductor"
+    <ox> = 1000000
+    <oy> = 1000000
+    <ex> = 0
+    <ey> = 0
+    <ltx> = 0
+    <lty> = 0
+  <EndBlock>
+[ConductorProps]  = 0
+[NumPoints] = 4
+0	0	0	0	0
+20	0	0	0	0
+20	10	0	0	0
+0	10	0	0	0
+[NumSegments] = 4
+0	1	-1	0	0	0	0
+1	2	6	2	0	0	0
+2	3	-1	0	0	0	0
+3	0	6	1	0	0	0
+[NumArcSegments] = 0
+[NumHoles] = 0
+[NumBlockLabels] = 1
+10	5	1	6	0	0

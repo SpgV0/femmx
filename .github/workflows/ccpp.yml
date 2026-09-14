@@ -268,13 +268,29 @@ jobs:
           } else {
             Write-Host "no LastTest.log at $log"
           }
-          # And the failing binaries themselves, run directly: a test
-          # that dies before QTest prints its banner produces nothing
-          # for ctest to capture, and its exit code is the only clue.
-          foreach ($exe in Get-ChildItem -Path (Join-Path $buildDir 'femmqt/Release') -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
-            Write-Host "===== direct run: $($exe.Name) ====="
-            & $exe.FullName
-            Write-Host "exit code: $LASTEXITCODE"
+          # QTest's own logger output does not reach ctest's capture on
+          # this runner -- femmqt_core and femmqt_icons PASS with
+          # "<end of output>" too, so the silence is not a crash and not
+          # specific to the failure. Re-run each binary asking QTest to
+          # write its transcript to a file, which always works, and
+          # print it only for the ones that actually fail.
+          #
+          # From the femmqt directory, which is the working directory
+          # ctest uses: some suites resolve paths relative to it, and
+          # running them from elsewhere fails for reasons that have
+          # nothing to do with the original failure.
+          $testDir = Join-Path $buildDir 'femmqt'
+          $exeDir = Join-Path $testDir 'Release'
+          foreach ($exe in Get-ChildItem -Path $exeDir -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
+            $out = Join-Path $env:RUNNER_TEMP "$($exe.BaseName).txt"
+            Push-Location $testDir
+            & $exe.FullName -o "$out,txt" | Out-Null
+            $rc = $LASTEXITCODE
+            Pop-Location
+            if ($rc -ne 0) {
+              Write-Host "===== $($exe.Name) (exit $rc) ====="
+              if (Test-Path $out) { Get-Content $out }
+            }
           }
         }
         Pop-Location
@@ -384,13 +400,29 @@ jobs:
           } else {
             Write-Host "no LastTest.log at $log"
           }
-          # And the failing binaries themselves, run directly: a test
-          # that dies before QTest prints its banner produces nothing
-          # for ctest to capture, and its exit code is the only clue.
-          foreach ($exe in Get-ChildItem -Path (Join-Path $buildDir 'femmqt/Release') -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
-            Write-Host "===== direct run: $($exe.Name) ====="
-            & $exe.FullName
-            Write-Host "exit code: $LASTEXITCODE"
+          # QTest's own logger output does not reach ctest's capture on
+          # this runner -- femmqt_core and femmqt_icons PASS with
+          # "<end of output>" too, so the silence is not a crash and not
+          # specific to the failure. Re-run each binary asking QTest to
+          # write its transcript to a file, which always works, and
+          # print it only for the ones that actually fail.
+          #
+          # From the femmqt directory, which is the working directory
+          # ctest uses: some suites resolve paths relative to it, and
+          # running them from elsewhere fails for reasons that have
+          # nothing to do with the original failure.
+          $testDir = Join-Path $buildDir 'femmqt'
+          $exeDir = Join-Path $testDir 'Release'
+          foreach ($exe in Get-ChildItem -Path $exeDir -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
+            $out = Join-Path $env:RUNNER_TEMP "$($exe.BaseName).txt"
+            Push-Location $testDir
+            & $exe.FullName -o "$out,txt" | Out-Null
+            $rc = $LASTEXITCODE
+            Pop-Location
+            if ($rc -ne 0) {
+              Write-Host "===== $($exe.Name) (exit $rc) ====="
+              if (Test-Path $out) { Get-Content $out }
+            }
           }
         }
         Pop-Location

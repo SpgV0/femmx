@@ -553,10 +553,17 @@ void TestPlotState::everyPhysicsRendersTheModeItWasAskedFor_data()
 {
   QTest::addColumn<QString>("solution");
 
+  // All four are COMMITTED files. The first version of this pointed at
+  // test/results/analytic_fields/*.res and *.anc, which are gitignored
+  // -- the pytest suite regenerates them, so they are present on a
+  // machine that has run the tests and absent from a fresh checkout.
+  // These rows therefore passed locally and failed in CI, where the C++
+  // tests run before pytest. See test/fixtures/solutions/README.md.
+
   QTest::newRow("magnetics") << "manual_qt/images/example.ans";
-  QTest::newRow("electrostatics") << "test/results/analytic_fields/coax.res";
+  QTest::newRow("electrostatics") << "test/fixtures/solutions/parallel_plate.res";
   QTest::newRow("heat flow") << "manual_qt/images/example.anh";
-  QTest::newRow("current flow") << "test/results/analytic_fields/bar.anc";
+  QTest::newRow("current flow") << "test/fixtures/solutions/current_bar.anc";
 }
 
 void TestPlotState::everyPhysicsRendersTheModeItWasAskedFor()
@@ -614,9 +621,9 @@ void TestPlotState::aQuantityTheOtherPhysicsCannotDrawIsRefusedByName_data()
   QTest::addColumn<QString>("solution");
   QTest::addColumn<QString>("expectField");
 
-  QTest::newRow("electrostatics") << "test/results/analytic_fields/coax.res" << "|D|";
+  QTest::newRow("electrostatics") << "test/fixtures/solutions/parallel_plate.res" << "|D|";
   QTest::newRow("heat flow") << "manual_qt/images/example.anh" << "|F|";
-  QTest::newRow("current flow") << "test/results/analytic_fields/bar.anc" << "|J|";
+  QTest::newRow("current flow") << "test/fixtures/solutions/current_bar.anc" << "|J|";
 }
 
 void TestPlotState::aQuantityTheOtherPhysicsCannotDrawIsRefusedByName()

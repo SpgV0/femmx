@@ -1,0 +1,50 @@
+[Format]      =  1
+[Precision]   =  1.0000000000000001e-09
+[GPUAccel]    =  1
+[MinAngle]    =  30
+[DoSmartMesh] =  1
+[Depth]       =  10
+[LengthUnits] =  millimeters
+[ProblemType] =  planar
+[Coordinates] =  cartesian
+[Comment]     =  "Add comments here."
+[PointProps]   = 0
+[BdryProps]   = 2
+  <BeginBdry>
+    <BdryName> = "Vhigh"
+    <BdryType> = 0
+    <Vs> = 10
+    <qs> = 0
+    <c0> = 0
+    <c1> = 0
+  <EndBdry>
+  <BeginBdry>
+    <BdryName> = "Vlow"
+    <BdryType> = 0
+    <Vs> = 0
+    <qs> = 0
+    <c0> = 0
+    <c1> = 0
+  <EndBdry>
+[BlockProps]  = 1
+  <BeginBlock>
+    <BlockName> = "dielectric"
+    <ex> = 1
+    <ey> = 1
+    <qv> = 0
+  <EndBlock>
+[ConductorProps]  = 0
+[NumPoints] = 4
+0	0	0	0	0
+20	0	0	0	0
+20	10	0	0	0
+0	10	0	0	0
+[NumSegments] = 4
+0	1	-1	0	0	0	0
+1	2	6	2	0	0	0
+2	3	-1	0	0	0	0
+3	0	6	1	0	0	0
+[NumArcSegments] = 0
+[NumHoles] = 0
+[NumBlockLabels] = 1
+10	5	1	6	0	0
