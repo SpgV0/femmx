@@ -134,6 +134,8 @@ qt_add_library(femmqt_core STATIC
   DemoLibrary.cpp
   Notify.h
   Notify.cpp
+  WindowTitle.h
+  WindowTitle.cpp
   PlotStateArgs.h
   PlotStateArgs.cpp
   SketchFileIO.h
@@ -418,6 +420,10 @@ if(TARGET Qt6::Test)
   qt_add_executable(femmqt_demo_library_tests
     tests/tst_demo_library.cpp
   )
+  # What the title bar says -- a pure function, so no widget harness.
+  qt_add_executable(femmqt_window_title_tests
+    tests/tst_window_title.cpp
+  )
   # The browser itself -- widgets, so this one needs a QPA platform.
   qt_add_executable(femmqt_demo_browser_tests
     tests/tst_demo_browser.cpp
@@ -464,6 +470,7 @@ if(TARGET Qt6::Test)
     femmqt_type_independence_tests
     femmqt_headless_cli_tests
     femmqt_demo_library_tests
+    femmqt_window_title_tests
     femmqt_demo_browser_tests
     femmqt_plot_state_tests
     femmqt_icon_tests
@@ -517,6 +524,7 @@ if(TARGET Qt6::Test)
 
   add_test(NAME femmqt_headless_cli COMMAND femmqt_headless_cli_tests)
   add_test(NAME femmqt_demo_library COMMAND femmqt_demo_library_tests)
+  add_test(NAME femmqt_window_title COMMAND femmqt_window_title_tests)
   add_test(NAME femmqt_demo_browser COMMAND femmqt_demo_browser_tests)
   add_test(NAME femmqt_plot_state COMMAND femmqt_plot_state_tests)
   set_tests_properties(femmqt_plot_state PROPERTIES TIMEOUT 900)

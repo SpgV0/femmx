@@ -2,6 +2,7 @@
 #include "SolutionView.h"
 
 #include "PlotStateArgs.h"
+#include "WindowTitle.h"
 #include "SolutionFileIO.h"
 #include "SolutionField.h"
 #include "SolutionAdapter.h"
@@ -2249,8 +2250,7 @@ bool SolutionWindow::openSolutionFile(const QString& path)
         QStringLiteral("%1, %2").arg(primary.name, primary.unit));
   }
 
-  setWindowTitle(QStringLiteral("%1 Solution -- %2")
-                     .arg(ProblemKind::displayName(kind), QFileInfo(path).fileName()));
+  setWindowTitle(WindowTitle::forSolution(kind, path));
   return true;
 }
 
@@ -2347,7 +2347,11 @@ bool SolutionWindow::openAnsFile(const QString& path)
   if (!m_geometryOverlayError.isEmpty())
     statusMsg += QString(" -- geometry overlay unavailable: %1").arg(m_geometryOverlayError);
   statusBar()->showMessage(statusMsg);
-  setWindowTitle(QString("FEMMX (Qt) - Solution Viewer - %1").arg(path));
+  // Modified 2026-09-14: was "FEMMX (Qt) - Solution Viewer - <path>"
+  // while the other three physics said "<Kind> Solution -- <file>" --
+  // two answers to the same question depending on which file you
+  // happened to open. Both go through WindowTitle now.
+  setWindowTitle(WindowTitle::forSolution(FemmProblemKind::Magnetics, path));
   addToRecentFiles(path);
   return true;
 }

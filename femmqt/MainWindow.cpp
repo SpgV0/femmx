@@ -64,6 +64,7 @@
 #include "DemoBrowserDialog.h"
 #include "DemoLibrary.h"
 #include "Notify.h"
+#include "WindowTitle.h"
 #include <QPageSetupDialog>
 #include <QPainter>
 #include <QPlainTextEdit>
@@ -2955,17 +2956,21 @@ void MainWindow::onAboutTriggered()
 
 void MainWindow::updateTitle()
 {
-  QString name = m_currentPath.isEmpty() ? QStringLiteral("Untitled") : m_currentPath;
-  // Issue #91: say that this is a copy, and of what. Without it the
-  // title would show a path in the temp directory and Save asking for
-  // a location would look like a bug.
-  if (m_isDemoCopy) {
-    name = QStringLiteral("%1 (demo copy)")
-               .arg(m_demoTitle.isEmpty() ? QFileInfo(m_currentPath).fileName()
-                                          : m_demoTitle);
-  }
-  QString title = QString("FEMMX (Qt) - %1%2").arg(name, m_dirty ? "*" : "");
-  setWindowTitle(title);
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14,
+  // per direct user request: the problem type goes in the title. Since
+  // #80 a document is one of four physics, fixed at File > New, and
+  // nothing on screen said which -- the toolbar is identical for all
+  // four, so a .fee and a .feh are indistinguishable until you open a
+  // property dialog.
+  //
+  // The demo-copy name (#91) still wins over the path: a working copy
+  // lives in a temporary directory, and showing that would be noise
+  // where the demo's own name is the useful thing.
+  const QString demoName = m_isDemoCopy
+      ? (m_demoTitle.isEmpty() ? QFileInfo(m_currentPath).fileName() : m_demoTitle)
+      : QString();
+  setWindowTitle(
+      WindowTitle::forEditor(m_problem.kind, m_currentPath, m_dirty, demoName));
 }
 
 QAction* MainWindow::addThemedAction(QToolBar* bar, const QString& iconPath, const QString& text, const QString& tooltip, void (MainWindow::*slot)())
