@@ -254,6 +254,29 @@ jobs:
         Push-Location $buildDir
         ctest --test-dir . -C Release --output-on-failure --no-tests=ignore
         $code = $LASTEXITCODE
+        # Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14.
+        # --output-on-failure printed NOTHING for a failing test once --
+        # a binary that fails without writing a word leaves a CI log
+        # saying only that something went wrong. LastTest.log holds
+        # ctest's own full transcript either way, so dump it rather than
+        # guessing from six thousand miles away.
+        if ($code -ne 0) {
+          $log = Join-Path $buildDir 'Testing/Temporary/LastTest.log'
+          if (Test-Path $log) {
+            Write-Host '===== ctest LastTest.log ====='
+            Get-Content $log | Select-Object -Last 400
+          } else {
+            Write-Host "no LastTest.log at $log"
+          }
+          # And the failing binaries themselves, run directly: a test
+          # that dies before QTest prints its banner produces nothing
+          # for ctest to capture, and its exit code is the only clue.
+          foreach ($exe in Get-ChildItem -Path (Join-Path $buildDir 'femmqt/Release') -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
+            Write-Host "===== direct run: $($exe.Name) ====="
+            & $exe.FullName
+            Write-Host "exit code: $LASTEXITCODE"
+          }
+        }
         Pop-Location
         exit $code
     - name: 'Install Python test dependencies'
@@ -347,6 +370,29 @@ jobs:
         Push-Location $buildDir
         ctest --test-dir . -C Release --output-on-failure --no-tests=ignore
         $code = $LASTEXITCODE
+        # Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-14.
+        # --output-on-failure printed NOTHING for a failing test once --
+        # a binary that fails without writing a word leaves a CI log
+        # saying only that something went wrong. LastTest.log holds
+        # ctest's own full transcript either way, so dump it rather than
+        # guessing from six thousand miles away.
+        if ($code -ne 0) {
+          $log = Join-Path $buildDir 'Testing/Temporary/LastTest.log'
+          if (Test-Path $log) {
+            Write-Host '===== ctest LastTest.log ====='
+            Get-Content $log | Select-Object -Last 400
+          } else {
+            Write-Host "no LastTest.log at $log"
+          }
+          # And the failing binaries themselves, run directly: a test
+          # that dies before QTest prints its banner produces nothing
+          # for ctest to capture, and its exit code is the only clue.
+          foreach ($exe in Get-ChildItem -Path (Join-Path $buildDir 'femmqt/Release') -Filter '*_tests.exe' -ErrorAction SilentlyContinue) {
+            Write-Host "===== direct run: $($exe.Name) ====="
+            & $exe.FullName
+            Write-Host "exit code: $LASTEXITCODE"
+          }
+        }
         Pop-Location
         exit $code
     - name: 'Install Python test dependencies'
