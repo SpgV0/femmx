@@ -816,18 +816,78 @@ def test_every_editor_can_save_a_png(prefix, doctype, probdef):
         "through instead of femmCaptureSize's default" % ((prefix,) + size))
 
 
+# ei/hi/ci -> the model extension femmqt routes on.
+SAVEPNG_MODEL_EXT = {"mi": "fem", "ei": "fee", "hi": "feh", "ci": "fec"}
+
+
 @pytest.mark.parametrize("prefix,doctype,probdef", SAVEPNG_EDITORS[1:],
                          ids=[e[0] for e in SAVEPNG_EDITORS[1:]])
-def test_non_magnetics_savepng_refuses_the_qt_gui(prefix, doctype, probdef):
-    """Refusing beats quietly rendering with the other GUI.
+def test_non_magnetics_savepng_renders_through_the_qt_gui(prefix, doctype,
+                                                          probdef):
+    """All four editors reach the Qt renderer now (#87).
 
-    femmqt supports magnetics only, so there is no Qt renderer for these
-    physics to hand the file to. Silently substituting the classic
-    renderer would produce an image that differs from the one asked for
-    with nothing to say so -- the same shape as every other silent-wrong-
-    output defect in this fork.
+    This used to assert the opposite. ei_/hi_/ci_savepng refused
+    setgui("qt") outright, on the true premise that femmqt drew
+    magnetics only -- refusing beat quietly substituting the classic
+    renderer and handing back an image that differed from the one asked
+    for. #80/#81 gave femmqt a reader for all four model formats and #85
+    stopped an unreadable file hanging the render, so the premise is
+    gone and the refusal with it.
+
+    Keeping the old assertion would have pinned a limitation that no
+    longer exists, which is the same failure as never testing it.
     """
+    if not os.path.exists(os.path.join(BIN_DIR, "femmqt.exe")):
+        pytest.skip("femmqt.exe not built")
+
+    model = _out("%s_savepng_qt.%s" % (prefix, SAVEPNG_MODEL_EXT[prefix]))
     png = _out("%s_savepng_qt.png" % prefix)
+    for path in (png,):
+        if os.path.exists(path):
+            os.remove(path)
+
+    femm.openfemm(1)
+    try:
+        femm.newdocument(doctype)
+        femm.callfemm(probdef)
+        femm.callfemm("%s_addnode(0,0)" % prefix)
+        femm.callfemm("%s_addnode(20,0)" % prefix)
+        femm.callfemm("%s_addnode(20,20)" % prefix)
+        femm.callfemm("%s_addsegment(0,0,20,0)" % prefix)
+        femm.callfemm("%s_addsegment(20,0,20,20)" % prefix)
+        # There is no in-memory handoff between two processes, so the
+        # document has to be on disk for femmqt.exe to open it.
+        femm.callfemm('%s_saveas("%s")' % (prefix, _save(model)))
+        femm.callfemm('setgui("qt")')
+        femm.callfemm('%s_savepng("%s")' % (prefix, _save(png)))
+    finally:
+        _teardown()
+
+    assert os.path.exists(png), (
+        'setgui("qt") + %s_savepng produced no file: the shell-out to '
+        "femmqt --render-png failed silently" % prefix)
+    size = _png_size(png)
+    _note("    qt %s_savepng: %d bytes, %s"
+          % (prefix, os.path.getsize(png), size))
+    assert size is not None, (
+        "the Qt path wrote something that is not a PNG for %s" % prefix)
+    assert size[0] >= 64 and size[1] >= 64, (
+        "the Qt path rendered a %dx%d PNG -- the size handed to "
+        "femmqt --render-png came from an unlaid-out client rect"
+        % size)
+
+
+@pytest.mark.parametrize("prefix,doctype,probdef", SAVEPNG_EDITORS[1:],
+                         ids=[e[0] for e in SAVEPNG_EDITORS[1:]])
+def test_savepng_under_qt_refuses_an_unsaved_document(prefix, doctype,
+                                                      probdef):
+    """The one refusal on this path that is still true.
+
+    femmqt.exe is a separate process and opens a file by name, so there
+    is nothing to hand it until the document has been saved. Saying so
+    beats writing a PNG of whatever was last on disk under that name.
+    """
+    png = _out("%s_savepng_unsaved.png" % prefix)
     if os.path.exists(png):
         os.remove(png)
 
@@ -845,13 +905,15 @@ def test_non_magnetics_savepng_refuses_the_qt_gui(prefix, doctype, probdef):
     finally:
         _teardown()
 
-    _note("    %s_savepng under setgui(\"qt\"): %s"
+    _note("    %s_savepng unsaved under setgui(\"qt\"): %s"
           % (prefix, "raised" if raised else "SILENT"))
     assert raised, (
-        "%s_savepng silently accepted setgui(\"qt\") even though femmqt "
-        "cannot render this physics" % prefix)
-    assert "magnetics" in raised.lower(), (
+        "%s_savepng silently accepted an unsaved document under "
+        'setgui("qt")' % prefix)
+    assert "saved" in raised.lower(), (
         "the error does not explain why: %r" % raised)
+    assert not os.path.exists(png), (
+        "it complained but still left a file behind at %s" % png)
 
 
 # ---------------------------------------------------------------------------
