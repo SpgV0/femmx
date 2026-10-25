@@ -158,6 +158,13 @@ private slots:
   void aRefusedTrimCostsNoUndoStep();
 
   void constructionGeometryIsDrawnUnmistakablyDifferently();
+
+  // #96: with the default snaps on, the snap indicator sat on top of the
+  // very node it marked and every hit test found it instead.
+  void aSegmentCanBeDrawnBetweenNodesWithDefaultSnaps();
+  void aClickTheEndpointSnapClaimsPicksThatNode();
+  void aDoubleClickUnderTheSnapIndicatorOpensTheEntityBeneathIt();
+  void hoveringInSelectModeShowsNoSnap();
 };
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1057,129 @@ void TestSketchUi::constructionGeometryIsDrawnUnmistakablyDifferently()
       "nothing on screen says it will not be meshed or solved");
   QVERIFY2(constructionPen.color().alphaF() < realPen.color().alphaF(),
       "the construction line is drawn at the same weight as real geometry");
+}
+
+namespace {
+
+FemmProblem twoLooseNodes()
+{
+  FemmProblem p;
+  p.problemType = FemmCoordinateType::Planar;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 40, 0);
+  return p;
+}
+
+void sendMouse(GeometryScene& scene, QEvent::Type type, QPointF scenePos,
+    Qt::MouseButtons buttons = Qt::LeftButton)
+{
+  QGraphicsSceneMouseEvent ev(type);
+  ev.setScenePos(scenePos);
+  ev.setButton(type == QEvent::GraphicsSceneMouseMove ? Qt::NoButton : Qt::LeftButton);
+  ev.setButtons(buttons);
+  QApplication::sendEvent(&scene, &ev);
+}
+
+// What a real user does: the pointer arrives first, the snap engine
+// puts its marker on the node, and THEN the button goes down.
+void hoverThenClick(GeometryScene& scene, QPointF at)
+{
+  sendMouse(scene, QEvent::GraphicsSceneMouseMove, at, Qt::NoButton);
+  sendMouse(scene, QEvent::GraphicsSceneMousePress, at);
+  sendMouse(scene, QEvent::GraphicsSceneMouseRelease, at, Qt::NoButton);
+}
+
+} // namespace
+
+void TestSketchUi::aSegmentCanBeDrawnBetweenNodesWithDefaultSnaps()
+{
+  FemmProblem p = twoLooseNodes();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapDefault);
+  h.scene.setToolMode(GeometryToolMode::AddSegment);
+
+  hoverThenClick(h.scene, QPointF(0.3, 0.2));
+  QVERIFY2(snapIndicator(h.scene) && snapIndicator(h.scene)->isVisible(),
+      "precondition: the endpoint snap marker is up over the first node");
+  hoverThenClick(h.scene, QPointF(40.3, 0.2));
+
+  QVERIFY2(p.segments.size() == 1,
+      "clicking node A then node B with the default snaps drew nothing -- "
+      "the snap marker on top of each node took the click");
+  QCOMPARE(p.segments[0].n0, 0);
+  QCOMPARE(p.segments[0].n1, 1);
+}
+
+void TestSketchUi::aClickTheEndpointSnapClaimsPicksThatNode()
+{
+  // 8 units off each node: outside its few-pixel marker, inside the
+  // 12-unit snap radius. The status bar says "Snap: Endpoint" there, so
+  // the click must mean that node.
+  FemmProblem p = twoLooseNodes();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapDefault);
+  h.scene.setToolMode(GeometryToolMode::AddSegment);
+
+  hoverThenClick(h.scene, QPointF(0, 8));
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Endpoint);
+  hoverThenClick(h.scene, QPointF(40, 8));
+  QCOMPARE(p.segments.size(), 1);
+}
+
+void TestSketchUi::aDoubleClickUnderTheSnapIndicatorOpensTheEntityBeneathIt()
+{
+  // The review's case: double-clicking a segment opened Node Properties
+  // for node 0, because the marker's missing kind read as 0 = Node and
+  // its missing index as 0.
+  // Long enough that its midpoint is out of both endpoints' snap range,
+  // so the marker really is a Midpoint marker sitting on the line.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapDefault);
+  h.scene.setToolMode(GeometryToolMode::Select);
+  // Park the marker on the segment's midpoint, where the pointer is.
+  h.scene.snapPoint(QPointF(50, 0.2));
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Midpoint);
+  h.scene.updateSnapIndicator();
+  QVERIFY(snapIndicator(h.scene) && snapIndicator(h.scene)->isVisible());
+
+  QSignalSpy spy(&h.scene, &GeometryScene::entityDoubleClicked);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseDoubleClick, QPointF(50, 0));
+  QCOMPARE(spy.size(), 1);
+  QVERIFY2(spy[0][0].value<FemmItemKind>() == FemmItemKind::Segment,
+      qPrintable(QStringLiteral("double-click opened kind %1, index %2, not the segment")
+                     .arg(static_cast<int>(spy[0][0].value<FemmItemKind>()))
+                     .arg(spy[0][1].toInt())));
+  QCOMPARE(spy[0][1].toInt(), 0);
+}
+
+void TestSketchUi::hoveringInSelectModeShowsNoSnap()
+{
+  FemmProblem p = oneSegment();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapDefault);
+
+  h.scene.setToolMode(GeometryToolMode::Select);
+  QSignalSpy positions(&h.scene, &GeometryScene::mousePositionChanged);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(0.4, 0.3), Qt::NoButton);
+  const QGraphicsItem* ind = snapIndicator(h.scene);
+  QVERIFY2(!ind || !ind->isVisible(), "Select-mode hover put up a snap marker");
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::None);
+  // and reports where the pointer really is, not where a snap would go
+  QCOMPARE(positions.last()[0].toPointF(), QPointF(0.4, 0.3));
+
+  // A placement tool still gets it.
+  h.scene.setToolMode(GeometryToolMode::AddNode);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(0.4, 0.3), Qt::NoButton);
+  QVERIFY(snapIndicator(h.scene) && snapIndicator(h.scene)->isVisible());
+  QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Endpoint);
 }
 
 QTEST_MAIN(TestSketchUi)

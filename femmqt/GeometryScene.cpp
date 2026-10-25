@@ -864,6 +864,11 @@ class SnapIndicatorItem : public QGraphicsItem
     return QRectF(-h, -h, 2 * h, 2 * h);
   }
 
+  // setAcceptedMouseButtons(Qt::NoButton) does NOT take an item out of
+  // itemAt()/items(): it sat on top of every node it marked and was what
+  // each node-picking tool's hit test found (#96). An empty shape does.
+  QPainterPath shape() const override { return {}; }
+
   protected:
   void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
   {
@@ -2015,10 +2020,23 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
-  emit mousePositionChanged(snapPoint(event->scenePos()));
-  // snapPoint() above refreshed m_lastSnap; reflect it on the canvas and
-  // tell the window so the status bar can name it (#28).
-  updateSnapIndicator();
+  // Select mode places nothing until a drag starts, so a hover there
+  // gets the raw position and no snap marker: "Snap: Quadrant" while
+  // merely pointing at an arc describes a placement that is not going
+  // to happen (#96). Trim, Extend and Split use the raw click as well.
+  const bool hoverOnly = m_toolMode == GeometryToolMode::Select && !(event->buttons() & Qt::LeftButton);
+  const bool rawClickTool = m_toolMode == GeometryToolMode::Trim
+      || m_toolMode == GeometryToolMode::Extend || m_toolMode == GeometryToolMode::Split;
+  if (!hoverOnly && !rawClickTool) {
+    emit mousePositionChanged(snapPoint(event->scenePos()));
+    // snapPoint() above refreshed m_lastSnap; reflect it on the canvas and
+    // tell the window so the status bar can name it (#28).
+    updateSnapIndicator();
+  } else {
+    m_lastSnap = SnapEngine::SnapResult();
+    hideSnapIndicator();
+    emit mousePositionChanged(event->scenePos());
+  }
   emit snapChanged(m_lastSnap);
 
   if (m_toolMode == GeometryToolMode::SmartDimension && m_smartDimAwaitingPlacement) {
@@ -2165,8 +2183,7 @@ void GeometryScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
   // automated UI test double-clicking the same node) would expect.
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::Select) {
-      QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-      QGraphicsItem* hit = itemAt(event->scenePos(), deviceTransform);
+      QGraphicsItem* hit = entityAt(event->scenePos());
       if (hit)
         emit entityDoubleClicked(static_cast<FemmItemKind>(hit->data(KindKey).toInt()), hit->data(IndexKey).toInt());
     }
@@ -2216,10 +2233,8 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     // node items use ItemIgnoresTransformations -- Qt needs the real
     // device transform to correctly map their fixed-pixel-size shape
     // back into scene coordinates for hit-testing.
-    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-    QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
-      int clickedNode = hit->data(IndexKey).toInt();
+    const int clickedNode = nodeAt(pos);
+    if (clickedNode >= 0) {
       if (m_pendingNode < 0) {
         m_pendingNode = clickedNode;
       } else if (m_pendingNode != clickedNode) {
@@ -2239,10 +2254,8 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     break;
   }
   case GeometryToolMode::AddArc: {
-    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-    QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
-      int clickedNode = hit->data(IndexKey).toInt();
+    const int clickedNode = nodeAt(pos);
+    if (clickedNode >= 0) {
       if (m_pendingNode < 0) {
         m_pendingNode = clickedNode;
       } else if (m_pendingNode != clickedNode) {
@@ -2273,10 +2286,8 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     break;
   }
   case GeometryToolMode::AddDimensionDistance: {
-    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-    QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
-      int clickedNode = hit->data(IndexKey).toInt();
+    const int clickedNode = nodeAt(pos);
+    if (clickedNode >= 0) {
       if (!m_pendingDimensionNodes.contains(clickedNode))
         m_pendingDimensionNodes.push_back(clickedNode);
       if (m_pendingDimensionNodes.size() == 2) {
@@ -2287,9 +2298,7 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     break;
   }
   case GeometryToolMode::AddDimensionRadius: {
-    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-    QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Arc))
+    if (QGraphicsItem* hit = entityAt(pos, { FemmItemKind::Arc }))
       addRadiusDimensionForArc(hit->data(IndexKey).toInt());
     break;
   }
@@ -2318,6 +2327,10 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     const QList<QGraphicsItem*> hitList = items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform);
     for (QGraphicsItem* candidate : hitList) {
       if (candidate == m_smartDimPreviewItem || candidate == m_smartDimPreviewText)
+        continue;
+      // Anything without a kind is a readout, not geometry -- the snap
+      // indicator above all, which sits exactly on what it marks (#96).
+      if (!candidate->data(KindKey).isValid())
         continue;
       hit = candidate;
       break;
@@ -2469,10 +2482,8 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     break;
   }
   case GeometryToolMode::AddDimensionAngle: {
-    QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-    QGraphicsItem* hit = itemAt(pos, deviceTransform);
-    if (hit && hit->data(KindKey).toInt() == static_cast<int>(FemmItemKind::Node)) {
-      int clickedNode = hit->data(IndexKey).toInt();
+    const int clickedNode = nodeAt(pos);
+    if (clickedNode >= 0) {
       if (!m_pendingDimensionNodes.contains(clickedNode))
         m_pendingDimensionNodes.push_back(clickedNode);
       if (m_pendingDimensionNodes.size() == 3) {
@@ -2529,6 +2540,43 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
 // which is what the geometry snap would usually do here, since the pick
 // is by definition on an entity -- would make "the piece nearest this
 // end" impossible to say.
+QGraphicsItem* GeometryScene::entityAt(QPointF pos, std::initializer_list<FemmItemKind> kinds) const
+{
+  // The attached view's real transform, not identity: node and label
+  // markers are sized in pixels, so their scene-space shape depends on it.
+  const QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+  for (QGraphicsItem* candidate : items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform)) {
+    if (candidate == m_smartDimPreviewItem || candidate == m_smartDimPreviewText)
+      continue;
+    const QVariant k = candidate->data(KindKey);
+    if (!k.isValid())
+      continue;
+    if (kinds.size() == 0)
+      return candidate;
+    for (FemmItemKind wanted : kinds) {
+      if (k.toInt() == static_cast<int>(wanted))
+        return candidate;
+    }
+  }
+  return nullptr;
+}
+
+int GeometryScene::nodeAt(QPointF pos) const
+{
+  if (QGraphicsItem* hit = entityAt(pos, { FemmItemKind::Node }))
+    return hit->data(IndexKey).toInt();
+  if (!m_problem)
+    return -1;
+  // The snap capture radius is wider than a node's marker, so a click
+  // the indicator has already attached to a node can miss the marker
+  // itself. Ask the same question the indicator answered.
+  snapPoint(pos);
+  if (m_lastSnap.type == SnapEngine::SnapType::Endpoint
+      && m_lastSnap.index >= 0 && m_lastSnap.index < m_problem->nodes.size())
+    return m_lastSnap.index;
+  return -1;
+}
+
 void GeometryScene::handleTrimExtendClick(QPointF pos)
 {
   if (!m_problem)

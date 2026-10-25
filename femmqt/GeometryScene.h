@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QGraphicsScene>
+#include <initializer_list>
 #include <QMultiHash>
 #include <QVector>
 
@@ -433,6 +434,17 @@ class GeometryScene : public QGraphicsScene {
   // Trim/Extend/Split (#29). Takes the RAW scene position -- for these
   // three the pick location is an argument, not a point being placed.
   void handleTrimExtendClick(QPointF pos);
+
+  // The topmost piece of MODEL geometry under `pos` whose kind is in
+  // `kinds` (any kind when empty), or nullptr. Never the snap indicator,
+  // a preview ghost, the mesh overlay or any other readout: those carry
+  // no KindKey, and reading a missing KindKey as 0 turned every one of
+  // them into "node 0" (#96).
+  QGraphicsItem* entityAt(QPointF pos, std::initializer_list<FemmItemKind> kinds = {}) const;
+  // The node a node-picking click means: the node under the cursor, or
+  // else the node the endpoint snap is showing -- the indicator says
+  // "Snap: Endpoint", so the click must agree with it (#96). -1 if none.
+  int nodeAt(QPointF pos) const;
   // Modified by Claude (Anthropic), noreply@anthropic.com: shared by
   // AddDimensionDistance/AddDimensionRadius's own handleToolClick cases
   // AND the new SmartDimension tool -- prompts for the value
