@@ -8,6 +8,13 @@
 #include <QFileInfo>
 #include <QProcess>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 
 namespace {
@@ -32,6 +39,30 @@ QString solverDir()
 // re-entrant -- callers must disable whatever UI could start a second
 // solve/mesh concurrently while this runs (see MainWindow::
 // onSolveTriggered/onCreateMeshTriggered).
+// How the helper processes appear (#120). triangle.exe is a console
+// program: without CREATE_NO_WINDOW every mesh flashed a console. The
+// solvers are MFC dialogs: started normally, each put its progress window
+// on top of the editor for the whole solve. Started minimised and not
+// activated -- exactly how the classic GUI starts a hidden solve
+// (femm/FemmeView.cpp, STARTF_USESHOWWINDOW + SW_SHOWMINNOACTIVE) -- they
+// stay on the taskbar, where the progress can still be looked at.
+void startQuietly(QProcess& proc, bool consoleProgram)
+{
+#ifdef Q_OS_WIN
+  proc.setCreateProcessArgumentsModifier([consoleProgram](QProcess::CreateProcessArguments* args) {
+    if (consoleProgram) {
+      args->flags |= CREATE_NO_WINDOW;
+    } else {
+      args->startupInfo->dwFlags |= STARTF_USESHOWWINDOW | STARTF_FORCEOFFFEEDBACK;
+      args->startupInfo->wShowWindow = SW_SHOWMINNOACTIVE;
+    }
+  });
+#else
+  Q_UNUSED(proc);
+  Q_UNUSED(consoleProgram);
+#endif
+}
+
 void waitPumpingEvents(QProcess& proc)
 {
   while (proc.state() != QProcess::NotRunning) {
@@ -61,6 +92,7 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
     "-e", "-A", "-a", "-z", "-Q", "-I",
     rootPath
   };
+  startQuietly(triangle, true);
   triangle.start(solverDir() + "/triangle.exe", triangleArgs);
   if (!triangle.waitForStarted(10000)) {
     errorMessage = "Couldn't spawn triangle.exe.";
@@ -179,6 +211,7 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QSt
   // femmqt's Load Monitor samples the process from outside instead (see
   // LoadMonitorDialog), so it does not need the solver's cooperation and
   // the argument is deliberately not passed.
+  startQuietly(solver, false);
   solver.start(exePath, QStringList{ rootPath });
   if (!solver.waitForStarted(10000)) {
     errorMessage = QStringLiteral("Could not start the %1 solver \"%2\".")

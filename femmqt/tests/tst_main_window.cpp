@@ -146,6 +146,8 @@ class TestMainWindow : public QObject
   // #119
   void theMaterialLibraryCanBeSearchedAndAddsWithoutAPopup();
   void addNewOpensTheEditorAndFixedAShowsItsFormula();
+  // #120
+  void everySolverProcessStartsQuietly();
 };
 
 void TestMainWindow::initTestCase()
@@ -1152,6 +1154,30 @@ void TestMainWindow::addNewOpensTheEditorAndFixedAShowsItsFormula()
   BoundaryPropDialog bd(prop);
   auto* formula = bd.findChild<QLabel*>("fixedAFormula");
   QVERIFY2(formula && formula->text().contains("A0 + A1*x + A2*y"), "the fixed-A fields carry no formula");
+}
+
+void TestMainWindow::everySolverProcessStartsQuietly()
+{
+  // A guard on the source: every process SolveRunner starts must first go
+  // through startQuietly(), or its window lands on top of the editor
+  // (the solvers) or flashes a console (triangle). Showing that would
+  // need a real solve and a desktop to inspect; this keeps a new .start()
+  // from slipping past.
+  QFile f(QStringLiteral(FEMMQT_SOURCE_DIR "/SolveRunner.cpp"));
+  QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+  int starts = 0;
+  for (int i = 0; i < lines.size(); i++) {
+    static const QRegularExpression start(QStringLiteral("^\\s*(\\w+)\\.start\\("));
+    const auto m = start.match(lines[i]);
+    if (!m.hasMatch())
+      continue;
+    starts++;
+    const QString proc = m.captured(1);
+    QVERIFY2(i > 0 && lines[i - 1].contains(QStringLiteral("startQuietly(%1").arg(proc)),
+        qPrintable(QStringLiteral("SolveRunner.cpp line %1 starts %2 without startQuietly").arg(i + 1).arg(proc)));
+  }
+  QVERIFY2(starts >= 2, "found fewer process starts than triangle + solver");
 }
 
 QTEST_MAIN(TestMainWindow)
