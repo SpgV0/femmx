@@ -1165,9 +1165,19 @@ void MeshSolutionItem::paintSelectedBlocks(QPainter* painter, const QRectF& expo
   }
   if (selPath.isEmpty())
     return;
+  // Translucent, with an outline: the opaque green hid the very density
+  // plot the selection is being integrated over (#115).
+  QColor fill = AppTheme::regionSelectionColor();
+  fill.setAlpha(70);
+  QPen edge(AppTheme::regionSelectionColor().darker(150));
+  edge.setCosmetic(true);
+  edge.setWidth(0);
   painter->setPen(Qt::NoPen);
-  painter->setBrush(AppTheme::regionSelectionColor());
-  painter->drawPath(selPath);
+  painter->setBrush(fill);
+  painter->drawPath(selPath.simplified());
+  painter->setPen(edge);
+  painter->setBrush(Qt::NoBrush);
+  painter->drawPath(selPath.simplified());
 }
 
 void MeshSolutionItem::paintContour(QPainter* painter, const QRectF& exposedRect)
@@ -1707,6 +1717,10 @@ void SolutionGraphicsView::fitInViewSafe(const QRectF& rect)
   setTransformationAnchor(QGraphicsView::AnchorViewCenter);
   fitInView(rect, Qt::KeepAspectRatio);
   setTransformationAnchor(prevAnchor);
+  // Remembered, so a resize -- maximising, docking the output away --
+  // fits it again: the plot used to stay at its small first size inside
+  // a maximised window (#115). Any zoom or pan by the user drops it.
+  m_autoFitRect = rect;
 }
 
 void SolutionGraphicsView::setLegendItem(MeshSolutionItem* item)
@@ -1767,6 +1781,12 @@ void SolutionGraphicsView::renderLegendInto(QPainter& painter, QSize imageSize)
 void SolutionGraphicsView::resizeEvent(QResizeEvent* event)
 {
   QGraphicsView::resizeEvent(event);
+  if (!m_autoFitRect.isEmpty()) {
+    QGraphicsView::ViewportAnchor prevAnchor = transformationAnchor();
+    setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+    fitInView(m_autoFitRect, Qt::KeepAspectRatio);
+    setTransformationAnchor(prevAnchor);
+  }
   refreshLegend();
 }
 
@@ -1793,7 +1813,7 @@ void SolutionGraphicsView::mousePressEvent(QMouseEvent* event)
 {
   // Checked first: panning uses the middle/right buttons and must work
   // regardless of which tool or mode is armed below. See ViewPanning.h.
-  if (m_pan.begin(this, event))
+  if (m_pan.begin(this, event) && (dropAutoFit(), true))
     return;
   if (m_zoomWindowActive && event->button() == Qt::LeftButton) {
     m_rubberBandOrigin = event->pos();
@@ -1903,6 +1923,7 @@ void SolutionGraphicsView::keyPressEvent(QKeyEvent* event)
 void SolutionGraphicsView::wheelEvent(QWheelEvent* event)
 {
   double factor = event->angleDelta().y() > 0 ? 1.25 : 0.8;
+  dropAutoFit();
   scale(factor, factor);
   updateAntialiasingForScale();
   // Belt-and-suspenders alongside scrollContentsBy: scale() normally
@@ -1928,7 +1949,13 @@ SolutionWindow::SolutionWindow(QWidget* parent)
     : QMainWindow(parent)
 {
   setWindowTitle("FEMMX (Qt) - Solution Viewer");
-  resize(1024, 768);
+  // Where the user last left it; the first time, large (#115) -- the
+  // old 1024x768 put a small plot beside a 40%-tall output pane.
+  {
+    QSettings settings;
+    if (!restoreGeometry(settings.value(QStringLiteral("solutionWindow/geometry")).toByteArray()))
+      resize(1400, 900);
+  }
 
   m_scene = new SolutionGraphicsScene(this);
   // Modified by Claude (Anthropic), noreply@anthropic.com: per direct user
@@ -2125,8 +2152,11 @@ SolutionWindow::SolutionWindow(QWidget* parent)
   opMenu->addAction("&Finish Contour", this, &SolutionWindow::onFinishContourTriggered);
   opMenu->addAction("&Clear Contour", this, &SolutionWindow::onClearContourTriggered);
   opMenu->addAction("Clear &Area Selection", this, &SolutionWindow::onClearAreaSelectionTriggered);
-  menuBar()->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
-  menuBar()->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
+  // In the menu, not bare on the menu bar where they read as menus that
+  // do not open (#115).
+  opMenu->addSeparator();
+  opMenu->addAction("Plot &X-Y", this, &SolutionWindow::onPlotXYTriggered);
+  opMenu->addAction("&Integrate", this, &SolutionWindow::onIntegrateTriggered);
 
   // Matches femm.rc's IDR_LEFTBAR -- confirmed in femm/MainFrm.cpp that
   // m_leftbar (Zoom/Pan/Grid) is shared across every doc type's frame,
@@ -2243,8 +2273,23 @@ void SolutionWindow::onOpenTriggered()
 // Everything here is physics-independent: it paints a scalar per element
 // and a potential per node, and which scalar that is was decided before
 // this is called.
+void SolutionWindow::closeEvent(QCloseEvent* event)
+{
+  QSettings().setValue(QStringLiteral("solutionWindow/geometry"), saveGeometry()); // #115
+  QMainWindow::closeEvent(event);
+}
+
 QRectF SolutionWindow::rebuildSceneForSolution()
 {
+  // A new solution starts clean: the previous file's output lines and
+  // its last hover readout used to stay on screen, reading as this
+  // model's (#115).
+  if (m_outputText)
+    m_outputText->clear();
+  if (m_positionLabel)
+    m_positionLabel->clear();
+  if (m_pointDock)
+    m_pointDock->hide();
   m_spatialIndexBuilt = false; // m_solution just got replaced -- see buildSpatialIndex()'s comment
   m_scene->clear();
   m_contourVisual = nullptr; // clear() above already deleted it
@@ -2770,9 +2815,16 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
       }
     }
 
-    QDialog dlg(this);
-    dlg.setWindowTitle("Point Properties");
-    auto* form = new QFormLayout(&dlg);
+    // A docked panel updated in place, not a modal dialog to dismiss on
+    // every click (#115). Rebuilt per click: the rows differ by physics.
+    if (!m_pointDock) {
+      m_pointDock = new QDockWidget("Point Properties", this);
+      m_pointDock->setObjectName("pointPropertiesDock");
+      addDockWidget(Qt::RightDockWidgetArea, m_pointDock);
+    }
+    auto* panel = new QWidget(m_pointDock);
+    panel->setObjectName("pointPropertiesPanel");
+    auto* form = new QFormLayout(panel);
     form->addRow("x, y:", new QLabel(QString("%1, %2").arg(scenePos.x(), 0, 'g', 6).arg(scenePos.y(), 0, 'g', 6)));
     form->addRow(aLabel + ":", new QLabel(QString("%1, %2 %3").arg(A.real(), 0, 'g', 6).arg(A.imag(), 0, 'g', 6).arg(aUnit)));
     // The field's two components and its magnitude, named for this
@@ -2801,9 +2853,10 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
       form->addRow("Js+Je (re, im):", new QLabel(QString("%1, %2").arg(e.jRe, 0, 'g', 6).arg(e.jIm, 0, 'g', 6)));
       form->addRow("|Js+Je|:", new QLabel(QString("%1 MA/m^2").arg(jMag, 0, 'g', 6)));
     }
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
-    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    form->addRow(buttons);
+    delete m_pointDock->widget();
+    m_pointDock->setWidget(panel);
+    m_pointDock->show();
+    m_pointDock->raise();
     // The output log gets the same treatment: it is what a user copies
     // out, so a magnetics unit on a heat number travels further than the
     // dialog does (#93).
@@ -2836,7 +2889,6 @@ void SolutionWindow::onCanvasClicked(QPointF scenePos)
                         .arg(bMag, 0, 'g', 6)
                         .arg(fld.unit));
     }
-    dlg.exec();
     break;
   }
   case SolutionToolMode::Contour:
@@ -3689,13 +3741,15 @@ void SolutionWindow::onAboutTriggered()
 // relative-transform approach, just against this window's own view.
 void SolutionWindow::onZoomIn()
 {
-  m_view->scale(2.0, 2.0);
+  m_view->dropAutoFit();
+  m_view->scale(M_SQRT2, M_SQRT2); // sqrt(2) a step, as the editor (#112)
   m_view->updateAntialiasingForScale();
 }
 
 void SolutionWindow::onZoomOut()
 {
-  m_view->scale(0.5, 0.5);
+  m_view->dropAutoFit();
+  m_view->scale(1.0 / M_SQRT2, 1.0 / M_SQRT2);
   m_view->updateAntialiasingForScale();
 }
 
@@ -3891,24 +3945,28 @@ void SolutionWindow::onSetGridTriggered()
 
 void SolutionWindow::onPanLeft()
 {
+  m_view->dropAutoFit();
   auto* bar = m_view->horizontalScrollBar();
   bar->setValue(bar->value() - m_view->viewport()->width() / 4);
 }
 
 void SolutionWindow::onPanRight()
 {
+  m_view->dropAutoFit();
   auto* bar = m_view->horizontalScrollBar();
   bar->setValue(bar->value() + m_view->viewport()->width() / 4);
 }
 
 void SolutionWindow::onPanUp()
 {
+  m_view->dropAutoFit();
   auto* bar = m_view->verticalScrollBar();
   bar->setValue(bar->value() - m_view->viewport()->height() / 4);
 }
 
 void SolutionWindow::onPanDown()
 {
+  m_view->dropAutoFit();
   auto* bar = m_view->verticalScrollBar();
   bar->setValue(bar->value() + m_view->viewport()->height() / 4);
 }

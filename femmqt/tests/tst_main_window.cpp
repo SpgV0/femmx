@@ -18,6 +18,9 @@
 #include <QCheckBox>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QDockWidget>
+#include <QMenuBar>
+#include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
@@ -128,6 +131,10 @@ class TestMainWindow : public QObject
   void zoomStepsAreGentleAndFitLeavesAMargin();
   // #113
   void aUniformFieldPaintsOneColourNotNoise();
+  // #115
+  void pointPropertiesIsAPanelNotAModalPerClick();
+  void theSolutionWindowRefitsOnResizeUntilTheUserZooms();
+  void anAreaSelectionLetsThePlotShowThrough();
 };
 
 void TestMainWindow::initTestCase()
@@ -942,6 +949,97 @@ void TestMainWindow::aUniformFieldPaintsOneColourNotNoise()
     for (int x = 20; x < img.width() - 20; x++)
       colours.insert(img.pixel(x, y));
   QVERIFY2(colours.size() <= 3, qPrintable(QStringLiteral("%1 colours in a uniform field").arg(colours.size())));
+}
+
+void TestMainWindow::pointPropertiesIsAPanelNotAModalPerClick()
+{
+  const QString ans = m_dir.filePath("pp_wire.ans");
+  QFile::remove(ans);
+  QVERIFY(QFile::copy(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/straight_wire.ans"), ans));
+  SolutionWindow window;
+  QVERIFY(window.openSolutionFile(ans));
+
+  // Any modal that appears is the defect: close it and remember.
+  bool sawModal = false;
+  QTimer guard;
+  connect(&guard, &QTimer::timeout, [&sawModal]() {
+    if (auto* d = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
+      sawModal = true;
+      d->reject();
+    }
+  });
+  guard.start(0);
+  QVERIFY(QMetaObject::invokeMethod(&window, "onPointToolTriggered"));
+  QVERIFY(QMetaObject::invokeMethod(&window, "onCanvasClicked", Q_ARG(QPointF, QPointF(5, 0))));
+  QVERIFY(QMetaObject::invokeMethod(&window, "onCanvasClicked", Q_ARG(QPointF, QPointF(6, 0))));
+  guard.stop();
+  QVERIFY2(!sawModal, "a click opened a modal dialog");
+  auto* dock = window.findChild<QDockWidget*>("pointPropertiesDock");
+  QVERIFY2(dock && dock->isVisibleTo(&window), "no Point Properties panel");
+  QVERIFY(dock->widget()->findChildren<QLabel*>().size() > 4);
+
+  // The output carries the clicks -- until another solution opens.
+  auto* output = window.findChild<QPlainTextEdit*>();
+  QVERIFY(output && output->toPlainText().contains("Point:"));
+  QVERIFY(window.openSolutionFile(ans));
+  QVERIFY2(output->toPlainText().isEmpty(), "the previous solution's output is still showing");
+  QVERIFY(!dock->isVisibleTo(&window));
+
+  // Plot X-Y and Integrate live in a menu, not bare on the menu bar.
+  for (QAction* a : window.menuBar()->actions())
+    QVERIFY2(a->menu() != nullptr, qPrintable(QStringLiteral("bare menu-bar action: %1").arg(a->text())));
+}
+
+void TestMainWindow::theSolutionWindowRefitsOnResizeUntilTheUserZooms()
+{
+  const QString ans = m_dir.filePath("fit_wire.ans");
+  QFile::remove(ans);
+  QVERIFY(QFile::copy(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/straight_wire.ans"), ans));
+  SolutionWindow window;
+  window.resize(700, 500);
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
+  QVERIFY(window.openSolutionFile(ans));
+  auto* view = window.findChild<SolutionGraphicsView*>();
+  QVERIFY(view);
+  const double small = view->transform().m11();
+  window.resize(1400, 1000); // what maximising does
+  QApplication::processEvents();
+  const double big = view->transform().m11();
+  QVERIFY2(big > small * 1.3, qPrintable(QStringLiteral("not refitted: %1 -> %2").arg(small).arg(big)));
+
+  // After the user zooms, a resize leaves their view alone.
+  QVERIFY(QMetaObject::invokeMethod(&window, "onZoomIn"));
+  const double zoomed = view->transform().m11();
+  window.resize(900, 700);
+  QApplication::processEvents();
+  QCOMPARE(view->transform().m11(), zoomed);
+}
+
+void TestMainWindow::anAreaSelectionLetsThePlotShowThrough()
+{
+  FemmProblem p;
+  MeshSolution sol;
+  QString err;
+  QVERIFY2(AnsFileIO::readAns(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/straight_wire.ans"), p, sol, err), qPrintable(err));
+  MeshSolutionItem item(&sol);
+  item.setProblemGeometry(&p);
+  item.setPlotMode(MeshSolutionItem::PlotMode::Density);
+  const QImage plain = renderSolution(item, sol);
+  item.toggleBlockLabelSelected(1); // the air around the wire: most of the picture
+  const QImage selected = renderSolution(item, sol);
+  // Opaque, the whole air region became one flat green. Translucent,
+  // the density bands still differ from one another underneath.
+  QSet<QRgb> colours;
+  for (int y = 0; y < selected.height(); y += 3)
+    for (int x = 0; x < selected.width(); x += 3)
+      colours.insert(selected.pixel(x, y));
+  QSet<QRgb> plainColours;
+  for (int y = 0; y < plain.height(); y += 3)
+    for (int x = 0; x < plain.width(); x += 3)
+      plainColours.insert(plain.pixel(x, y));
+  QVERIFY2(colours.size() > plainColours.size() / 2,
+      qPrintable(QStringLiteral("%1 colours with the air selected, %2 without").arg(colours.size()).arg(plainColours.size())));
 }
 
 QTEST_MAIN(TestMainWindow)

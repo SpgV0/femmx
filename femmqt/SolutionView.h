@@ -479,6 +479,8 @@ class SolutionGraphicsView : public QGraphicsView {
   // -- exactly the case right after opening a file. Swaps to
   // AnchorViewCenter for the duration of the call.
   void fitInViewSafe(const QRectF& rect);
+  // The user zoomed or panned: stop refitting on resize (#115).
+  void dropAutoFit() { m_autoFitRect = QRectF(); }
 
   // Updates the floating cursor-following tooltip's text (position is
   // maintained internally, following the last mouse move) -- called by
@@ -569,6 +571,7 @@ class SolutionGraphicsView : public QGraphicsView {
   bool m_legendEnabled = true;
   class QRubberBand* m_rubberBand = nullptr;
   bool m_zoomWindowActive = false;
+  QRectF m_autoFitRect; // last fitted, refitted on resize until the user zooms (#115)
   QPoint m_rubberBandOrigin;
   DragPanState m_pan;
 };
@@ -759,6 +762,11 @@ class SolutionWindow : public QMainWindow {
   // #83: shared by openAnsFile and openSolutionFile -- see the .cpp.
   QRectF rebuildSceneForSolution();
 
+  protected:
+  void closeEvent(QCloseEvent* event) override;
+
+  private:
+
   MeshSolutionItem* m_item = nullptr;
   // #83: which physics is loaded. Magnetics unless a non-magnetics
   // solution was opened, so every existing path keeps its behaviour.
@@ -798,6 +806,7 @@ class SolutionWindow : public QMainWindow {
 
   QDockWidget* m_outputDock = nullptr;
   QPlainTextEdit* m_outputText = nullptr;
+  class QDockWidget* m_pointDock = nullptr; // #115
   class QLabel* m_positionLabel = nullptr;
   QElapsedTimer m_hoverThrottle; // see onCanvasHovered's comment
   class QPrinter* m_printer = nullptr; // lazily created, shared by Print/Print Preview/Print Setup
