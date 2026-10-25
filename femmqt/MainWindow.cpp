@@ -26,6 +26,7 @@
 #include "MaterialPropDialog.h"
 #include "MeshOverlay.h"
 #include "MoveCopyDialog.h"
+#include "NumberFormDialog.h"
 #include "NodePropDialog.h"
 #include "ConstructionGeometry.h"
 #include "OffsetChamfer.h"
@@ -2529,16 +2530,15 @@ void MainWindow::onScaleSelectedTriggered()
     Notify::information(this, "Scale", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double factor = QInputDialog::getDouble(this, "Scale", "Scale Factor:", 1.0, 1e-9, 1e9, 6, &ok);
-  if (!ok)
+  // One dialog, like Move/Copy -- it was three chained prompts (#123).
+  NumberFormDialog dlg("Scale", this);
+  dlg.setObjectName("scaleDialog");
+  const int fFactor = dlg.addField("Scale factor:", "scaleFactor", 1.0, 1e-9);
+  const int fX = dlg.addField("Base point, X:", "scaleBaseX", 0.0);
+  const int fY = dlg.addField("Base point, Y:", "scaleBaseY", 0.0);
+  if (dlg.exec() != QDialog::Accepted)
     return;
-  double baseX = QInputDialog::getDouble(this, "Scale", "Base Point X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double baseY = QInputDialog::getDouble(this, "Scale", "Base Point Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
+  const double factor = dlg.value(fFactor), baseX = dlg.value(fX), baseY = dlg.value(fY);
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();
@@ -2555,19 +2555,20 @@ void MainWindow::onMirrorSelectedTriggered()
     Notify::information(this, "Mirror", "Nothing selected.");
     return;
   }
-  bool ok = false;
-  double x0 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 1, X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  // Likewise one dialog, not four prompts (#123).
+  NumberFormDialog dlg("Mirror", this);
+  dlg.setObjectName("mirrorDialog");
+  const int fX0 = dlg.addField("Mirror line point 1, X:", "mirrorX0", 0.0);
+  const int fY0 = dlg.addField("Mirror line point 1, Y:", "mirrorY0", 0.0);
+  const int fX1 = dlg.addField("Mirror line point 2, X:", "mirrorX1", 0.0);
+  const int fY1 = dlg.addField("Mirror line point 2, Y:", "mirrorY1", 1.0);
+  if (dlg.exec() != QDialog::Accepted)
     return;
-  double y0 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 1, Y:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
+  const double x0 = dlg.value(fX0), y0 = dlg.value(fY0), x1 = dlg.value(fX1), y1 = dlg.value(fY1);
+  if (x0 == x1 && y0 == y1) {
+    Notify::warning(this, "Mirror", "The two points are the same, so they define no line.");
     return;
-  double x1 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 2, X:", 0.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
-  double y1 = QInputDialog::getDouble(this, "Mirror", "Mirror Line Point 2, Y:", 1.0, -1e9, 1e9, 6, &ok);
-  if (!ok)
-    return;
+  }
 
   snapshotForUndo();
   m_scene->syncSelectionToProblem();

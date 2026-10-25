@@ -154,6 +154,7 @@ class TestMainWindow : public QObject
   void everySolverProcessStartsQuietly();
   void theLoadMonitorIsLiveBeforeAnySolve();
   void aClickOrDoubleClickSelectsTheWholeNumber();
+  void scaleAndMirrorAskInOneDialog();
 };
 
 void TestMainWindow::initTestCase()
@@ -1234,6 +1235,66 @@ void TestMainWindow::aClickOrDoubleClickSelectsTheWholeNumber()
   QTest::mouseClick(edit, Qt::LeftButton, {}, middle);
   QTest::qWait(20);
   QVERIFY(edit->selectedText().isEmpty());
+}
+
+namespace {
+
+// Fills the next modal dialog if it is `name` (fields by objectName) and
+// accepts it; any other modal dialog -- the old chained prompts -- is
+// rejected and counted, so the test fails instead of hanging.
+void answerFormDialog(const QString& name, const QMap<QString, QString>& values, int& strays)
+{
+  QTimer::singleShot(0, [name, values, &strays]() {
+    auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+    if (!dlg)
+      return;
+    if (dlg->objectName() != name) {
+      strays++;
+      dlg->reject();
+      return;
+    }
+    for (auto it = values.begin(); it != values.end(); ++it)
+      if (auto* edit = dlg->findChild<QLineEdit*>(it.key()))
+        edit->setText(it.value());
+    dlg->accept();
+  });
+}
+
+} // namespace
+
+void TestMainWindow::scaleAndMirrorAskInOneDialog()
+{
+  // Scale was three chained prompts and Mirror four.
+  MainWindow w;
+  w.newDocument(FemmProblemKind::Magnetics);
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addNode(p, 0, 10);
+  auto* scene = w.findChild<GeometryScene*>();
+  auto selectNodes = [scene]() {
+    scene->rebuild();
+    for (QGraphicsItem* item : scene->items())
+      if (item->data(0).isValid() && item->data(0).toInt() == static_cast<int>(FemmItemKind::Node))
+        item->setSelected(true);
+  };
+
+  int strays = 0;
+  selectNodes();
+  answerFormDialog("scaleDialog", { { "scaleFactor", "2" }, { "scaleBaseX", "1" }, { "scaleBaseY", "0" } }, strays);
+  actionNamed(w, QStringLiteral("Sc&ale..."))->trigger();
+  QCOMPARE(strays, 0);
+  QCOMPARE(w.problem().nodes[0].x, 19.0);
+  QCOMPARE(w.problem().nodes[0].y, 0.0);
+  QCOMPARE(w.problem().nodes[1].x, -1.0);
+  QCOMPARE(w.problem().nodes[1].y, 20.0);
+
+  // Mirror about x = 5.
+  selectNodes();
+  answerFormDialog("mirrorDialog", { { "mirrorX0", "5" }, { "mirrorY0", "0" }, { "mirrorX1", "5" }, { "mirrorY1", "1" } }, strays);
+  actionNamed(w, QStringLiteral("M&irror..."))->trigger();
+  QCOMPARE(strays, 0);
+  QCOMPARE(w.problem().nodes[0].x, -9.0);
+  QCOMPARE(w.problem().nodes[1].x, 11.0);
 }
 
 QTEST_MAIN(TestMainWindow)

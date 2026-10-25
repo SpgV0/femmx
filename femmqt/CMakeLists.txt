@@ -196,6 +196,8 @@ qt_add_library(femmqt_core STATIC
   MaterialPropDialog.cpp
   MoveCopyDialog.h
   MoveCopyDialog.cpp
+  NumberFormDialog.h
+  NumberFormDialog.cpp
   NodePropDialog.h
   NodePropDialog.cpp
   SegmentPropDialog.h
