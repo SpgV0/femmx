@@ -754,6 +754,8 @@ MainWindow::MainWindow(QWidget* parent)
   // ("nothing crosses that line"), which are not errors and must not be
   // dialogs -- but a click that does nothing and says nothing is
   // indistinguishable from a broken tool.
+  connect(m_scene, &GeometryScene::sketchEditRefused, this,
+      [this](const QString& text) { Notify::warning(this, "Dimension Not Added", text); });
   connect(m_scene, &GeometryScene::toolMessage, this,
       [this](const QString& text) { statusBar()->showMessage(text, 6000); });
 
@@ -903,7 +905,7 @@ void MainWindow::newDocument(FemmProblemKind kind)
   m_problem.kind = kind;
   m_currentPath.clear();
   resetDocumentState();
-  m_scene->setConstraintStatus({});
+  m_scene->setSketchStatus({});
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
   m_view->resetZoomTransform();
@@ -1057,7 +1059,7 @@ bool MainWindow::openFile(const QString& path)
   // A reopened sketch is classified as it stands -- not solved, which
   // would move it and mark it dirty, and not left uncoloured, which drew
   // every constrained node as conflicting (#102).
-  m_scene->setConstraintStatus(ConstraintSolver::classify(m_problem).nodeStatus);
+  m_scene->setSketchStatus(ConstraintSolver::classify(m_problem));
   m_scene->setProblem(&m_problem);
   QRectF problemBounds = m_scene->computeProblemBounds();
   m_view->fitInViewSafe(problemBounds);
@@ -2170,10 +2172,18 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
     bool ok = false;
     double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, dim.value, minVal, maxVal, 6, &ok);
     if (ok && newValue != dim.value) {
+      // Tried on a copy: an impossible value used to be kept, with the
+      // geometry unmoved and the nodes red and nothing said (#103).
+      FemmProblem trial = m_problem;
+      const ConstraintSolver::EditResult r = ConstraintSolver::setDimensionValue(trial, indices.first(), newValue);
+      if (r.outcome != ConstraintSolver::EditOutcome::Applied) {
+        Notify::warning(this, "Dimension Not Changed", ConstraintSolver::refusalMessage(r.outcome));
+        break;
+      }
       snapshotForUndo();
-      m_problem.dimensions[indices.first()].value = newValue;
-      ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-      m_scene->setConstraintStatus(result.nodeStatus);
+      m_problem.nodes = trial.nodes;
+      m_problem.dimensions = trial.dimensions;
+      m_scene->setSketchStatus(r.solve);
       accepted = true;
     }
     break;
@@ -2375,7 +2385,7 @@ void MainWindow::onUndoTriggered()
   }
   m_problem = m_undoStack.takeLast();
   // The colours describe the sketch, so they come back with it (#102).
-  m_scene->setConstraintStatus(ConstraintSolver::classify(m_problem).nodeStatus);
+  m_scene->setSketchStatus(ConstraintSolver::classify(m_problem));
   m_scene->rebuild();
   markEdited();
   statusBar()->showMessage(QString("Undone (%1 more step%2 available)").arg(m_undoStack.size()).arg(m_undoStack.size() == 1 ? "" : "s"));
@@ -2514,7 +2524,7 @@ void MainWindow::applyConstraint(const FemmConstraint& c)
   snapshotForUndo();
   m_problem.constraints.push_back(c);
   ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->setSketchStatus(result);
   m_scene->rebuild();
   markEdited();
   if (!result.converged)
@@ -2685,7 +2695,7 @@ void MainWindow::onSolveConstraintsTriggered()
     snapshotForUndo();
     m_problem.nodes = solved.nodes;
   }
-  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->setSketchStatus(result);
   m_scene->rebuild();
   if (moved)
     markEdited();
@@ -2702,7 +2712,7 @@ void MainWindow::onClearConstraintsTriggered()
   snapshotForUndo();
   m_problem.constraints.clear();
   ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->setSketchStatus(result);
   m_scene->rebuild();
   markEdited();
 }
@@ -2714,7 +2724,7 @@ void MainWindow::onClearDimensionsTriggered()
   snapshotForUndo();
   m_problem.dimensions.clear();
   ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-  m_scene->setConstraintStatus(result.nodeStatus);
+  m_scene->setSketchStatus(result);
   m_scene->rebuild();
   markEdited();
 }
@@ -2729,7 +2739,7 @@ void MainWindow::onConstraintListTriggered()
     snapshotForUndo();
     FemmProblemEdit::deleteConstraint(m_problem, i);
     ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-    m_scene->setConstraintStatus(result.nodeStatus);
+    m_scene->setSketchStatus(result);
     m_scene->rebuild();
     markEdited();
   };

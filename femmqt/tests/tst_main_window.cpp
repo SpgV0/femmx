@@ -98,6 +98,8 @@ class TestMainWindow : public QObject
   void aReopenedConsistentSketchIsNotShownAsConflicting();
   void undoRestoresTheConstraintColoursWithTheSketch();
   void solvingAnAlreadySatisfiedSketchIsNotAnEdit();
+  // #103
+  void anImpossibleDimensionEditIsRefusedThroughTheWindow();
 };
 
 void TestMainWindow::initTestCase()
@@ -410,7 +412,7 @@ void TestMainWindow::editingAnAngleDimensionThenUndoRestoresTheValueToo()
   QVERIFY(!qIsNaN(at.x()));
   const QPointF before3(p.nodes[3].x, p.nodes[3].y);
 
-  answerNextInputDialog(80);
+  answerNextInputDialog(-80); // same side of the vertex: the signed convention until #104
   QGraphicsSceneMouseEvent dbl(QEvent::GraphicsSceneMouseDoubleClick);
   dbl.setScenePos(at);
   dbl.setButton(Qt::LeftButton);
@@ -507,6 +509,58 @@ void TestMainWindow::solvingAnAlreadySatisfiedSketchIsNotAnEdit()
   actionNamed(w, QStringLiteral("&Undo"))->trigger();
   QCOMPARE(w.problem().nodes.size(), before.nodes.size());
   QVERIFY(!w.windowTitle().contains('*'));
+}
+
+void TestMainWindow::anImpossibleDimensionEditIsRefusedThroughTheWindow()
+{
+  // The consistent L's bottom edge is Horizontal and dimensioned 70.
+  // Editing its OTHER dimension (the 30 upright) is fine; making the
+  // horizontal edge's own dimension negative-impossible is not something
+  // the dialog allows, so conflict it through a vertical dimension.
+  const QString path = writeConsistentSketch(m_dir.path());
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  FemmDimension v;
+  v.type = DimensionType::VerticalDistance;
+  v.refA = 0;
+  v.refB = 1;
+  v.value = 0;
+  v.labelOffsetX = 5;
+  v.labelOffsetY = -5;
+  p.dimensions << v;
+  auto* scene = w.findChild<GeometryScene*>();
+  scene->rebuild();
+  w.resize(800, 600);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+  const FemmProblem before = p;
+  const QString title = w.windowTitle();
+
+  // Double-click the vertical dimension's label (the last one added).
+  QPointF at(qQNaN(), qQNaN());
+  for (QGraphicsItem* item : scene->items()) {
+    if (item->type() == QGraphicsSimpleTextItem::Type && item->data(0).toInt() == static_cast<int>(FemmItemKind::Dimension)
+        && item->data(1).toInt() == 2) {
+      QGraphicsView* view = scene->views().first();
+      const QRectF device = item->deviceTransform(view->viewportTransform()).mapRect(item->boundingRect());
+      at = view->mapToScene(device.center().toPoint());
+    }
+  }
+  QVERIFY(!qIsNaN(at.x()));
+  answerNextInputDialog(10);
+  QGraphicsSceneMouseEvent dbl(QEvent::GraphicsSceneMouseDoubleClick);
+  dbl.setScenePos(at);
+  dbl.setButton(Qt::LeftButton);
+  dbl.setButtons(Qt::LeftButton);
+  QApplication::sendEvent(scene, &dbl);
+
+  QCOMPARE(p.dimensions[2].value, 0.0);
+  for (int i = 0; i < p.nodes.size(); i++) {
+    QCOMPARE(p.nodes[i].x, before.nodes[i].x);
+    QCOMPARE(p.nodes[i].y, before.nodes[i].y);
+  }
+  QCOMPARE(w.windowTitle(), title); // not dirty, so no edit happened
 }
 
 QTEST_MAIN(TestMainWindow)

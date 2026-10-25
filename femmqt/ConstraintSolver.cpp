@@ -793,6 +793,9 @@ SolveResult solveImpl(FemmProblem& p, int maxIterations)
     for (int row : compRows)
       compMaxResidual = std::max(compMaxResidual, std::abs(finalR[row]));
 
+    if (subRank < subEquations)
+      result.redundantEquations += subEquations - subRank;
+
     SketchStatus status;
     if (compMaxResidual >= kConvergedMaxAbsResidual)
       status = SketchStatus::Conflicting;
@@ -807,9 +810,136 @@ SolveResult solveImpl(FemmProblem& p, int maxIterations)
       result.nodeStatus[n] = status;
   }
 
+  for (int i = 0; i < sources.size(); i++) {
+    if (sources[i].dimensionIndex >= 0 && std::abs(finalR[i]) >= kConvergedMaxAbsResidual)
+      result.unsatisfiedDimensions.insert(sources[i].dimensionIndex);
+  }
+
   return result;
 }
 
+// Whether segments a0-a1 and b0-b1 cross at a point interior to both.
+// Touching at an end, or overlapping collinearly, is not a crossing here:
+// a shared endpoint is how a polygon is joined at all.
+bool properlyCross(double ax0, double ay0, double ax1, double ay1,
+    double bx0, double by0, double bx1, double by1)
+{
+  const double scale = std::max({ std::abs(ax1 - ax0), std::abs(ay1 - ay0),
+      std::abs(bx1 - bx0), std::abs(by1 - by0), 1e-300 });
+  const double eps = 1e-9 * scale * scale;
+  auto orient = [](double px, double py, double qx, double qy, double rx, double ry) {
+    return (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  };
+  const double d1 = orient(bx0, by0, bx1, by1, ax0, ay0);
+  const double d2 = orient(bx0, by0, bx1, by1, ax1, ay1);
+  const double d3 = orient(ax0, ay0, ax1, ay1, bx0, by0);
+  const double d4 = orient(ax0, ay0, ax1, ay1, bx1, by1);
+  return ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
+      && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps));
+}
+
+// Whether moving from `before` to `after` made any two model segments
+// cross that did not cross before. Only segments touching a node that
+// moved are checked against the rest, so a large model costs little.
+// The review's case: an angle solved to the far side of a vertex turned
+// a trapezoid into a bow-tie, an invalid region for the mesher (#103).
+bool introducesCrossing(const FemmProblem& before, const FemmProblem& after)
+{
+  QSet<int> moved;
+  for (int i = 0; i < after.nodes.size() && i < before.nodes.size(); i++) {
+    if (after.nodes[i].x != before.nodes[i].x || after.nodes[i].y != before.nodes[i].y)
+      moved.insert(i);
+  }
+  if (moved.isEmpty())
+    return false;
+  auto valid = [&](const FemmSegment& s) {
+    return !s.isConstruction && s.n0 >= 0 && s.n1 >= 0 && s.n0 < after.nodes.size() && s.n1 < after.nodes.size();
+  };
+  auto cross = [](const FemmProblem& p, const FemmSegment& a, const FemmSegment& b) {
+    return properlyCross(p.nodes[a.n0].x, p.nodes[a.n0].y, p.nodes[a.n1].x, p.nodes[a.n1].y,
+        p.nodes[b.n0].x, p.nodes[b.n0].y, p.nodes[b.n1].x, p.nodes[b.n1].y);
+  };
+  for (int i = 0; i < after.segments.size(); i++) {
+    const FemmSegment& a = after.segments[i];
+    if (!valid(a) || !(moved.contains(a.n0) || moved.contains(a.n1)))
+      continue;
+    for (int j = 0; j < after.segments.size(); j++) {
+      const FemmSegment& b = after.segments[j];
+      if (j == i || !valid(b))
+        continue;
+      if (a.n0 == b.n0 || a.n0 == b.n1 || a.n1 == b.n0 || a.n1 == b.n1)
+        continue;
+      if (cross(after, a, b) && !cross(before, a, b))
+        return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
+
+EditResult addDimension(FemmProblem& p, const FemmDimension& d)
+{
+  EditResult out;
+  const int redundantBefore = classify(p).redundantEquations;
+  FemmProblem trial = p;
+  trial.dimensions.push_back(d);
+  out.solve = solve(trial);
+  if (!out.solve.converged)
+    out.outcome = EditOutcome::Conflicting;
+  else if (out.solve.redundantEquations > redundantBefore)
+    out.outcome = EditOutcome::Redundant;
+  else if (introducesCrossing(p, trial))
+    out.outcome = EditOutcome::CrossesGeometry;
+  if (out.outcome != EditOutcome::Applied) {
+    out.solve = classify(p);
+    return out;
+  }
+  p.nodes = trial.nodes;
+  p.dimensions = trial.dimensions;
+  return out;
+}
+
+EditResult setDimensionValue(FemmProblem& p, int index, double value)
+{
+  EditResult out;
+  if (index < 0 || index >= p.dimensions.size()) {
+    out.outcome = EditOutcome::Conflicting;
+    out.solve = classify(p);
+    return out;
+  }
+  FemmProblem trial = p;
+  trial.dimensions[index].value = value;
+  out.solve = solve(trial);
+  if (!out.solve.converged)
+    out.outcome = EditOutcome::Conflicting;
+  else if (introducesCrossing(p, trial))
+    out.outcome = EditOutcome::CrossesGeometry;
+  if (out.outcome != EditOutcome::Applied) {
+    out.solve = classify(p);
+    return out;
+  }
+  p.nodes = trial.nodes;
+  p.dimensions = trial.dimensions;
+  return out;
+}
+
+QString refusalMessage(EditOutcome outcome)
+{
+  switch (outcome) {
+  case EditOutcome::Applied:
+    return {};
+  case EditOutcome::Conflicting:
+    return QStringLiteral("That value conflicts with the sketch's other constraints and "
+                          "dimensions -- no geometry satisfies them all. Nothing was changed.");
+  case EditOutcome::Redundant:
+    return QStringLiteral("That dimension is already determined by the existing constraints "
+                          "and dimensions, so it would add nothing. It was not added.");
+  case EditOutcome::CrossesGeometry:
+    return QStringLiteral("That value can only be met by making lines cross, which the mesher "
+                          "cannot use. Nothing was changed.");
+  }
+  return {};
+}
 
 } // namespace ConstraintSolver

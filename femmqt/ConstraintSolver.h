@@ -1,10 +1,13 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
+#include <QString>
 #include <QVector>
 
 struct FemmProblem;
 struct FemmConstraint;
+struct FemmDimension;
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: parametric
 // geometric constraint solver -- per direct user request ("add
@@ -35,6 +38,13 @@ struct SolveResult {
   double finalResidualNorm = 0;
   int iterations = 0;
   QHash<int, SketchStatus> nodeStatus; // node index -> classification
+  // Equations beyond what the geometry's rank can absorb, summed over
+  // components. Adding a dimension that raises this adds nothing the
+  // sketch did not already say -- a duplicate "60" (#103).
+  int redundantEquations = 0;
+  // Dimensions whose residual is not met at the final geometry -- drawn
+  // red, like the nodes of a conflicting component (#103).
+  QSet<int> unsatisfiedDimensions;
 };
 
 // Solves every constraint/dimension currently in p.constraints/
@@ -51,6 +61,26 @@ SolveResult solve(FemmProblem& p);
 // replace the sketch without editing it (Undo, Open), which used to show
 // whatever colours the previous state had left, or none (#102).
 SolveResult classify(const FemmProblem& p);
+
+// Adding or editing a dimension from the canvas (#103). These used to
+// push the dimension, solve, and ignore the answer: an impossible value
+// was kept with the geometry unmoved and the nodes turned red, and a
+// duplicate was kept silently. Now the edit is tried first, and on any
+// outcome but Applied `p` is left EXACTLY as it was.
+enum class EditOutcome {
+  Applied,
+  Conflicting,     // no geometry satisfies it alongside what is already there
+  Redundant,       // already determined by the existing sketch
+  CrossesGeometry, // satisfiable, but only by making lines cross
+};
+struct EditResult {
+  EditOutcome outcome = EditOutcome::Applied;
+  SolveResult solve;
+};
+EditResult addDimension(FemmProblem& p, const FemmDimension& d);
+EditResult setDimensionValue(FemmProblem& p, int index, double value);
+// What to tell the user when an edit was refused.
+QString refusalMessage(EditOutcome outcome);
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: exposed for
 // GeometryScene's constraint glyphs -- per direct user request ("symbols

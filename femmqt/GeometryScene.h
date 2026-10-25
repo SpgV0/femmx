@@ -309,6 +309,16 @@ class GeometryScene : public QGraphicsScene {
   // it every time.
   void setConstraintStatus(const QHash<int, ConstraintSolver::SketchStatus>& nodeStatus);
   const QHash<int, ConstraintSolver::SketchStatus>& constraintStatus() const { return m_constraintNodeStatus; }
+  // Both halves of a solve's verdict at once -- node colours and red
+  // dimensions -- so no call site can update one and forget the other.
+  void setSketchStatus(const ConstraintSolver::SolveResult& r)
+  {
+    m_constraintNodeStatus = r.nodeStatus;
+    m_unsatisfiedDimensions = r.unsatisfiedDimensions;
+  }
+  // Dimensions drawn red: not met by the current geometry (#103).
+  void setUnsatisfiedDimensions(const QSet<int>& dims) { m_unsatisfiedDimensions = dims; }
+  const QSet<int>& unsatisfiedDimensions() const { return m_unsatisfiedDimensions; }
 
   // Modified by Claude (Anthropic), noreply@anthropic.com: selects
   // constraint `index`'s on-canvas glyph (clearing any prior selection
@@ -411,6 +421,10 @@ class GeometryScene : public QGraphicsScene {
   // and must not be dialogs, but are useless unseen. MainWindow puts
   // these in the status bar.
   void toolMessage(const QString& text);
+  // A dimension the user placed or typed was refused and nothing changed
+  // -- the window says why (#103). Separate from toolMessage because the
+  // user's typed value was discarded, which a status line can hide.
+  void sketchEditRefused(const QString& text);
 
   // Emitted when a SelectCircle drag completes (the actual selection has
   // already happened by this point, see selectByCircle) -- MainWindow
@@ -453,6 +467,10 @@ class GeometryScene : public QGraphicsScene {
   // else the node the endpoint snap is showing -- the indicator says
   // "Snap: Endpoint", so the click must agree with it (#96). -1 if none.
   int nodeAt(QPointF pos) const;
+  // Adds a dimension through ConstraintSolver::addDimension, snapshotting
+  // for undo only if it is applied. False, with sketchEditRefused emitted,
+  // if it was refused (#103).
+  bool applyNewDimension(const FemmDimension& dim);
   // Modified by Claude (Anthropic), noreply@anthropic.com: shared by
   // AddDimensionDistance/AddDimensionRadius's own handleToolClick cases
   // AND the new SmartDimension tool -- prompts for the value
@@ -593,6 +611,7 @@ class GeometryScene : public QGraphicsScene {
   // Per-node sketch-health classification from the last
   // ConstraintSolver::solve() -- see setConstraintStatus()'s own comment.
   QHash<int, ConstraintSolver::SketchStatus> m_constraintNodeStatus;
+  QSet<int> m_unsatisfiedDimensions;
 
   // Last-used arc parameters, offered as the default the next time the Add
   // Arc tool prompts for them -- mirrors FemmeView.cpp's MaxSeg/ArcAngle

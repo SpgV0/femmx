@@ -1561,7 +1561,11 @@ void GeometryScene::addDimensionItem(int index)
   // selectedColor() on purpose (see updateSmartDimensionPreview) -- dashed
   // now meaningfully means "not committed yet" instead of just "this is a
   // dimension".
-  QPen pen(AppTheme::dimensionColor());
+  // Red when the geometry does not meet it -- the same red as a
+  // conflicting component's nodes -- so the culprit is visible, not just
+  // its symptoms (#103).
+  const QColor colour = m_unsatisfiedDimensions.contains(index) ? AppTheme::selectedColor() : AppTheme::dimensionColor();
+  QPen pen(colour);
   pen.setCosmetic(true);
   pen.setWidth(0);
   auto* item = new DimensionItem(index, m_problem); // sets KindKey/IndexKey itself, matching NodeItem's own constructor
@@ -1570,7 +1574,7 @@ void GeometryScene::addDimensionItem(int index)
 
   auto* text = addSimpleText(QString());
   text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
-  text->setBrush(AppTheme::dimensionColor());
+  text->setBrush(colour);
   // Modified by Claude (Anthropic), noreply@anthropic.com: was missing
   // entirely -- a REAL, pre-existing bug found while implementing Smart
   // Dimension's two-line-to-Angle upgrade (see handleToolClick's
@@ -1622,6 +1626,25 @@ void GeometryScene::addDimensionItem(int index)
     m_dimensionItemsByNode.insert(n, item);
 }
 
+bool GeometryScene::applyNewDimension(const FemmDimension& dim)
+{
+  // Tried on a copy, so a refusal costs no undo step and leaves nothing
+  // behind; aboutToEdit() only for an edit that really happens.
+  FemmProblem trial = *m_problem;
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(trial, dim);
+  if (r.outcome != ConstraintSolver::EditOutcome::Applied) {
+    emit sketchEditRefused(ConstraintSolver::refusalMessage(r.outcome));
+    return false;
+  }
+  emit aboutToEdit();
+  m_problem->nodes = trial.nodes;
+  m_problem->dimensions = trial.dimensions;
+  setSketchStatus(r.solve);
+  rebuild();
+  emit problemEdited();
+  return true;
+}
+
 void GeometryScene::addDistanceDimensionForNodes(int n0, int n1)
 {
   if (n0 < 0 || n0 >= m_problem->nodes.size() || n1 < 0 || n1 >= m_problem->nodes.size() || n0 == n1)
@@ -1634,7 +1657,6 @@ void GeometryScene::addDistanceDimensionForNodes(int n0, int n1)
       "Distance Dimension", "Distance:", curLen, 0.0, 1.0e9, 6, &ok);
   if (!ok)
     return;
-  emit aboutToEdit();
   FemmDimension dim;
   dim.type = DimensionType::Distance;
   dim.refA = n0;
@@ -1648,11 +1670,7 @@ void GeometryScene::addDistanceDimensionForNodes(int n0, int n1)
     dim.labelOffsetX = -dy / curLen * curLen * 0.15;
     dim.labelOffsetY = dx / curLen * curLen * 0.15;
   }
-  m_problem->dimensions.push_back(dim);
-  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-  setConstraintStatus(result.nodeStatus);
-  rebuild();
-  emit problemEdited();
+  applyNewDimension(dim);
 }
 
 void GeometryScene::addRadiusDimensionForArc(int arcIndex)
@@ -1668,16 +1686,11 @@ void GeometryScene::addRadiusDimensionForArc(int arcIndex)
       "Radius Dimension", "Radius:", r, 0.0001, 1.0e9, 6, &ok);
   if (!ok)
     return;
-  emit aboutToEdit();
   FemmDimension dim;
   dim.type = DimensionType::Radius;
   dim.refA = arcIndex;
   dim.value = value;
-  m_problem->dimensions.push_back(dim);
-  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-  setConstraintStatus(result.nodeStatus);
-  rebuild();
-  emit problemEdited();
+  applyNewDimension(dim);
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: recomputes the
@@ -1954,7 +1967,6 @@ void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
   if (!ok)
     return;
 
-  emit aboutToEdit();
   FemmDimension dim;
   dim.type = type;
   dim.refA = refA;
@@ -1963,11 +1975,7 @@ void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
   dim.value = value;
   dim.labelOffsetX = offsetOrDir.x();
   dim.labelOffsetY = offsetOrDir.y();
-  m_problem->dimensions.push_back(dim);
-  ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-  setConstraintStatus(result.nodeStatus);
-  rebuild();
-  emit problemEdited();
+  applyNewDimension(dim);
 }
 
 void GeometryScene::cancelSmartDimensionPreview()
@@ -2236,7 +2244,7 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 
   if (dragEditOccurred && m_problem && (!m_problem->constraints.isEmpty() || !m_problem->dimensions.isEmpty())) {
     ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-    setConstraintStatus(result.nodeStatus);
+    setSketchStatus(result);
     rebuild();
   }
 
@@ -2649,18 +2657,13 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
         double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
             "Angle Dimension", "Angle (deg, ray1 -> ray2):", curDeg, -359.99, 359.99, 2, &ok);
         if (ok) {
-          emit aboutToEdit();
           FemmDimension dim;
           dim.type = DimensionType::Angle;
           dim.refA = v;
           dim.refB = p1;
           dim.refC = p2;
           dim.value = value;
-          m_problem->dimensions.push_back(dim);
-          ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-          setConstraintStatus(result.nodeStatus);
-          rebuild();
-          emit problemEdited();
+          applyNewDimension(dim);
         }
         m_pendingDimensionNodes.clear();
       }
@@ -2811,7 +2814,7 @@ void GeometryScene::handleTrimExtendClick(QPointF pos)
   const TrimExtend::Result r = run(*m_problem);
 
   ConstraintSolver::SolveResult solved = ConstraintSolver::solve(*m_problem);
-  setConstraintStatus(solved.nodeStatus);
+  setSketchStatus(solved);
   rebuild();
   emit problemEdited();
   if (!r.message.isEmpty())
@@ -2914,9 +2917,9 @@ void GeometryScene::deleteSelectedItem()
   // longer actually constrained the same way.
   if (!m_problem->constraints.isEmpty() || !m_problem->dimensions.isEmpty()) {
     ConstraintSolver::SolveResult result = ConstraintSolver::solve(*m_problem);
-    setConstraintStatus(result.nodeStatus);
+    setSketchStatus(result);
   } else {
-    setConstraintStatus({});
+    setSketchStatus({});
   }
 
   rebuild();

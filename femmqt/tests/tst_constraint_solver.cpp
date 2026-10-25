@@ -595,6 +595,14 @@ private slots:
 
   // #102
   void classifyReportsWithoutMovingAnything();
+
+  // #103: dimension edits that cannot be honoured are refused, not kept.
+  void aConflictingDimensionIsRefusedAndChangesNothing();
+  void aDuplicateDimensionIsRefusedAsRedundant();
+  void aSatisfiableDimensionIsAppliedAndMovesTheGeometry();
+  void aValueThatOnlyCrossingLinesCanMeetIsRefused();
+  void anImpossibleValueEditIsRefusedAndAPossibleOneApplied();
+  void classifyNamesTheUnsatisfiedDimensions();
 };
 
 // ---------------------------------------------------------------------------
@@ -957,6 +965,156 @@ void TestConstraintSolver::classifyReportsWithoutMovingAnything()
     QCOMPARE(p.nodes[i].x, before.nodes[i].x);
     QCOMPARE(p.nodes[i].y, before.nodes[i].y);
   }
+}
+
+namespace {
+
+// A horizontal segment 0-1, 60 long, with a Horizontal constraint and a
+// 60 distance dimension: consistent, and under-constrained in position.
+FemmProblem horizontalSixty()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 60, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmConstraint h;
+  h.type = ConstraintType::Horizontal;
+  h.refA = 0;
+  p.constraints << h;
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 0;
+  d.refB = 1;
+  d.value = 60;
+  p.dimensions << d;
+  return p;
+}
+
+bool sameGeometryAndSketch(const FemmProblem& a, const FemmProblem& b)
+{
+  if (a.nodes.size() != b.nodes.size() || a.dimensions.size() != b.dimensions.size())
+    return false;
+  for (int i = 0; i < a.nodes.size(); i++)
+    if (a.nodes[i].x != b.nodes[i].x || a.nodes[i].y != b.nodes[i].y)
+      return false;
+  for (int i = 0; i < a.dimensions.size(); i++)
+    if (a.dimensions[i].value != b.dimensions[i].value)
+      return false;
+  return true;
+}
+
+} // namespace
+
+void TestConstraintSolver::aConflictingDimensionIsRefusedAndChangesNothing()
+{
+  // The review's case: a vertical dimension of 10 between the two nodes
+  // of a horizontal-constrained edge. It used to be kept, labelled 10,
+  // with the geometry at 0 and the nodes red.
+  FemmProblem p = horizontalSixty();
+  const FemmProblem before = p;
+  FemmDimension v;
+  v.type = DimensionType::VerticalDistance;
+  v.refA = 0;
+  v.refB = 1;
+  v.value = 10;
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(p, v);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::Conflicting);
+  QVERIFY2(sameGeometryAndSketch(p, before), "a refused dimension left something behind");
+  QVERIFY(!ConstraintSolver::refusalMessage(r.outcome).isEmpty());
+  // The status returned describes the sketch as it is: still consistent.
+  QVERIFY(r.solve.converged);
+}
+
+void TestConstraintSolver::aDuplicateDimensionIsRefusedAsRedundant()
+{
+  FemmProblem p = horizontalSixty();
+  const FemmProblem before = p;
+  FemmDimension again = p.dimensions[0];
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(p, again);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::Redundant);
+  QVERIFY(sameGeometryAndSketch(p, before));
+}
+
+void TestConstraintSolver::aSatisfiableDimensionIsAppliedAndMovesTheGeometry()
+{
+  // The guard against refusing everything.
+  FemmProblem p = horizontalSixty();
+  FemmProblemEdit::addNode(p, 60, 40);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 1;
+  d.refB = 2;
+  d.value = 25;
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(p, d);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::Applied);
+  QCOMPARE(p.dimensions.size(), 2);
+  QVERIFY(std::abs(std::hypot(p.nodes[2].x - p.nodes[1].x, p.nodes[2].y - p.nodes[1].y) - 25) < 1e-6);
+  QVERIFY(r.solve.unsatisfiedDimensions.isEmpty());
+}
+
+void TestConstraintSolver::aValueThatOnlyCrossingLinesCanMeetIsRefused()
+{
+  // A horizontal edge AB on y = 0, and below it, unconnected, a short
+  // vertical EF from y = -5 to y = -1. Dimensioning EF to 10 moves both
+  // ends 3 apart (least squares is symmetric), so F lands at y = 2 --
+  // through AB. Satisfiable, and useless to the mesher.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addNode(p, 5, -5);
+  FemmProblemEdit::addNode(p, 5, -1);
+  FemmProblemEdit::addSegment(p, 2, 3);
+  const FemmProblem before = p;
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 2;
+  d.refB = 3;
+  d.value = 10;
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(p, d);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::CrossesGeometry);
+  QVERIFY(sameGeometryAndSketch(p, before));
+
+  // 4.5 is fine: F stops at y = -0.75, short of the edge.
+  d.value = 4.5;
+  QCOMPARE(ConstraintSolver::addDimension(p, d).outcome, ConstraintSolver::EditOutcome::Applied);
+}
+
+void TestConstraintSolver::anImpossibleValueEditIsRefusedAndAPossibleOneApplied()
+{
+  FemmProblem p = horizontalSixty();
+  FemmDimension v;
+  v.type = DimensionType::VerticalDistance;
+  v.refA = 0;
+  v.refB = 1;
+  v.value = 0; // consistent with Horizontal, if redundant
+  p.dimensions << v;
+  const FemmProblem before = p;
+
+  ConstraintSolver::EditResult r = ConstraintSolver::setDimensionValue(p, 1, 10);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::Conflicting);
+  QVERIFY(sameGeometryAndSketch(p, before));
+
+  r = ConstraintSolver::setDimensionValue(p, 0, 80);
+  QCOMPARE(r.outcome, ConstraintSolver::EditOutcome::Applied);
+  QCOMPARE(p.dimensions[0].value, 80.0);
+  QVERIFY(std::abs(std::hypot(p.nodes[1].x - p.nodes[0].x, p.nodes[1].y - p.nodes[0].y) - 80) < 1e-6);
+}
+
+void TestConstraintSolver::classifyNamesTheUnsatisfiedDimensions()
+{
+  // A file can carry a conflict the editor would now refuse.
+  FemmProblem p = horizontalSixty();
+  FemmDimension v;
+  v.type = DimensionType::VerticalDistance;
+  v.refA = 0;
+  v.refB = 1;
+  v.value = 10;
+  p.dimensions << v;
+  const ConstraintSolver::SolveResult r = ConstraintSolver::classify(p);
+  QVERIFY(!r.converged);
+  QVERIFY2(r.unsatisfiedDimensions.contains(1), "the conflicting dimension was not named");
 }
 
 QTEST_GUILESS_MAIN(TestConstraintSolver)
