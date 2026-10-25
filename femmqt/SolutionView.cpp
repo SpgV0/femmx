@@ -2984,7 +2984,7 @@ QString lengthUnitsName(FemmLengthUnits u)
 void SolutionWindow::showContourIntegral()
 {
   if (m_contourPoints.size() < 2) {
-    Notify::information(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
+    Notify::status(this, "Contour Properties", "Click at least two points first (Operation > Contours).");
     return;
   }
 
@@ -3210,7 +3210,7 @@ void SolutionWindow::showAreaIntegral()
   // the demo library advertises exactly those results. Total current was
   // also off by 1e6 until #94.
   if (!m_item || !m_item->hasBlockLabelSelection()) {
-    Notify::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
+    Notify::status(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
     return;
   }
   const QSet<int>& labels = m_item->selectedBlockLabels();
@@ -3475,7 +3475,7 @@ void SolutionWindow::onIntegrateTriggered()
 void SolutionWindow::onReloadTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    Notify::information(this, "Reload", "No solution loaded.");
+    Notify::status(this, "Reload", "No solution loaded.");
     return;
   }
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14:
@@ -3492,7 +3492,7 @@ void SolutionWindow::onReloadTriggered()
 void SolutionWindow::onDensityOptionsTriggered()
 {
   if (!m_item) {
-    Notify::information(this, "Density Plot Options", "No solution loaded.");
+    Notify::status(this, "Density Plot Options", "No solution loaded.");
     return;
   }
   // Triggering this via the Density Plot action itself (part of an
@@ -3518,7 +3518,7 @@ void SolutionWindow::onDensityOptionsTriggered()
 void SolutionWindow::onContourOptionsTriggered()
 {
   if (!m_item) {
-    Notify::information(this, "Contour Plot", "No solution loaded.");
+    Notify::status(this, "Contour Plot", "No solution loaded.");
     return;
   }
   // See onDensityOptionsTriggered's identical reasoning.
@@ -3538,7 +3538,7 @@ void SolutionWindow::onContourOptionsTriggered()
 void SolutionWindow::onProblemInfoTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    Notify::information(this, "Problem Info", "No solution loaded.");
+    Notify::status(this, "Problem Info", "No solution loaded.");
     return;
   }
   FemmProblem problem;
@@ -3604,7 +3604,7 @@ void SolutionWindow::onProblemInfoTriggered()
 void SolutionWindow::onCircuitPropsTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    Notify::information(this, "Circuit Properties", "No solution loaded.");
+    Notify::status(this, "Circuit Properties", "No solution loaded.");
     return;
   }
   FemmProblem problem;
@@ -3614,7 +3614,7 @@ void SolutionWindow::onCircuitPropsTriggered()
     return;
   }
   if (problem.circuitProps.isEmpty()) {
-    Notify::information(this, "Circuit Properties", "This problem has no circuits defined.");
+    Notify::status(this, "Circuit Properties", "This problem has no circuits defined.");
     return;
   }
   QVector<CircuitAnalysis::BlockCircuitInfo> blockCircuitInfo;
@@ -3685,7 +3685,7 @@ void SolutionWindow::onBhCurvesTriggered()
   // MaterialPropDialog): this just re-displays whichever nonlinear
   // materials this *solved* problem used, for reference, not editing.
   if (m_currentPath.isEmpty()) {
-    Notify::information(this, "BH Curves", "No solution loaded.");
+    Notify::status(this, "BH Curves", "No solution loaded.");
     return;
   }
   FemmProblem problem;
@@ -3699,7 +3699,7 @@ void SolutionWindow::onBhCurvesTriggered()
     if (!problem.materialProps[i].bhData.isEmpty())
       nonlinear.push_back(i);
   if (nonlinear.isEmpty()) {
-    Notify::information(this, "BH Curves", "No nonlinear materials in this solution.");
+    Notify::status(this, "BH Curves", "No nonlinear materials in this solution.");
     return;
   }
 
@@ -3974,7 +3974,7 @@ void SolutionWindow::onPanDown()
 void SolutionWindow::onCopyBitmapTriggered()
 {
   if (!m_item) {
-    Notify::information(this, "Copy as Bitmap", "No solution loaded.");
+    Notify::status(this, "Copy as Bitmap", "No solution loaded.");
     return;
   }
   QPixmap pixmap = m_view->viewport()->grab();
@@ -4027,7 +4027,7 @@ void SolutionWindow::onPrintSetupTriggered()
 void SolutionWindow::onSwitchToClassicTriggered()
 {
   if (m_currentPath.isEmpty()) {
-    Notify::information(this, "Switch GUI", "No solution loaded.");
+    Notify::status(this, "Switch GUI", "No solution loaded.");
     return;
   }
   GuiSwitch::writePreferredGui(GuiSwitch::PreferredGui::Classic);

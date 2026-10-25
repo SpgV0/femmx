@@ -14,6 +14,7 @@
 // file and the demos directory is committed.
 
 #include <QtTest>
+#include <QStatusBar>
 #include <QVBoxLayout>
 #include <QDoubleSpinBox>
 
@@ -155,6 +156,7 @@ class TestMainWindow : public QObject
   void theLoadMonitorIsLiveBeforeAnySolve();
   void aClickOrDoubleClickSelectsTheWholeNumber();
   void scaleAndMirrorAskInOneDialog();
+  void selectionHintsGoToTheStatusBar();
 };
 
 void TestMainWindow::initTestCase()
@@ -1295,6 +1297,17 @@ void TestMainWindow::scaleAndMirrorAskInOneDialog()
   QCOMPARE(strays, 0);
   QCOMPARE(w.problem().nodes[0].x, -9.0);
   QCOMPARE(w.problem().nodes[1].x, 11.0);
+}
+
+void TestMainWindow::selectionHintsGoToTheStatusBar()
+{
+  // "Nothing selected." and the like were modal boxes to click away.
+  MainWindow w;
+  w.newDocument(FemmProblemKind::Magnetics);
+  actionNamed(w, QStringLiteral("&Move..."))->trigger();
+  QCOMPARE(w.statusBar()->currentMessage(), QStringLiteral("Move: Nothing selected."));
+  actionNamed(w, QStringLiteral("&Coincident"))->trigger();
+  QCOMPARE(w.statusBar()->currentMessage(), QStringLiteral("Coincident: Select exactly 2 nodes."));
 }
 
 QTEST_MAIN(TestMainWindow)

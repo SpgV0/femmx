@@ -1,5 +1,7 @@
 #include "Notify.h"
 
+#include <QMainWindow>
+#include <QStatusBar>
 #include <QWidget>
 
 #include <cstdio>
@@ -51,6 +53,18 @@ void Notify::information(QWidget* parent, const QString& title, const QString& t
     return;
   }
   QMessageBox::information(parent, title, text);
+}
+
+void Notify::status(QWidget* parent, const QString& title, const QString& text)
+{
+  // Up the parent chain, not window(): a floating dock is its own window.
+  for (QWidget* w = parent; w; w = w->parentWidget()) {
+    if (auto* main = qobject_cast<QMainWindow*>(w)) {
+      main->statusBar()->showMessage(title + QStringLiteral(": ") + text, 6000);
+      return;
+    }
+  }
+  information(parent, title, text);
 }
 
 QMessageBox::StandardButton Notify::question(QWidget* parent, const QString& title,

@@ -51,6 +51,13 @@ bool isHeadless();
 void warning(QWidget* parent, const QString& title, const QString& text);
 void information(QWidget* parent, const QString& title, const QString& text);
 
+// A hint that needs no acknowledgement -- "Nothing selected.", "Select
+// exactly 2 nodes." -- shown as "title: text" in the status bar of the
+// main window `parent` belongs to, for a few seconds (#124). Those used
+// to be modal boxes to click away. Falls back to information() when
+// there is no main window.
+void status(QWidget* parent, const QString& title, const QString& text);
+
 // For the one case where the answer changes what happens next. With
 // nobody to ask, `headlessAnswer` is what the caller gets -- so pick
 // the safe one (Cancel, not Discard).

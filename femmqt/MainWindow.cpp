@@ -1483,18 +1483,18 @@ void MainWindow::onCreateRadiusTriggered()
   for (int i = 0; i < m_problem.nodes.size(); i++) {
     if (m_problem.nodes[i].isSelected) {
       if (nodeIndex >= 0) {
-        Notify::information(this, "Create Radius", "Select exactly one node first.");
+        Notify::status(this, "Create Radius", "Select exactly one node first.");
         return;
       }
       nodeIndex = i;
     }
   }
   if (nodeIndex < 0) {
-    Notify::information(this, "Create Radius", "Select a node first (one shared by two segments, two arcs, or one of each).");
+    Notify::status(this, "Create Radius", "Select a node first (one shared by two segments, two arcs, or one of each).");
     return;
   }
   if (!FemmProblemEdit::canCreateRadius(m_problem, nodeIndex)) {
-    Notify::information(this, "Create Radius",
+    Notify::status(this, "Create Radius",
         "That node isn't a valid corner to fillet -- it needs to be shared by exactly two segments, two arcs, or one segment and one arc.");
     return;
   }
@@ -1526,14 +1526,14 @@ void MainWindow::onChamferTriggered()
   for (int i = 0; i < m_problem.nodes.size(); i++) {
     if (m_problem.nodes[i].isSelected) {
       if (nodeIndex >= 0) {
-        Notify::information(this, "Chamfer", "Select exactly one node first.");
+        Notify::status(this, "Chamfer", "Select exactly one node first.");
         return;
       }
       nodeIndex = i;
     }
   }
   if (nodeIndex < 0) {
-    Notify::information(this, "Chamfer",
+    Notify::status(this, "Chamfer",
         "Select the corner node to chamfer first -- one shared by exactly two straight lines.");
     return;
   }
@@ -1611,7 +1611,7 @@ void MainWindow::onOffsetTriggered()
     if (a.isSelected)
       selected++;
   if (selected == 0) {
-    Notify::information(this, "Offset",
+    Notify::status(this, "Offset",
         "Select the lines and arcs to offset first. A connected run offsets as one "
         "curve, with its corners resolved; anything disconnected offsets on its own.");
     return;
@@ -1924,7 +1924,7 @@ void MainWindow::onCopyBitmapTriggered()
 void MainWindow::onDeleteSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Delete", "Nothing selected.");
+    Notify::status(this, "Delete", "Nothing selected.");
     return;
   }
   m_scene->deleteSelectedItem();
@@ -1943,7 +1943,7 @@ void MainWindow::onOpenSelectedTriggered()
   FemmItemKind kind;
   QVector<int> indices;
   if (!m_scene->selectedEntities(kind, indices)) {
-    Notify::information(this, "Open Selected",
+    Notify::status(this, "Open Selected",
         m_scene->hasSelection() ? "Select entities of only one kind (nodes, segments, arcs, or block labels) at a time." : "Nothing selected.");
     return;
   }
@@ -2479,7 +2479,7 @@ void MainWindow::onRedoTriggered()
 void MainWindow::onMoveSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Move", "Nothing selected.");
+    Notify::status(this, "Move", "Nothing selected.");
     return;
   }
   MoveCopyDialog dlg(/*isMove=*/true, this);
@@ -2505,7 +2505,7 @@ void MainWindow::onMoveSelectedTriggered()
 void MainWindow::onCopySelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Copy", "Nothing selected.");
+    Notify::status(this, "Copy", "Nothing selected.");
     return;
   }
   MoveCopyDialog dlg(/*isMove=*/false, this);
@@ -2527,7 +2527,7 @@ void MainWindow::onCopySelectedTriggered()
 void MainWindow::onScaleSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Scale", "Nothing selected.");
+    Notify::status(this, "Scale", "Nothing selected.");
     return;
   }
   // One dialog, like Move/Copy -- it was three chained prompts (#123).
@@ -2552,7 +2552,7 @@ void MainWindow::onScaleSelectedTriggered()
 void MainWindow::onMirrorSelectedTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Mirror", "Nothing selected.");
+    Notify::status(this, "Mirror", "Nothing selected.");
     return;
   }
   // Likewise one dialog, not four prompts (#123).
@@ -2630,7 +2630,7 @@ void MainWindow::onCoincidentConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (nodes.size() != 2 || !segments.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Coincident", "Select exactly 2 nodes.");
+    Notify::status(this, "Coincident", "Select exactly 2 nodes.");
     return;
   }
   FemmConstraint c;
@@ -2645,7 +2645,7 @@ void MainWindow::onHorizontalConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Horizontal", "Select exactly 1 segment.");
+    Notify::status(this, "Horizontal", "Select exactly 1 segment.");
     return;
   }
   FemmConstraint c;
@@ -2659,7 +2659,7 @@ void MainWindow::onVerticalConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 1 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Vertical", "Select exactly 1 segment.");
+    Notify::status(this, "Vertical", "Select exactly 1 segment.");
     return;
   }
   FemmConstraint c;
@@ -2673,7 +2673,7 @@ void MainWindow::onParallelConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Parallel", "Select exactly 2 segments.");
+    Notify::status(this, "Parallel", "Select exactly 2 segments.");
     return;
   }
   FemmConstraint c;
@@ -2688,7 +2688,7 @@ void MainWindow::onPerpendicularConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (segments.size() != 2 || !nodes.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Perpendicular", "Select exactly 2 segments.");
+    Notify::status(this, "Perpendicular", "Select exactly 2 segments.");
     return;
   }
   FemmConstraint c;
@@ -2713,7 +2713,7 @@ void MainWindow::onEqualConstraintTriggered()
     c.refA = arcs[0];
     c.refB = arcs[1];
   } else {
-    Notify::information(this, "Equal", "Select exactly 2 segments, or exactly 2 arcs.");
+    Notify::status(this, "Equal", "Select exactly 2 segments, or exactly 2 arcs.");
     return;
   }
   applyConstraint(c);
@@ -2734,7 +2734,7 @@ void MainWindow::onTangentConstraintTriggered()
     c.refA = arcs[0];
     c.refB = arcs[1];
   } else {
-    Notify::information(this, "Tangent", "Select exactly 1 segment + 1 arc, or exactly 2 arcs.");
+    Notify::status(this, "Tangent", "Select exactly 1 segment + 1 arc, or exactly 2 arcs.");
     return;
   }
   applyConstraint(c);
@@ -2745,7 +2745,7 @@ void MainWindow::onConcentricConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (arcs.size() != 2 || !nodes.isEmpty() || !segments.isEmpty()) {
-    Notify::information(this, "Concentric", "Select exactly 2 arcs.");
+    Notify::status(this, "Concentric", "Select exactly 2 arcs.");
     return;
   }
   FemmConstraint c;
@@ -2760,7 +2760,7 @@ void MainWindow::onSymmetricConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (nodes.size() != 2 || segments.size() != 1 || !arcs.isEmpty()) {
-    Notify::information(this, "Symmetric", "Select exactly 2 nodes and 1 segment (the mirror line).");
+    Notify::status(this, "Symmetric", "Select exactly 2 nodes and 1 segment (the mirror line).");
     return;
   }
   FemmConstraint c;
@@ -2780,7 +2780,7 @@ void MainWindow::onFixConstraintTriggered()
   QVector<int> nodes, segments, arcs, blocks;
   m_scene->selectedByKind(nodes, segments, arcs, blocks);
   if (nodes.isEmpty() || !segments.isEmpty() || !arcs.isEmpty()) {
-    Notify::information(this, "Fix", "Select one or more nodes (nothing else).");
+    Notify::status(this, "Fix", "Select one or more nodes (nothing else).");
     return;
   }
   FemmProblem trial = m_problem;
@@ -2996,7 +2996,7 @@ void MainWindow::onSelectByGroupTriggered()
 void MainWindow::onSetGroupTriggered()
 {
   if (!m_scene->hasSelection()) {
-    Notify::information(this, "Set Group", "Nothing selected.");
+    Notify::status(this, "Set Group", "Nothing selected.");
     return;
   }
   bool ok = false;

@@ -1,4 +1,5 @@
 #include "LoadMonitorDialog.h"
+#include "Notify.h"
 #include "FileDialogDirs.h"
 
 #include "AppTheme.h"
@@ -387,7 +388,7 @@ void LoadMonitorDialog::onSavePng()
   FileDialogDirs::remember(QStringLiteral("export"), path);
   QPixmap pixmap = m_chart->grab();
   if (pixmap.save(path, "PNG"))
-    QMessageBox::information(this, "CPU / GPU / RAM Load", "Chart saved.");
+    Notify::status(this, "CPU / GPU / RAM Load", "Chart saved.");
   else
     QMessageBox::warning(this, "CPU / GPU / RAM Load", "Could not save the chart as PNG.");
 }
