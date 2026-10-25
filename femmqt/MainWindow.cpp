@@ -113,6 +113,35 @@ QString uniqueName(const QVector<T>& list, const QString& base)
 // solver itself scopes its unknowns to -- see that function's own
 // comment), rather than duplicating each type's own refA/refB/refC field
 // semantics here.
+// One line per dimension for the Constraint List (#116): type, value
+// with its unit, and what it measures.
+QString describeDimension(const FemmProblem& p, const FemmDimension& d)
+{
+  auto nodes = [](std::initializer_list<int> ns) {
+    QStringList out;
+    for (int n : ns)
+      out << QStringLiteral("node %1").arg(n);
+    return out.join(", ");
+  };
+  const QString v = QString::number(std::abs(d.value), 'g', 6);
+  switch (d.type) {
+  case DimensionType::Distance:
+    return QStringLiteral("Distance %1 -- %2").arg(v, nodes({ d.refA, d.refB }));
+  case DimensionType::HorizontalDistance:
+    return QStringLiteral("Horizontal distance %1 -- %2").arg(v, nodes({ d.refA, d.refB }));
+  case DimensionType::VerticalDistance:
+    return QStringLiteral("Vertical distance %1 -- %2").arg(v, nodes({ d.refA, d.refB }));
+  case DimensionType::Radius:
+    return QStringLiteral("Radius %1 -- arc %2").arg(v).arg(d.refA);
+  case DimensionType::Angle:
+    return QStringLiteral("Angle %1 deg -- vertex node %2, rays to %3").arg(v).arg(d.refA).arg(nodes({ d.refB, d.refC }));
+  case DimensionType::AngleLines:
+    return QStringLiteral("Angle %1 deg -- segments %2 and %3").arg(v).arg(d.refA).arg(d.refB);
+  }
+  Q_UNUSED(p);
+  return QStringLiteral("Dimension %1").arg(v);
+}
+
 QString constraintTypeName(ConstraintType type)
 {
   switch (type) {
@@ -2842,13 +2871,29 @@ void MainWindow::onClearDimensionsTriggered()
 
 void MainWindow::onConstraintListTriggered()
 {
+  // Constraints, then dimensions: the list showed constraints only, so a
+  // sketch's dimensions could not be reviewed or deleted from it (#116).
   ConstraintListDialog::Callbacks cb;
-  cb.count = [this]() { return m_problem.constraints.size(); };
-  cb.descriptionAt = [this](int i) { return describeConstraint(m_problem, m_problem.constraints[i]); };
-  cb.selectOnCanvas = [this](int i) { m_scene->selectConstraintGlyph(i); };
+  cb.count = [this]() { return m_problem.constraints.size() + m_problem.dimensions.size(); };
+  cb.descriptionAt = [this](int i) {
+    const int nc = m_problem.constraints.size();
+    return i < nc ? describeConstraint(m_problem, m_problem.constraints[i])
+                  : describeDimension(m_problem, m_problem.dimensions[i - nc]);
+  };
+  cb.selectOnCanvas = [this](int i) {
+    const int nc = m_problem.constraints.size();
+    if (i < nc)
+      m_scene->selectConstraintGlyph(i);
+    else
+      m_scene->selectDimension(i - nc);
+  };
   cb.remove = [this](int i) {
+    const int nc = m_problem.constraints.size();
     snapshotForUndo();
-    FemmProblemEdit::deleteConstraint(m_problem, i);
+    if (i < nc)
+      FemmProblemEdit::deleteConstraint(m_problem, i);
+    else
+      FemmProblemEdit::deleteDimension(m_problem, i - nc);
     ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
     m_scene->setSketchStatus(result);
     m_scene->rebuild();

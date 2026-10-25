@@ -326,6 +326,7 @@ class GeometryScene : public QGraphicsScene {
   // direct user request ("a list... that you can select on the side").
   // No-op if that index has no glyph (out of range).
   void selectConstraintGlyph(int index);
+  void selectDimension(int index); // #116
   // Replaces the selection with these block labels (#99: the labels a
   // solve refused).
   void selectBlockLabels(const QVector<int>& labels);

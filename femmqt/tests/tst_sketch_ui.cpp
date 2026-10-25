@@ -39,12 +39,14 @@
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QGraphicsSimpleTextItem>
 #include <QKeyEvent>
 #include <QSignalSpy>
 #include <QPen>
 #include <QSet>
 
 #include <algorithm>
+#include <tuple>
 #include <cmath>
 
 namespace {
@@ -185,6 +187,9 @@ private slots:
   void escapeCancelsAPendingCorner();
   void theDrawToolsSurviveARebuild();
   void theDragToolsSurviveARebuild();
+  // #116
+  void clickingADimensionsLabelSelectsIt();
+  void deletingALineAndItsLabelRemovesOneDimension();
 };
 
 // ---------------------------------------------------------------------------
@@ -1485,6 +1490,77 @@ void TestSketchUi::theDragToolsSurviveARebuild()
   h.scene.rebuild();
   h.scene.setToolMode(GeometryToolMode::SelectCircle);
   drag(QPointF(0, 0), QPointF(5, 0)); // no crash is the assertion
+}
+
+namespace {
+
+FemmProblem twoDimensions()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addNode(p, 100, 60);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  for (auto [a, b, v] : { std::tuple<int, int, double> { 0, 1, 100 }, { 1, 2, 60 } }) {
+    FemmDimension d;
+    d.type = DimensionType::Distance;
+    d.refA = a;
+    d.refB = b;
+    d.value = v;
+    d.labelOffsetX = 0;
+    d.labelOffsetY = -20;
+    p.dimensions << d;
+  }
+  return p;
+}
+
+QGraphicsSimpleTextItem* dimensionLabel(GeometryScene& scene, int index)
+{
+  for (QGraphicsItem* item : scene.items())
+    if (auto* t = qgraphicsitem_cast<QGraphicsSimpleTextItem*>(item))
+      if (t->data(0).isValid() && t->data(0).toInt() == static_cast<int>(FemmItemKind::Dimension) && t->data(1).toInt() == index)
+        return t;
+  return nullptr;
+}
+
+} // namespace
+
+void TestSketchUi::clickingADimensionsLabelSelectsIt()
+{
+  FemmProblem p = twoDimensions();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+  QGraphicsSimpleTextItem* label = dimensionLabel(h.scene, 1);
+  QVERIFY(label);
+  const QRectF device = label->deviceTransform(h.view.viewportTransform()).mapRect(label->boundingRect());
+  const QPointF at = h.view.mapToScene(device.center().toPoint());
+  sendMouse(h.scene, QEvent::GraphicsSceneMousePress, at);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseRelease, at, Qt::NoButton);
+
+  FemmItemKind kind = FemmItemKind::Node;
+  QVector<int> indices;
+  QVERIFY2(h.scene.selectedEntities(kind, indices), "clicking the label selected nothing");
+  QCOMPARE(kind, FemmItemKind::Dimension);
+  QCOMPARE(indices, QVector<int> { 1 });
+}
+
+void TestSketchUi::deletingALineAndItsLabelRemovesOneDimension()
+{
+  FemmProblem p = twoDimensions();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  // Both of dimension 0's items selected, as a rubber band would.
+  for (QGraphicsItem* item : h.scene.items()) {
+    if (item->data(0).isValid() && item->data(0).toInt() == static_cast<int>(FemmItemKind::Dimension) && item->data(1).toInt() == 0) {
+      item->setFlag(QGraphicsItem::ItemIsSelectable, true);
+      item->setSelected(true);
+    }
+  }
+  h.scene.deleteSelectedItem();
+  QVERIFY2(p.dimensions.size() == 1, qPrintable(QStringLiteral("%1 dimensions left, expected 1").arg(p.dimensions.size())));
+  QCOMPARE(p.dimensions[0].value, 60.0); // and it is the OTHER one
 }
 
 QTEST_MAIN(TestSketchUi)

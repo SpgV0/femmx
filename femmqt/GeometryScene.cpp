@@ -2201,11 +2201,34 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     event->accept();
     return;
   }
+  // A dimension's NUMBER is the dimension: clicking the label selects it.
+  // The label is tagged as the dimension but is not itself selectable, so
+  // the click used to fall through to nothing -- only the thin line could
+  // be hit (#116).
+  if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::Select) {
+    QGraphicsItem* hit = entityAt(event->scenePos(), { FemmItemKind::Dimension });
+    if (hit && !(hit->flags() & QGraphicsItem::ItemIsSelectable)) {
+      if (QGraphicsItem* dim = m_dimensionItems.value(hit->data(IndexKey).toInt())) {
+        if (!(event->modifiers() & Qt::ControlModifier))
+          clearSelection();
+        dim->setSelected(!(event->modifiers() & Qt::ControlModifier) || !dim->isSelected());
+        event->accept();
+        return;
+      }
+    }
+  }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
     QGraphicsScene::mousePressEvent(event);
     return;
   }
   handleToolClick(event);
+}
+
+void GeometryScene::selectDimension(int index)
+{
+  clearSelection();
+  if (QGraphicsItem* item = m_dimensionItems.value(index))
+    item->setSelected(true);
 }
 
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
@@ -2958,12 +2981,13 @@ void GeometryScene::deleteSelectedItem()
     case FemmItemKind::Constraint: constraintIdx.push_back(index); break;
     }
   }
-  std::sort(nodeIdx.begin(), nodeIdx.end(), std::greater<int>());
-  std::sort(segIdx.begin(), segIdx.end(), std::greater<int>());
-  std::sort(arcIdx.begin(), arcIdx.end(), std::greater<int>());
-  std::sort(blockIdx.begin(), blockIdx.end(), std::greater<int>());
-  std::sort(dimIdx.begin(), dimIdx.end(), std::greater<int>());
-  std::sort(constraintIdx.begin(), constraintIdx.end(), std::greater<int>());
+  // Sorted descending AND deduplicated: a dimension's line and its label
+  // are two items for one dimension, and deleting it twice took the next
+  // one with it (#116).
+  for (QVector<int>* v : { &nodeIdx, &segIdx, &arcIdx, &blockIdx, &dimIdx, &constraintIdx }) {
+    std::sort(v->begin(), v->end(), std::greater<int>());
+    v->erase(std::unique(v->begin(), v->end()), v->end());
+  }
 
   emit aboutToEdit();
   for (int i : dimIdx)

@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QListWidget>
 #include <QDockWidget>
 #include <QMenuBar>
 #include <QPlainTextEdit>
@@ -135,6 +136,8 @@ class TestMainWindow : public QObject
   void pointPropertiesIsAPanelNotAModalPerClick();
   void theSolutionWindowRefitsOnResizeUntilTheUserZooms();
   void anAreaSelectionLetsThePlotShowThrough();
+  // #116
+  void theConstraintListShowsDimensions();
 };
 
 void TestMainWindow::initTestCase()
@@ -1040,6 +1043,27 @@ void TestMainWindow::anAreaSelectionLetsThePlotShowThrough()
       plainColours.insert(plain.pixel(x, y));
   QVERIFY2(colours.size() > plainColours.size() / 2,
       qPrintable(QStringLiteral("%1 colours with the air selected, %2 without").arg(colours.size()).arg(plainColours.size())));
+}
+
+void TestMainWindow::theConstraintListShowsDimensions()
+{
+  const QString path = writeConsistentSketch(m_dir.path());
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  QStringList rows;
+  QTimer::singleShot(0, [&rows]() {
+    QWidget* d = QApplication::activeModalWidget();
+    if (!d)
+      return;
+    if (auto* list = d->findChild<QListWidget*>())
+      for (int i = 0; i < list->count(); i++)
+        rows << list->item(i)->text();
+    QMetaObject::invokeMethod(d, "reject", Qt::QueuedConnection);
+  });
+  actionNamed(w, QStringLiteral("Constraint &List..."))->trigger();
+  QCOMPARE(rows.size(), 3); // one Horizontal, two distances
+  const QString all = rows.join(QStringLiteral(" | "));
+  QVERIFY2(all.contains("Distance 70") && all.contains("Distance 30"), qPrintable(all));
 }
 
 QTEST_MAIN(TestMainWindow)
