@@ -547,6 +547,16 @@ if(TARGET Qt6::Test)
   set_tests_properties(femmqt_headless_cli PROPERTIES TIMEOUT 600)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   add_test(NAME femmqt_main_window COMMAND femmqt_main_window_tests)
+  # femm.cfg lives next to the test binaries -- one directory, shared by
+  # every target -- and these suites write it (gui_switch, sketch_ui) or
+  # read it at startup (main_window, and the two that spawn femmqt.exe
+  # from the same directory). Run in parallel, a writer's half-written
+  # file was another suite's input: gui_switch and sketch_ui failed
+  # together about one run in fifteen under ctest -j. One lock, so they
+  # take turns.
+  set_tests_properties(femmqt_gui_switch femmqt_sketch_ui femmqt_main_window
+      femmqt_headless_cli femmqt_plot_state PROPERTIES RESOURCE_LOCK femm_cfg)
+
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
