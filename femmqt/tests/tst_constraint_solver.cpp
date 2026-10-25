@@ -607,6 +607,7 @@ private slots:
   // #105: an angle dimension is a magnitude, kept on its side.
   void typingTheNaturalAngleKeepsTheVertexOnItsSide();
   void aSignedAngleFromAnOlderFileActsAsItsMagnitude();
+  void constraintsAreRefusedTheWayDimensionsAre();
 };
 
 // ---------------------------------------------------------------------------
@@ -1186,6 +1187,32 @@ void TestConstraintSolver::aSignedAngleFromAnOlderFileActsAsItsMagnitude()
   QVERIFY(ConstraintSolver::classify(p).converged); // already satisfied
   p.dimensions[0].value = 75.963756532073536;
   QVERIFY(ConstraintSolver::classify(p).converged); // and so is its magnitude
+}
+
+void TestConstraintSolver::constraintsAreRefusedTheWayDimensionsAre()
+{
+  FemmProblem p = horizontalSixty();
+  const FemmProblem before = p;
+  FemmConstraint v;
+  v.type = ConstraintType::Vertical;
+  v.refA = 0; // a 60-long horizontal edge cannot also be vertical
+  QCOMPARE(ConstraintSolver::addConstraint(p, v).outcome, ConstraintSolver::EditOutcome::Conflicting);
+  QVERIFY(sameGeometryAndSketch(p, before));
+  QCOMPARE(p.constraints.size(), 1);
+
+  FemmConstraint h = p.constraints[0];
+  QCOMPARE(ConstraintSolver::addConstraint(p, h).outcome, ConstraintSolver::EditOutcome::Redundant);
+  QCOMPARE(p.constraints.size(), 1);
+
+  // and a good one goes in
+  FemmProblemEdit::addNode(p, 60, 40);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmConstraint up;
+  up.type = ConstraintType::Vertical;
+  up.refA = 1;
+  QCOMPARE(ConstraintSolver::addConstraint(p, up).outcome, ConstraintSolver::EditOutcome::Applied);
+  QCOMPARE(p.constraints.size(), 2);
+  QVERIFY(std::abs(p.nodes[2].x - p.nodes[1].x) < 1e-8);
 }
 
 QTEST_GUILESS_MAIN(TestConstraintSolver)

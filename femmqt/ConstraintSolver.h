@@ -78,9 +78,12 @@ struct EditResult {
   SolveResult solve;
 };
 EditResult addDimension(FemmProblem& p, const FemmDimension& d);
+// The same, for a constraint from the Constraints menu.
+EditResult addConstraint(FemmProblem& p, const FemmConstraint& c);
 EditResult setDimensionValue(FemmProblem& p, int index, double value);
 // What to tell the user when an edit was refused.
-QString refusalMessage(EditOutcome outcome);
+// `what` names the thing refused: "dimension", "value", "constraint".
+QString refusalMessage(EditOutcome outcome, const QString& what = QStringLiteral("dimension"));
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: exposed for
 // GeometryScene's constraint glyphs -- per direct user request ("symbols

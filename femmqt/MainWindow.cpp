@@ -2182,7 +2182,7 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
       FemmProblem trial = m_problem;
       const ConstraintSolver::EditResult r = ConstraintSolver::setDimensionValue(trial, indices.first(), newValue);
       if (r.outcome != ConstraintSolver::EditOutcome::Applied) {
-        Notify::warning(this, "Dimension Not Changed", ConstraintSolver::refusalMessage(r.outcome));
+        Notify::warning(this, "Dimension Not Changed", ConstraintSolver::refusalMessage(r.outcome, QStringLiteral("value")));
         break;
       }
       snapshotForUndo();
@@ -2526,14 +2526,23 @@ void MainWindow::reportSketchTransform(const QString& title,
 
 void MainWindow::applyConstraint(const FemmConstraint& c)
 {
+  // The same treatment dimensions get (#103): tried on a copy, and
+  // refused with nothing changed if it conflicts, adds nothing, or can
+  // only be met by crossing lines. It used to be kept anyway, with a
+  // status-bar note pointing at the red it had caused.
+  FemmProblem trial = m_problem;
+  const ConstraintSolver::EditResult r = ConstraintSolver::addConstraint(trial, c);
+  if (r.outcome != ConstraintSolver::EditOutcome::Applied) {
+    Notify::warning(this, "Constraint Not Added",
+        ConstraintSolver::refusalMessage(r.outcome, QStringLiteral("constraint")));
+    return;
+  }
   snapshotForUndo();
-  m_problem.constraints.push_back(c);
-  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
-  m_scene->setSketchStatus(result);
+  m_problem.nodes = trial.nodes;
+  m_problem.constraints = trial.constraints;
+  m_scene->setSketchStatus(r.solve);
   m_scene->rebuild();
   markEdited();
-  if (!result.converged)
-    statusBar()->showMessage("Constraint added, but the sketch could not be fully solved -- check for a conflict (shown in red).", 6000);
 }
 
 void MainWindow::onCoincidentConstraintTriggered()

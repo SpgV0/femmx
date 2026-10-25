@@ -884,12 +884,16 @@ bool introducesCrossing(const FemmProblem& before, const FemmProblem& after)
 
 } // namespace
 
-EditResult addDimension(FemmProblem& p, const FemmDimension& d)
+namespace {
+
+// addDimension and addConstraint differ only in which list grows.
+template <typename Add>
+EditResult tryAddition(FemmProblem& p, Add add)
 {
   EditResult out;
   const int redundantBefore = classify(p).redundantEquations;
   FemmProblem trial = p;
-  trial.dimensions.push_back(d);
+  add(trial);
   out.solve = solve(trial);
   if (!out.solve.converged)
     out.outcome = EditOutcome::Conflicting;
@@ -903,7 +907,20 @@ EditResult addDimension(FemmProblem& p, const FemmDimension& d)
   }
   p.nodes = trial.nodes;
   p.dimensions = trial.dimensions;
+  p.constraints = trial.constraints;
   return out;
+}
+
+} // namespace
+
+EditResult addConstraint(FemmProblem& p, const FemmConstraint& c)
+{
+  return tryAddition(p, [&](FemmProblem& t) { t.constraints.push_back(c); });
+}
+
+EditResult addDimension(FemmProblem& p, const FemmDimension& d)
+{
+  return tryAddition(p, [&](FemmProblem& t) { t.dimensions.push_back(d); });
 }
 
 EditResult setDimensionValue(FemmProblem& p, int index, double value)
@@ -930,20 +947,23 @@ EditResult setDimensionValue(FemmProblem& p, int index, double value)
   return out;
 }
 
-QString refusalMessage(EditOutcome outcome)
+QString refusalMessage(EditOutcome outcome, const QString& what)
 {
   switch (outcome) {
   case EditOutcome::Applied:
     return {};
   case EditOutcome::Conflicting:
-    return QStringLiteral("That value conflicts with the sketch's other constraints and "
-                          "dimensions -- no geometry satisfies them all. Nothing was changed.");
+    return QStringLiteral("That %1 conflicts with the sketch's other constraints and "
+                          "dimensions -- no geometry satisfies them all. Nothing was changed.")
+        .arg(what);
   case EditOutcome::Redundant:
-    return QStringLiteral("That dimension is already determined by the existing constraints "
-                          "and dimensions, so it would add nothing. It was not added.");
+    return QStringLiteral("That %1 is already determined by the existing constraints and "
+                          "dimensions, so it would add nothing. It was not added.")
+        .arg(what);
   case EditOutcome::CrossesGeometry:
-    return QStringLiteral("That value can only be met by making lines cross, which the mesher "
-                          "cannot use. Nothing was changed.");
+    return QStringLiteral("That %1 can only be met by making lines cross, which the mesher "
+                          "cannot use. Nothing was changed.")
+        .arg(what);
   }
   return {};
 }
