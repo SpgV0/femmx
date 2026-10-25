@@ -331,9 +331,15 @@ struct FemmArcSegment {
 // A block label with blockTypeIndex < 0 is a hole ("<No Mesh>" in the .fem
 // text format) -- everything else (material/circuit/turns/etc.) is
 // meaningless for a hole and left at its default.
+//
+// blockTypeIndex == 0 is "<None>": no material assigned YET. Classic's
+// own default for a new label, written to the .fem as block type 0, and
+// refused at solve time ("Material properties have not been defined for
+// all block labels"). A new label used to default to a hole, so one the
+// user forgot to assign silently removed its region from the mesh (#99).
 struct FemmBlockLabel {
   double x = 0, y = 0;
-  int blockTypeIndex = -1; // -1 = hole, else 1-based index into materialProps
+  int blockTypeIndex = 0; // -1 = hole, 0 = <None> (unassigned), else 1-based index into materialProps
   double maxArea = 0; // mesh triangle area constraint, 0 = <No Mesh Constraint>
   int circuitIndex = 0; // 0 = none, else 1-based index into circuitProps
   double magDir = 0; // degrees

@@ -119,7 +119,13 @@ class TestProblemKinds : public QObject
   void anExtensionNeverResolvesToTheWrongKind();
 
   void addingAPropertyGivesItAUniqueNameInEveryKind();
-  void deletingAMaterialTurnsItsLabelsIntoHolesNotIntoMaterialOne();
+  void deletingAMaterialLeavesItsLabelsUnassignedNotMaterialOne();
+
+  // #99: a new label used to default to a hole.
+  void aNewBlockLabelIsUnassignedNotAHole();
+  void anUnassignedLabelSurvivesTheFemFileAsBlockTypeZero();
+  void labelsWithoutMaterialFindsNoneAndDanglingButNotHoles();
+  void aSolveRefusesAnUnassignedLabelBeforeMeshing();
   void deletingABoundaryDetachesItsEdgesAndRenumbersTheRest();
   void deletingAConductorFixesNodeSegmentAndArcReferences();
   void deletingACircuitFixesBlockLabelReferences();
@@ -772,13 +778,13 @@ void TestProblemKinds::addingAPropertyGivesItAUniqueNameInEveryKind()
   }
 }
 
-void TestProblemKinds::deletingAMaterialTurnsItsLabelsIntoHolesNotIntoMaterialOne()
+void TestProblemKinds::deletingAMaterialLeavesItsLabelsUnassignedNotMaterialOne()
 {
-  // Materials are the one category whose "none" is -1 rather than 0,
-  // because a block label with no material IS a hole. Using 0 here would
-  // turn every label that used the deleted material into a meshed region
-  // of the FIRST material -- a solved model, with the wrong physics in
-  // part of it.
+  // A label whose material is deleted becomes <None> (0): unassigned,
+  // and refused by a solve until the user picks again -- classic's rule.
+  // Not material 1, which would solve with the wrong physics in part of
+  // the model, and not a hole, which would quietly mesh the region away
+  // (#99; this test used to pin the hole).
   FemmProblem p;
   p.kind = FemmProblemKind::Electrostatics;
   ProblemKind::addDefault(p, ProblemKind::Category::Material); // 1
@@ -795,9 +801,10 @@ void TestProblemKinds::deletingAMaterialTurnsItsLabelsIntoHolesNotIntoMaterialOn
   ProblemKind::remove(p, ProblemKind::Category::Material, 0);
 
   QCOMPARE(ProblemKind::count(p, ProblemKind::Category::Material), 2);
-  QCOMPARE(p.blockLabels[0].blockTypeIndex, -1);
+  QCOMPARE(p.blockLabels[0].blockTypeIndex, 0);
   QCOMPARE(p.blockLabels[1].blockTypeIndex, 1);
   QCOMPARE(p.blockLabels[2].blockTypeIndex, 2);
+  QCOMPARE(ProblemKind::labelsWithoutMaterial(p), QVector<int>{ 0 });
 }
 
 void TestProblemKinds::deletingABoundaryDetachesItsEdgesAndRenumbersTheRest()
@@ -1281,6 +1288,84 @@ void TestProblemKinds::anUnknownExitCodeSaysSoRatherThanGuessing()
                                   "number rather than mapped to the nearest known "
                                   "failure; got: %1").arg(msg)));
   }
+}
+
+void TestProblemKinds::aNewBlockLabelIsUnassignedNotAHole()
+{
+  FemmProblem p;
+  const int i = FemmProblemEdit::addBlockLabel(p, 1, 2);
+  QVERIFY2(p.blockLabels[i].blockTypeIndex == 0,
+      qPrintable(QStringLiteral("a new label has block type %1; a hole (-1) is meshed as a void "
+                                "if the user forgets to assign it")
+                     .arg(p.blockLabels[i].blockTypeIndex)));
+}
+
+void TestProblemKinds::anUnassignedLabelSurvivesTheFemFileAsBlockTypeZero()
+{
+  // Classic writes <None> as block type 0 among the block labels, NOT
+  // among the holes -- [NumHoles] = 1 is what made the region vanish.
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  for (FemmProblemKind kind : { FemmProblemKind::Magnetics, FemmProblemKind::HeatFlow }) {
+    FemmProblem p;
+    p.kind = kind;
+    FemmProblemEdit::addBlockLabel(p, 3, 4);
+    const QString path = dir.filePath(QStringLiteral("unassigned.") + ProblemKind::extension(kind));
+    QString err;
+    QVERIFY2(ProblemFileIO::write(path, p, err), qPrintable(err));
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString text = QString::fromUtf8(f.readAll());
+    QVERIFY2(text.contains(QStringLiteral("[NumHoles] = 0")), qPrintable(text));
+    QVERIFY2(text.contains(QStringLiteral("[NumBlockLabels] = 1")), qPrintable(text));
+
+    FemmProblem back;
+    QVERIFY2(ProblemFileIO::readAs(path, kind, back, err), qPrintable(err));
+    QCOMPARE(back.blockLabels.size(), 1);
+    QCOMPARE(back.blockLabels[0].blockTypeIndex, 0);
+  }
+}
+
+void TestProblemKinds::labelsWithoutMaterialFindsNoneAndDanglingButNotHoles()
+{
+  FemmProblem p;
+  p.kind = FemmProblemKind::Electrostatics;
+  ProblemKind::addDefault(p, ProblemKind::Category::Material); // 1
+  for (int i = 0; i < 4; i++)
+    FemmProblemEdit::addBlockLabel(p, i, i);
+  p.blockLabels[0].blockTypeIndex = 1;  // fine
+  p.blockLabels[1].blockTypeIndex = -1; // a hole: fine, needs nothing
+  p.blockLabels[2].blockTypeIndex = 0;  // <None>
+  p.blockLabels[3].blockTypeIndex = 2;  // names a material that is not there
+  QCOMPARE(ProblemKind::labelsWithoutMaterial(p), (QVector<int>{ 2, 3 }));
+
+  const QString msg = ProblemKind::missingMaterialMessage(p, { 2, 3 });
+  QVERIFY2(msg.contains(QStringLiteral("Material properties have not been defined")), qPrintable(msg));
+  QVERIFY2(msg.contains(QStringLiteral("(2, 2)")) && msg.contains(QStringLiteral("(3, 3)")), qPrintable(msg));
+}
+
+void TestProblemKinds::aSolveRefusesAnUnassignedLabelBeforeMeshing()
+{
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 1, 0);
+  FemmProblemEdit::addNode(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmProblemEdit::addSegment(p, 2, 0);
+  FemmProblemEdit::addBlockLabel(p, 0.2, 0.2);
+  const QString path = dir.filePath(QStringLiteral("forgot.fem"));
+  QString err;
+  QVERIFY2(ProblemFileIO::write(path, p, err), qPrintable(err));
+
+  QVERIFY(!SolveRunner::solve(p, path, err));
+  QVERIFY2(err.contains(QStringLiteral("Material properties have not been defined")), qPrintable(err));
+  // Refused before triangle ever ran: nothing written beside the model.
+  QVERIFY2(!QFileInfo::exists(dir.filePath(QStringLiteral("forgot.poly"))),
+      "the refusal came after meshing, not before");
 }
 
 QTEST_GUILESS_MAIN(TestProblemKinds)

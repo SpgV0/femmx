@@ -172,6 +172,10 @@ private slots:
   void aClickJustOffAnArcsExtremeHitsIt();
   void theLineHitMarginFollowsTheZoom();
   void ofTwoLinesInsideTheToleranceTheNearerIsPicked();
+
+  // #99
+  void aBlockLabelOnANodeIsDrawnAndPickedAboveIt();
+  void placingABlockLabelOnANodeSaysSo();
 };
 
 // ---------------------------------------------------------------------------
@@ -1289,6 +1293,44 @@ void TestSketchUi::ofTwoLinesInsideTheToleranceTheNearerIsPicked()
   h.scene.setToolMode(GeometryToolMode::Select);
   QCOMPARE(doubleClickTarget(h.scene, QPointF(50, 1)).second, 0);
   QCOMPARE(doubleClickTarget(h.scene, QPointF(50, 2)).second, 1);
+}
+
+void TestSketchUi::aBlockLabelOnANodeIsDrawnAndPickedAboveIt()
+{
+  // The review's case: grid snap put the label exactly on a corner node
+  // and its "+" vanished under the node dot.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addBlockLabel(p, 0, 0);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(0, 0)).first, static_cast<int>(FemmItemKind::BlockLabel));
+}
+
+void TestSketchUi::placingABlockLabelOnANodeSaysSo()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::AddBlockLabel);
+  QSignalSpy messages(&h.scene, &GeometryScene::toolMessage);
+
+  hoverThenClick(h.scene, QPointF(0, 0)); // on the node
+  QCOMPARE(p.blockLabels.size(), 1);
+  QCOMPARE(messages.size(), 1);
+  QVERIFY2(messages[0][0].toString().contains(QStringLiteral("node or a line")), qPrintable(messages[0][0].toString()));
+
+  hoverThenClick(h.scene, QPointF(50, 0)); // on the line
+  QCOMPARE(messages.size(), 2);
+
+  hoverThenClick(h.scene, QPointF(50, 40)); // clear of everything: quiet
+  QCOMPARE(p.blockLabels.size(), 3);
+  QCOMPARE(messages.size(), 2);
 }
 
 QTEST_MAIN(TestSketchUi)

@@ -141,6 +141,14 @@ bool SolveRunner::solve(const FemmProblem& problem, const QString& filePath, QSt
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
   QString workingDir = fi.absolutePath();
 
+  // Before meshing: a label with no material would otherwise reach the
+  // solver as block type 0 (#99). Every solve path comes through here.
+  const QVector<int> unassigned = ProblemKind::labelsWithoutMaterial(problem);
+  if (!unassigned.isEmpty()) {
+    errorMessage = ProblemKind::missingMaterialMessage(problem, unassigned);
+    return false;
+  }
+
   if (!mesh(problem, filePath, errorMessage))
     return false;
 

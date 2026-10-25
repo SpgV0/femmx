@@ -1481,10 +1481,20 @@ void GeometryScene::addArcItem(int index)
   m_arcItemsByNode.insert(a.n1, item);
 }
 
+void GeometryScene::selectBlockLabels(const QVector<int>& labels)
+{
+  clearSelection();
+  for (int i : labels) {
+    if (QGraphicsItem* item = m_blockLabelItems.value(i))
+      item->setSelected(true);
+  }
+}
+
 void GeometryScene::addBlockLabelItem(int index)
 {
   const FemmBlockLabel& b = m_problem->blockLabels[index];
   bool isHole = b.blockTypeIndex < 0;
+  const bool hasMaterial = b.blockTypeIndex >= 1 && b.blockTypeIndex <= m_problem->materialProps.size();
   double r = kBlockLabelPixelRadius;
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: was
   // a hardcoded QColor(200,0,0), not routed through AppTheme at all --
@@ -1511,10 +1521,10 @@ void GeometryScene::addBlockLabelItem(int index)
   // missing here before, which is exactly why dragging a label never
   // synced its new position back into m_problem.
   item->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-  // Matches NodeItem's z-value reasoning (see its comment) -- keeps a
-  // label clickable/on-top even if it ends up visually over a segment or
-  // arc, not exercised by today's bug but the same latent hazard.
-  item->setZValue(1.0);
+  // Above nodes (1.0) as well as lines: a label snapped onto a corner
+  // was drawn UNDER the node dot there and could not be seen at all, let
+  // alone clicked (#99). Below constraint glyphs (2.0).
+  item->setZValue(1.5);
   item->setData(KindKey, static_cast<int>(FemmItemKind::BlockLabel));
   item->setData(IndexKey, index);
   m_settingInitialItemPosition = true;
@@ -1525,9 +1535,10 @@ void GeometryScene::addBlockLabelItem(int index)
   // Matches femm.rc's "Show Block Names" (ID_VIEW_SHOWNAMES) -- shows the
   // assigned material's name (or "<None>" for a hole) next to the label,
   // toggled via setShowBlockNames() rather than always drawn.
-  QString labelText = (!isHole && b.blockTypeIndex >= 1 && b.blockTypeIndex <= m_problem->materialProps.size())
+  // Classic's names: <No Mesh> for a hole, <None> for not assigned yet.
+  QString labelText = hasMaterial
       ? m_problem->materialProps[b.blockTypeIndex - 1].name
-      : QStringLiteral("<None>");
+      : (isHole ? QStringLiteral("<No Mesh>") : QStringLiteral("<None>"));
   auto* text = addSimpleText(labelText);
   text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
   text->setBrush(isHole ? AppTheme::holeColor() : AppTheme::blockLabelNameColor());
@@ -2357,6 +2368,13 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     int idx = FemmProblemEdit::addBlockLabel(*m_problem, snapped.x(), snapped.y());
     addBlockLabelItem(idx);
     emit problemEdited();
+    // A label ON a node or a line is in no region, or in whichever one
+    // the mesher decides -- classic does not stop you either, but it is
+    // nearly always a snap that landed somewhere the user did not mean
+    // (#99). Within the line hit tolerance counts: too close to see.
+    if (entityAt(snapped, { FemmItemKind::Node, FemmItemKind::Segment, FemmItemKind::Arc }))
+      emit toolMessage(tr("This block label sits on a node or a line, so it marks no region. "
+                          "Move it inside the region it should label."));
     break;
   }
   case GeometryToolMode::AddSegment: {

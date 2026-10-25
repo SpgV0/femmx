@@ -38,15 +38,19 @@ BlockLabelPropDialog::BlockLabelPropDialog(const QVector<FemmBlockLabel*>& label
   m_materialHasMultiplePlaceholder = !sameMaterial;
   if (m_materialHasMultiplePlaceholder)
     m_material->addItem("<Multiple>");
+  // Classic's list: <None> (not assigned yet; a solve refuses it), then
+  // the hole, then the materials (#99).
+  m_material->addItem("<None>");
   m_material->addItem("<Hole>");
   for (const FemmMaterialProp& m : problem.materialProps)
     m_material->addItem(m.name);
-  // Combo index doubles as blockTypeIndex directly (offset by the
-  // placeholder, if present): index 0 ("<Hole>") maps to -1, index i
-  // (>=1) maps to material i -- see this dialog's header comment.
+  // Combo index (after the placeholder, if present) -> blockTypeIndex:
+  // 0 "<None>" -> 0, 1 "<Hole>" -> -1, i >= 2 -> material i - 1.
   if (sameMaterial) {
     FemmBlockLabel* l0 = labels.first();
-    m_material->setCurrentIndex(l0->blockTypeIndex < 0 ? 0 : qBound(0, l0->blockTypeIndex, problem.materialProps.size()));
+    const int t = l0->blockTypeIndex;
+    const int row = t < 0 ? 1 : (t == 0 || t > problem.materialProps.size() ? 0 : t + 1);
+    m_material->setCurrentIndex(row + (m_materialHasMultiplePlaceholder ? 1 : 0));
   } else {
     m_material->setCurrentIndex(0); // "<Multiple>"
   }
@@ -135,10 +139,12 @@ void BlockLabelPropDialog::onMaterialChanged()
   // Everything below is meaningless for a hole -- see
   // FemmBlockLabel::blockTypeIndex's comment (FemmProblem.h) -- disabled
   // rather than hidden so the (still-preserved) values stay visible.
-  // "<Multiple>", when present, sits at index 0 with "<Hole>" pushed to
-  // index 1 -- treat it like a hole for enabling purposes (nothing below
-  // is safe to edit blind for a batch that hasn't settled on one kind).
-  bool isHole = m_material->currentIndex() == (m_materialHasMultiplePlaceholder ? 1 : 0);
+  // "<Multiple>", when present, sits at index 0 and pushes "<None>" and
+  // "<Hole>" down one -- treat it like a hole for enabling purposes
+  // (nothing below is safe to edit blind for a batch that hasn't settled
+  // on one kind). <None> keeps the fields editable: it is a region still
+  // waiting for its material, not a void (#99).
+  bool isHole = m_material->currentIndex() == (m_materialHasMultiplePlaceholder ? 2 : 1);
   bool isUnresolvedMultiple = m_materialHasMultiplePlaceholder && m_material->currentIndex() == 0;
   bool enable = !isHole && !isUnresolvedMultiple;
   m_circuit->setEnabled(enable);
@@ -160,7 +166,7 @@ void BlockLabelPropDialog::onAccept()
 
   for (FemmBlockLabel* l : m_labels) {
     if (materialTouched)
-      l->blockTypeIndex = (matIdx == 0) ? -1 : matIdx;
+      l->blockTypeIndex = (matIdx == 0) ? 0 : (matIdx == 1 ? -1 : matIdx - 1);
     if (circuitTouched)
       l->circuitIndex = circIdx;
     l->maxArea = m_automesh->isChecked() ? 0.0 : (M_PI * std::pow(m_meshSize->text().toDouble(), 2) / 4.0);

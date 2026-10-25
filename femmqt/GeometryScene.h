@@ -315,6 +315,9 @@ class GeometryScene : public QGraphicsScene {
   // direct user request ("a list... that you can select on the side").
   // No-op if that index has no glyph (out of range).
   void selectConstraintGlyph(int index);
+  // Replaces the selection with these block labels (#99: the labels a
+  // solve refused).
+  void selectBlockLabels(const QVector<int>& labels);
 
   // Mesh > Create/Show/Purge Mesh overlay (femm.rc's Mesh menu split --
   // separate from Solve, which meshes internally via SolveRunner::solve

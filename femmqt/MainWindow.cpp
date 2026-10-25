@@ -1173,6 +1173,16 @@ void MainWindow::onSolveTriggered()
     return;
   }
 
+  // Classic's Analyze check, with classic's response: select the labels
+  // that have no material and say so, before anything runs (#99).
+  const QVector<int> unassigned = ProblemKind::labelsWithoutMaterial(m_problem);
+  if (!unassigned.isEmpty()) {
+    m_scene->selectBlockLabels(unassigned);
+    statusBar()->showMessage("Cannot analyze: a block label has no material");
+    Notify::warning(this, "Cannot Solve", ProblemKind::missingMaterialMessage(m_problem, unassigned));
+    return;
+  }
+
   if (hasAppliedPeriodicBoundary()) {
     Notify::warning(this, "Cannot Solve",
         "This problem uses a periodic or antiperiodic boundary condition, "

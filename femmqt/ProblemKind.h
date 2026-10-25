@@ -61,6 +61,13 @@ QString categoryLabel(FemmProblemKind kind, Category category);
 // --- the type-blind access path -------------------------------------------
 
 int count(const FemmProblem& p, Category category);
+
+// Block labels a solve cannot accept: <None> (0), or a material index this
+// kind's list does not have. Holes are fine. Classic's Analyze refuses
+// these, and so does femmqt's (#99).
+QVector<int> labelsWithoutMaterial(const FemmProblem& p);
+// Classic's refusal, plus where the offending labels are.
+QString missingMaterialMessage(const FemmProblem& p, const QVector<int>& labels);
 QString name(const FemmProblem& p, Category category, int index);
 QStringList names(const FemmProblem& p, Category category);
 

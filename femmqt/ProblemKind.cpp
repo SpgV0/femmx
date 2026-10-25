@@ -367,6 +367,39 @@ int ProblemKind::referenceCount(const FemmProblem& p, Category category, int ind
   return n;
 }
 
+QVector<int> ProblemKind::labelsWithoutMaterial(const FemmProblem& p)
+{
+  QVector<int> out;
+  const int materials = count(p, Category::Material);
+  for (int i = 0; i < p.blockLabels.size(); i++) {
+    const int t = p.blockLabels[i].blockTypeIndex;
+    if (t < 0)
+      continue; // a hole needs no material
+    if (t == 0 || t > materials)
+      out.push_back(i);
+  }
+  return out;
+}
+
+QString ProblemKind::missingMaterialMessage(const FemmProblem& p, const QVector<int>& labels)
+{
+  QStringList where;
+  for (int i = 0; i < labels.size() && i < 5; i++) {
+    const FemmBlockLabel& b = p.blockLabels[labels[i]];
+    where << QStringLiteral("(%1, %2)").arg(b.x, 0, 'g', 6).arg(b.y, 0, 'g', 6);
+  }
+  if (labels.size() > 5)
+    where << QStringLiteral("and %1 more").arg(labels.size() - 5);
+  return QStringLiteral("Material properties have not been defined for all block labels. "
+                        "Cannot analyze the problem.\n\n"
+                        "No material: %1 block label%2 at %3.\n\n"
+                        "Assign a material, or make the label a <Hole> if the region "
+                        "should not be meshed.")
+      .arg(labels.size())
+      .arg(labels.size() == 1 ? "" : "s")
+      .arg(where.join(", "));
+}
+
 void ProblemKind::remove(FemmProblem& p, Category category, int index)
 {
   if (index < 0 || index >= count(p, category))
@@ -408,15 +441,13 @@ void ProblemKind::remove(FemmProblem& p, Category category, int index)
     break;
   }
 
-  // A reference to the entry that went becomes "none"; everything above
-  // it shifts down by one. A material's "none" is -1 (a hole), not 0 --
-  // the one place the encodings differ, and getting it wrong would turn
-  // every label that used the deleted material into a meshed region of
-  // the FIRST material rather than a hole.
-  const int noneValue = (category == Category::Material) ? -1 : 0;
+  // A reference to the entry that went becomes "none" (0); everything
+  // above it shifts down by one. For a material that is <None>, which a
+  // solve refuses, rather than a hole, which would quietly mesh the region
+  // away (#99). Never 1: that would hand the region the FIRST material.
   visitReferences(p, category, [&](int& ref) {
     if (ref == oneBased)
-      ref = noneValue;
+      ref = 0;
     else if (ref > oneBased)
       ref--;
   });

@@ -115,9 +115,10 @@ int FemmProblemEdit::addBlockLabel(FemmProblem& p, double x, double y)
   FemmBlockLabel b;
   b.x = x;
   b.y = y;
-  b.blockTypeIndex = -1; // hole by default -- caller/dialog assigns a
-                         // real material afterward; matches this phase's
-                         // "no default material picker yet" scope.
+  // <None>, as classic: unassigned until the user picks a material, and
+  // refused at solve time. A hole is a deliberate choice, never a default
+  // -- defaulting to one dropped forgotten regions from the mesh (#99).
+  b.blockTypeIndex = 0;
   p.blockLabels.push_back(b);
   return p.blockLabels.size() - 1;
 }
@@ -408,7 +409,7 @@ void FemmProblemEdit::deleteMaterialProp(FemmProblem& p, int index)
   int marker = index + 1;
   for (FemmBlockLabel& b : p.blockLabels) {
     if (b.blockTypeIndex == marker)
-      b.blockTypeIndex = -1; // reverts to a hole -- see this function's header comment
+      b.blockTypeIndex = 0; // back to <None>: unassigned, refused at solve (#99)
     else if (b.blockTypeIndex > marker)
       b.blockTypeIndex--;
   }
