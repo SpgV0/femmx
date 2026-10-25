@@ -2,6 +2,7 @@
 
 #include "FemmProblem.h"
 #include "MeshSolution.h"
+#include "ProblemKind.h"
 #include "SolutionField.h"
 #include "SolutionFileIO.h"
 
@@ -25,8 +26,6 @@ bool SolutionAdapter::toMeshSolution(const SolvedMesh& mesh, const FemmProblem& 
   }
 
   out.elements.resize(mesh.elements.size());
-  double minMag = 0, maxMag = 0;
-  bool first = true;
 
   for (int i = 0; i < mesh.elements.size(); i++) {
     const SolutionElement& src = mesh.elements[i];
@@ -74,21 +73,15 @@ bool SolutionAdapter::toMeshSolution(const SolvedMesh& mesh, const FemmProblem& 
       dst.rsqr = rsqr;
     }
 
-    if (src.label >= 0 && src.label < p.blockLabels.size())
-      dst.isExternal = p.blockLabels[src.label].isExternal;
-
-    const double mag = std::hypot(std::hypot(dst.B1re, dst.B1im),
-        std::hypot(dst.B2re, dst.B2im));
-    if (first) {
-      minMag = maxMag = mag;
-      first = false;
-    } else {
-      minMag = std::min(minMag, mag);
-      maxMag = std::max(maxMag, mag);
+    // An exterior region, or an IABC shell -- the other physics' makeABC
+    // names its shells "u1".."u9" as magnetics' does (#127).
+    if (src.label >= 0 && src.label < p.blockLabels.size()) {
+      const FemmBlockLabel& label = p.blockLabels[src.label];
+      dst.isExternal = label.isExternal
+          || isAbcShellMaterialName(ProblemKind::name(p, ProblemKind::Category::Material, label.blockTypeIndex - 1));
     }
   }
 
-  out.bMagMin = minMag;
-  out.bMagMax = maxMag;
+  setBMagRange(out);
   return true;
 }

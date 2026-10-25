@@ -44,6 +44,7 @@
 #include <QPushButton>
 
 #include "AnsFileIO.h"
+#include "AnsxFileIO.h"
 #include "SolutionAdapter.h"
 #include "SolutionFileIO.h"
 #include "AppTheme.h"
@@ -159,6 +160,7 @@ class TestMainWindow : public QObject
   void selectionHintsGoToTheStatusBar();
   void theShortcutListCoversSelectionAndEveryShortcut();
   void createMeshLeavesNoFilesBesideTheModel();
+  void theExteriorShellsDoNotSetTheRange();
 };
 
 void TestMainWindow::initTestCase()
@@ -1368,6 +1370,55 @@ void TestMainWindow::createMeshLeavesNoFilesBesideTheModel()
   actionNamed(w, QStringLiteral("&Purge Mesh"))->trigger();
   for (const char* ext : { ".poly", ".pbc", ".node", ".edge", ".ele" })
     QVERIFY2(!QFileInfo::exists(root + ext), qPrintable(QStringLiteral("Purge Mesh left %1 behind").arg(ext)));
+}
+
+void TestMainWindow::theExteriorShellsDoNotSetTheRange()
+{
+  // The straight wire's IABC shells (materials u1..u7) carry a large,
+  // unphysical |B|; classic leaves them out of the auto-range and the
+  // |B| status line, femmqt's status line did not.
+  FemmProblem problem;
+  MeshSolution sol;
+  QString err;
+  QVERIFY2(AnsFileIO::readAns(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/straight_wire.ans"), problem, sol, err),
+      qPrintable(err));
+  double lo = 0, hi = 0, allHi = 0;
+  bool first = true;
+  int external = 0;
+  for (const MeshSolutionElement& e : sol.elements) {
+    const double b = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    allHi = std::max(allHi, b);
+    if (e.isExternal) {
+      external++;
+      continue;
+    }
+    lo = first ? b : std::min(lo, b);
+    hi = first ? b : std::max(hi, b);
+    first = false;
+  }
+  QVERIFY2(external > 0, "the fixture's shells are not flagged exterior");
+  QVERIFY2(allHi > hi, "the shells do not reach past the interior here -- the test proves nothing");
+
+  QCOMPARE(sol.bMagMin, lo);
+  QCOMPARE(sol.bMagMax, hi);
+
+  MeshSolutionItem item(&sol);
+  double autoLo = 0, autoHi = 0;
+  item.densityQuantityAutoRange(MeshSolutionItem::DensityQuantity::BMag, autoLo, autoHi);
+  QVERIFY2(autoHi <= hi * (1 + 1e-9),
+      qPrintable(QStringLiteral("the |B| legend reaches %1 T; the model itself only %2 T").arg(autoHi).arg(hi)));
+
+  // A cache written before the fix carries the all-element range in its
+  // header; reading it must not bring that back.
+  MeshSolution stale = sol;
+  stale.bMagMin = 1.452e-6;
+  stale.bMagMax = allHi;
+  const QString ansx = m_dir.filePath(QStringLiteral("stale.ansx"));
+  QVERIFY2(AnsxFileIO::writeAnsx(ansx, QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/straight_wire.ans"), 0, 0, 0.0, stale, err), qPrintable(err));
+  MeshSolution cached;
+  QVERIFY2(AnsxFileIO::readAnsx(ansx, cached, err), qPrintable(err));
+  QCOMPARE(cached.bMagMin, lo);
+  QCOMPARE(cached.bMagMax, hi);
 }
 
 QTEST_MAIN(TestMainWindow)

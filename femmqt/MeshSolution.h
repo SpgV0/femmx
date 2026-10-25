@@ -2,8 +2,11 @@
 
 #include "BHCurve.h"
 
+#include <QString>
 #include <QVector>
 
+#include <algorithm>
+#include <cmath>
 #include <complex>
 
 // Solved-mesh data read from a .ans file (femm/FemmviewDoc.cpp's
@@ -119,11 +122,42 @@ struct MeshSolution {
   // One per block label, in FemmProblem::blockLabels order (#108).
   QVector<MeshLabelCircuit> labelCircuits;
 
-  // |B| = sqrt(|B1|^2+|B2|^2) extremes across all elements, precomputed
-  // once for the density plot's legend range.
+  // |B| = sqrt(|B1|^2+|B2|^2) extremes, precomputed once -- over the
+  // elements that are not isExternal, as classic's own range is, unless
+  // every element is (see setBMagRange below).
   double bMagMin = 0, bMagMax = 0;
 
   // One entry per unique nonlinear material referenced by any element --
   // see MeshSolutionElement::bhMaterialIndex and BHCurve.h.
   QVector<BHCurve::Curve> nonlinearMaterials;
 };
+
+// Whether `name` is one of the Kelvin-transform shell materials
+// mi_makeABC (and its other-physics twins) creates: "u1".."u9" --
+// femm/FemmviewDoc.cpp's isExt[] test.
+inline bool isAbcShellMaterialName(const QString& name)
+{
+  return name.size() > 1 && name[0] == QLatin1Char('u') && name[1] >= QLatin1Char('1') && name[1] <= QLatin1Char('9');
+}
+
+// Sets solution.bMagMin/bMagMax from its elements' B, leaving out the
+// isExternal ones unless nothing else is left. They used to cover every
+// element, so the straight wire's status line read "|B| 1.452e-06 to
+// ..." -- the far IABC shell, not the model (#127).
+inline void setBMagRange(MeshSolution& solution)
+{
+  bool anyInterior = false;
+  for (const MeshSolutionElement& e : solution.elements)
+    anyInterior = anyInterior || !e.isExternal;
+  bool first = true;
+  for (const MeshSolutionElement& e : solution.elements) {
+    if (anyInterior && e.isExternal)
+      continue;
+    const double b = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
+    solution.bMagMin = first ? b : std::min(solution.bMagMin, b);
+    solution.bMagMax = first ? b : std::max(solution.bMagMax, b);
+    first = false;
+  }
+  if (first)
+    solution.bMagMin = solution.bMagMax = 0;
+}

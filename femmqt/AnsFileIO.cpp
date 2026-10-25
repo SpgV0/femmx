@@ -195,7 +195,6 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   solution.elements.resize((int)elemCount);
   bool axisymmetric = (problem.problemType == FemmCoordinateType::Axisymmetric);
   double lengthConv = kLengthConv[(int)problem.lengthUnits];
-  bool first = true;
   // Modified by Claude (Anthropic), noreply@anthropic.com: maps
   // problem.materialProps index -> solution.nonlinearMaterials index, so
   // the BH-curve slope solve (BHCurve::computeSlopes, real numerical
@@ -281,11 +280,8 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
         // "u1".."u9" -- see MeshSolutionElement::isExternal's own comment
         // for why these need excluding from the auto-range the same way
         // an explicitly-flagged Exterior Region block does.
-        if (!e.isExternal && mat.name.size() > 1 && mat.name[0] == QLatin1Char('u')) {
-          QChar c1 = mat.name[1];
-          if (c1 >= QLatin1Char('1') && c1 <= QLatin1Char('9'))
-            e.isExternal = true;
-        }
+        if (isAbcShellMaterialName(mat.name))
+          e.isExternal = true;
       }
     }
 
@@ -313,15 +309,8 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
         axisymmetric, lengthConv,
         e.B1re, e.B1im, e.B2re, e.B2im);
 
-    double bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-    if (first) {
-      solution.bMagMin = solution.bMagMax = bMag;
-      first = false;
-    } else {
-      solution.bMagMin = std::min(solution.bMagMin, bMag);
-      solution.bMagMax = std::max(solution.bMagMax, bMag);
-    }
   }
+  setBMagRange(solution);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: a
   // third, untagged mesh section immediately follows [Elements] -- one row

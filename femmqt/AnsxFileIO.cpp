@@ -345,6 +345,9 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
     e.rsqr = recs[i].rsqr;
     e.bhMaterialIndex = (int)recs[i].bhMaterialIndex;
   }
+  // From the elements, not the header: a cache written before #127
+  // stored the range over every element, exterior shells included.
+  setBMagRange(solution);
 
   // Modified by Claude (Anthropic), noreply@anthropic.com: read back the
   // variable-length BH curve section written above -- see writeAnsx's
