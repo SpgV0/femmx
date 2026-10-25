@@ -1,4 +1,68 @@
-﻿09Sep2026 (v2.2.1)
+﻿25Oct2026 (v2.3.0)
+
+* `femmqt` handles all four problem types. Magnetics, electrostatics,
+  heat flow and current flow each get New/Open/Save, property
+  dialogs, material libraries, solve dispatch to their own solver,
+  the Solution Viewer, derived field quantities and conductor
+  readouts. The classic GUI can hand any problem type to it.
+
+* File > Demo Models: a committed library of checked demo models for
+  all four physics. They open as a working copy and ship with the
+  installer.
+
+* Sketching: object snapping, trim/extend/split, offset and chamfer,
+  construction geometry, Constraints > Fix, and constraints and
+  dimensions that follow Move/Copy/Scale/Mirror. The sketch layer is
+  saved in a `.fes` sidecar beside the model. Rectangles and circles
+  are drawn by two clicks. Dimensions are placed where you click and
+  can be dragged afterwards. A dimension or constraint the sketch
+  cannot satisfy is refused rather than kept. Redo
+  (Ctrl+Y / Ctrl+Shift+Z) joins Undo.
+
+* Post-processing: Area Properties computes all 17 magnetics block
+  integrals, checked against the classic GUI's numbers. Plot X-Y
+  offers the classic quantities, smoothed and on titled axes. The
+  density plot can show potential and field intensity. A uniform
+  field is drawn as one colour.
+
+* The 2026-10-20 femmqt review: every defect it found is fixed
+  (GitHub issues #94-#129). Highlights:
+  - total current is reported in amperes;
+  - New and Open drop the previous document's undo history;
+  - lines, arcs and dimension labels are hit reliably;
+  - a new block label starts with no material, and Solve refuses it;
+  - solving no longer puts the solver's window over the editor;
+  - Create Mesh leaves no temporary files beside the model;
+  - the |B| status range ignores the IABC exterior shells.
+
+* Smaller femmqt changes:
+  - file dialogs start where the work is;
+  - a visible grid, gentler zoom steps, and a fit with a margin;
+  - a searchable material library;
+  - Scale and Mirror ask for their values in one dialog;
+  - hints go to the status bar instead of modal boxes;
+  - clicking into a number field selects the whole value;
+  - the Load Monitor is live before any solve;
+  - Keyboard Shortcuts documents selection and lists every key;
+  - the first start follows Windows dark mode and opens larger;
+  - the toolbars wrap to a second row instead of collapsing.
+
+* Installer: only one copy runs at a time. Shortcuts start in
+  Documents.
+
+* Fixes outside femmqt:
+  - `ci_refreshview`/`co_refreshview` (a "refresc" typo);
+  - `ei_/hi_/ci_analyze` (wrong input extension);
+  - `savebitmap`'s DIB copies;
+  - dropped `<VoltGradient_*>` and `dVolts` fields on save;
+  - the major-arc centre computation;
+  - `-lua-var` no longer folds case.
+
+* Tests: large analytic, regression and round-trip suites for every
+  solver and file format, golden-image render tests, and about 28
+  ctest targets for femmqt. CI runs only when started by hand.
+
+09Sep2026 (v2.2.1)
 
 * Released as v2.2.1 rather than v2.2.0. The v2.2.0 release was
   published and then deleted by hand minutes later; this repository has
