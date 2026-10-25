@@ -1065,6 +1065,19 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       lo = qd.vMin;
       hi = qd.vMax;
     }
+    // A uniform field -- the parallel-plate capacitor's |D| -- differs
+    // only by round-off, and stretching that over twenty bands painted
+    // pure noise as a full rainbow, under a legend reading the same
+    // number twenty times (#113). Below a part per million of the value
+    // the range is widened to +-1% about its middle: one colour, and a
+    // legend that says what the field is.
+    const double scale = std::max(std::abs(lo), std::abs(hi));
+    if (scale > 0 && hi - lo < 1e-6 * scale) {
+      const double mid = 0.5 * (lo + hi);
+      const double half = 0.01 * std::abs(mid);
+      lo = mid - half;
+      hi = mid + half;
+    }
   }
   m_lastDensityLo = lo;
   m_lastDensityHi = hi;

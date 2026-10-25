@@ -35,6 +35,8 @@
 #include <QPushButton>
 
 #include "AnsFileIO.h"
+#include "SolutionAdapter.h"
+#include "SolutionFileIO.h"
 #include "AppTheme.h"
 #include "ConstraintSolver.h"
 #include "FemmProblemEdit.h"
@@ -124,6 +126,8 @@ class TestMainWindow : public QObject
   // #112
   void theGridIsOnButNotInRenders();
   void zoomStepsAreGentleAndFitLeavesAMargin();
+  // #113
+  void aUniformFieldPaintsOneColourNotNoise();
 };
 
 void TestMainWindow::initTestCase()
@@ -898,6 +902,46 @@ void TestMainWindow::zoomStepsAreGentleAndFitLeavesAMargin()
       qPrintable(QStringLiteral("model %1,%2 %3x%4 in viewport %5x%6")
                      .arg(onScreen.x()).arg(onScreen.y()).arg(onScreen.width()).arg(onScreen.height())
                      .arg(vp.width()).arg(vp.height())));
+}
+
+void TestMainWindow::aUniformFieldPaintsOneColourNotNoise()
+{
+  // The review's case: the parallel-plate capacitor's |D| is uniform,
+  // 1.771e-7 everywhere to round-off, and painted as a rainbow of noise.
+  FemmProblem problem;
+  SolvedMesh solved;
+  QString err;
+  QVERIFY2(SolutionFileIO::read(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/solutions/parallel_plate.res"), problem, solved, err),
+      qPrintable(err));
+  MeshSolution sol;
+  QVERIFY(SolutionAdapter::toMeshSolution(solved, problem, sol));
+  MeshSolutionItem item(&sol);
+  item.setProblemKind(FemmProblemKind::Electrostatics);
+  item.setPlotMode(MeshSolutionItem::PlotMode::Density);
+  item.setSmoothing(false);
+
+  // Only the gap between the plates, where the field is uniform.
+  double lo = 0, hi = 0;
+  QGraphicsScene scene;
+  scene.addItem(&item);
+  QImage img(300, 300, QImage::Format_RGB32);
+  img.fill(Qt::white);
+  QRectF all = item.boundingRect();
+  const QRectF gap(all.center().x() - all.width() * 0.05, all.center().y() - all.height() * 0.05,
+      all.width() * 0.1, all.height() * 0.1);
+  {
+    QPainter painter(&img);
+    scene.render(&painter, QRectF(img.rect()), gap);
+  }
+  item.legendRange(lo, hi);
+  scene.removeItem(&item);
+  QVERIFY2(hi - lo > 1e-3 * std::abs(hi),
+      qPrintable(QStringLiteral("the legend spans %1 .. %2 -- round-off").arg(lo, 0, 'g', 12).arg(hi, 0, 'g', 12)));
+  QSet<QRgb> colours;
+  for (int y = 20; y < img.height() - 20; y++)
+    for (int x = 20; x < img.width() - 20; x++)
+      colours.insert(img.pixel(x, y));
+  QVERIFY2(colours.size() <= 3, qPrintable(QStringLiteral("%1 colours in a uniform field").arg(colours.size())));
 }
 
 QTEST_MAIN(TestMainWindow)
