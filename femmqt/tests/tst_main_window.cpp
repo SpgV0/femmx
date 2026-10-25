@@ -158,6 +158,7 @@ class TestMainWindow : public QObject
   void scaleAndMirrorAskInOneDialog();
   void selectionHintsGoToTheStatusBar();
   void theShortcutListCoversSelectionAndEveryShortcut();
+  void createMeshLeavesNoFilesBesideTheModel();
 };
 
 void TestMainWindow::initTestCase()
@@ -1341,6 +1342,32 @@ void TestMainWindow::theShortcutListCoversSelectionAndEveryShortcut()
           qPrintable(QStringLiteral("%1 (%2) is missing from Keyboard Shortcuts").arg(key, a->text())));
     }
   }
+}
+
+void TestMainWindow::createMeshLeavesNoFilesBesideTheModel()
+{
+  // Create Mesh left .poly/.pbc/.node/.edge/.ele next to the .fem. There
+  // is no triangle.exe beside the test binary, so meshing fails after
+  // .poly/.pbc are written -- and those must go too. (Where triangle is
+  // present the overlay is loaded first, then the same cleanup runs.)
+  MainWindow w;
+  const QString fem = copyOf("magnetics/straight_wire.fem");
+  QVERIFY(w.openFile(fem));
+  const QFileInfo fi(fem);
+  const QString root = fi.absolutePath() + "/" + fi.completeBaseName();
+  actionNamed(w, QStringLiteral("&Create Mesh"))->trigger();
+  for (const char* ext : { ".poly", ".pbc", ".node", ".edge", ".ele" })
+    QVERIFY2(!QFileInfo::exists(root + ext), qPrintable(QStringLiteral("Create Mesh left %1 behind").arg(ext)));
+  QVERIFY(QFileInfo::exists(fem));
+
+  // Purge Mesh removes all five as well (it missed .poly/.pbc).
+  for (const char* ext : { ".poly", ".pbc", ".node", ".edge", ".ele" }) {
+    QFile f(root + ext);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+  }
+  actionNamed(w, QStringLiteral("&Purge Mesh"))->trigger();
+  for (const char* ext : { ".poly", ".pbc", ".node", ".edge", ".ele" })
+    QVERIFY2(!QFileInfo::exists(root + ext), qPrintable(QStringLiteral("Purge Mesh left %1 behind").arg(ext)));
 }
 
 QTEST_MAIN(TestMainWindow)

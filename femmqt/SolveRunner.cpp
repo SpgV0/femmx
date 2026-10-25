@@ -106,6 +106,14 @@ bool SolveRunner::mesh(const FemmProblem& problem, const QString& femPath, QStri
   return true;
 }
 
+void SolveRunner::removeMeshFiles(const QString& filePath)
+{
+  const QFileInfo fi(filePath);
+  const QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
+  for (const char* ext : { ".poly", ".pbc", ".node", ".edge", ".ele" })
+    QFile::remove(rootPath + QLatin1String(ext));
+}
+
 namespace {
 
 // What each solver's exit codes MEAN, taken from each one's own main.cpp

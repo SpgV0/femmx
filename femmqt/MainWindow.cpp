@@ -2937,6 +2937,7 @@ void MainWindow::onCreateMeshTriggered()
   menuBar()->setEnabled(true);
   QApplication::restoreOverrideCursor();
   if (!ok) {
+    SolveRunner::removeMeshFiles(m_currentPath);
     statusBar()->showMessage("Meshing failed");
     Notify::warning(this, "Mesh Failed", error);
     return;
@@ -2945,7 +2946,11 @@ void MainWindow::onCreateMeshTriggered()
   QFileInfo fi(m_currentPath);
   QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
   MeshOverlay mesh;
-  if (!MeshOverlayIO::load(rootPath, mesh, error)) {
+  const bool loaded = MeshOverlayIO::load(rootPath, mesh, error);
+  // The overlay holds the mesh now; the files were only the hand-off
+  // from triangle (#126).
+  SolveRunner::removeMeshFiles(m_currentPath);
+  if (!loaded) {
     statusBar()->showMessage("Meshing failed");
     Notify::warning(this, "Mesh Failed", error);
     return;
@@ -2967,13 +2972,8 @@ void MainWindow::onPurgeMeshTriggered()
   // accidentally pick up a stale mesh -- though SolveRunner::solve()
   // always regenerates them fresh anyway, this also mirrors the classic
   // GUI's own disk-cleanliness intent.
-  if (!m_currentPath.isEmpty()) {
-    QFileInfo fi(m_currentPath);
-    QString rootPath = fi.absolutePath() + "/" + fi.completeBaseName();
-    QFile::remove(rootPath + ".node");
-    QFile::remove(rootPath + ".edge");
-    QFile::remove(rootPath + ".ele");
-  }
+  if (!m_currentPath.isEmpty())
+    SolveRunner::removeMeshFiles(m_currentPath);
   statusBar()->showMessage("Mesh purged");
 }
 

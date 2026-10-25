@@ -31,6 +31,13 @@ bool solve(const FemmProblem& problem, const QString& filePath, QString& errorMe
 // MeshOverlay::load).
 bool mesh(const FemmProblem& problem, const QString& filePath, QString& errorMessage);
 
+// Deletes the mesh generator's temporaries beside `filePath` --
+// .poly/.pbc (MeshBuilder's input to triangle) and .node/.edge/.ele (its
+// output) -- once a caller has read them. femm/FemmeDoc.cpp's LoadMesh
+// deletes the same five; Create Mesh left them all next to the user's
+// model (#126).
+void removeMeshFiles(const QString& filePath);
+
 // What a solver's non-zero exit code means, for this kind's solver.
 //
 // Published rather than private because it is the one piece of #82 worth
