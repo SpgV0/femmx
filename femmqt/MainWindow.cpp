@@ -2227,14 +2227,16 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
 // QGraphicsView transforms/scrollbar deltas instead of raw GDI ox/oy/mag
 // bookkeeping -- Qt's view already owns an equivalent transform, so there's
 // no reason to duplicate that state on this side.
+// sqrt(2) per step, not 2x: three Zoom Outs took a whole model down to
+// a few pixels (#112). Two presses still make a factor of two.
 void MainWindow::onZoomIn()
 {
-  m_view->zoomBy(2.0);
+  m_view->zoomBy(M_SQRT2);
 }
 
 void MainWindow::onZoomOut()
 {
-  m_view->zoomBy(0.5);
+  m_view->zoomBy(1.0 / M_SQRT2);
 }
 
 void MainWindow::onZoomNatural()
@@ -2265,8 +2267,13 @@ QImage MainWindow::renderToImage(QSize size, QRectF source)
   painter.translate(0, size.height());
   painter.scale(1.0, -1.0);
 
+  // The model, not the editing aids: the grid is on by default now, and
+  // a render for a script or a golden image must not carry it (#112).
+  const bool grid = m_scene->showGrid();
+  m_scene->setShowGrid(false);
   m_scene->render(&painter, QRectF(QPointF(0, 0), QSizeF(size)),
       source.isEmpty() ? bounds : source, Qt::KeepAspectRatio);
+  m_scene->setShowGrid(grid);
   return image;
 }
 

@@ -188,7 +188,9 @@ QColor AppTheme::gridLine()
   // high DPI where a device pixel is physically tiny. Darkened
   // significantly; dark mode's (60,60,60) against a (30,30,30)
   // background was never reported as an issue, left alone.
-  return g_dark ? QColor(60, 60, 60) : QColor(160, 160, 160);
+  // Modified 2026-10-25 (#112): dark's (60,60,60) on (30,30,30) was
+  // reported practically invisible, light's 160 barely visible.
+  return g_dark ? QColor(100, 100, 100) : QColor(135, 135, 135);
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per

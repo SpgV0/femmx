@@ -45,6 +45,7 @@
 #include "DemoLibrary.h"
 #include "FileDialogDirs.h"
 #include "ProblemKind.h"
+#include "GeometryView.h"
 #include "MainWindow.h"
 #include "Notify.h"
 
@@ -118,6 +119,11 @@ class TestMainWindow : public QObject
   void fileDialogsStartWhereTheWorkIs();
   void noFileDialogStartsInTheWorkingDirectory();
   void theInstalledShortcutsStartInDocuments();
+  // Review FQT-24: not reproduced; kept as a guard.
+  void homeStillFitsAfterADialog();
+  // #112
+  void theGridIsOnButNotInRenders();
+  void zoomStepsAreGentleAndFitLeavesAMargin();
 };
 
 void TestMainWindow::initTestCase()
@@ -818,6 +824,80 @@ void TestMainWindow::theInstalledShortcutsStartInDocuments()
   QVERIFY(lastOut > 0);
   const QString line = nsi.mid(lastOut, nsi.indexOf(QLatin1Char('\n'), lastOut) - lastOut);
   QVERIFY2(line.contains(QStringLiteral("$DOCUMENTS")), qPrintable(line));
+}
+
+void TestMainWindow::homeStillFitsAfterADialog()
+{
+  MainWindow w;
+  QVERIFY(w.openFile(copyOf("magnetics/straight_wire.fem")));
+  w.resize(900, 700);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+  auto* view = w.findChild<GeometryView*>();
+  QVERIFY(view);
+  view->setFocus();
+
+  // Something modal comes and goes: Problem Properties, answered by Esc.
+  QTimer::singleShot(0, []() {
+    if (QWidget* d = QApplication::activeModalWidget())
+      QMetaObject::invokeMethod(d, "reject", Qt::QueuedConnection);
+  });
+  QAction* props = actionNamed(w, QStringLiteral("&Problem Properties..."));
+  QVERIFY2(props, "no Problem properties action");
+  props->trigger();
+  QApplication::processEvents();
+
+  // Zoom far in, then press Home on the canvas: it must fit again.
+  QApplication::setActiveWindow(&w);
+  view->setFocus();
+  QVERIFY(QTest::qWaitForWindowActive(&w));
+  actionNamed(w, QStringLiteral("&Natural"))->trigger();
+  const double fit = view->transform().m11();
+  view->zoomBy(16);
+  QTest::keyClick(view, Qt::Key_Home);
+  QApplication::processEvents();
+  QVERIFY2(std::abs(view->transform().m11() - fit) < 1e-6 * fit,
+      qPrintable(QStringLiteral("Home did not fit: scale %1, the fit is %2").arg(view->transform().m11()).arg(fit)));
+}
+
+void TestMainWindow::theGridIsOnButNotInRenders()
+{
+  MainWindow w;
+  QVERIFY(w.openFile(copyOf("magnetics/straight_wire.fem")));
+  auto* scene = w.findChild<GeometryScene*>();
+  QVERIFY2(scene->showGrid(), "the grid is off by default");
+  const QImage withGridOn = w.renderToImage(QSize(300, 300));
+  scene->setShowGrid(false);
+  const QImage withGridOff = w.renderToImage(QSize(300, 300));
+  QVERIFY(!withGridOn.isNull());
+  QCOMPARE(withGridOn, withGridOff); // a render shows the model only
+  scene->setShowGrid(true);
+  w.renderToImage(QSize(50, 50));
+  QVERIFY2(scene->showGrid(), "rendering turned the user's grid off");
+}
+
+void TestMainWindow::zoomStepsAreGentleAndFitLeavesAMargin()
+{
+  MainWindow w;
+  QVERIFY(w.openFile(copyOf("magnetics/straight_wire.fem")));
+  w.resize(900, 700);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+  auto* view = w.findChild<GeometryView*>();
+  auto* scene = w.findChild<GeometryScene*>();
+  actionNamed(w, QStringLiteral("&Natural"))->trigger();
+  const double fit = view->transform().m11();
+  actionNamed(w, QStringLiteral("Zoom &Out"))->trigger();
+  QVERIFY(std::abs(view->transform().m11() - fit / M_SQRT2) < 1e-9 * fit);
+
+  // After a fit, the model stays clear of every edge of the viewport.
+  actionNamed(w, QStringLiteral("&Natural"))->trigger();
+  const QRect onScreen = view->mapFromScene(scene->computeProblemBounds()).boundingRect();
+  const QRect vp = view->viewport()->rect();
+  QVERIFY2(vp.adjusted(4, 4, -4, -4).contains(onScreen),
+      qPrintable(QStringLiteral("model %1,%2 %3x%4 in viewport %5x%6")
+                     .arg(onScreen.x()).arg(onScreen.y()).arg(onScreen.width()).arg(onScreen.height())
+                     .arg(vp.width()).arg(vp.height())));
 }
 
 QTEST_MAIN(TestMainWindow)

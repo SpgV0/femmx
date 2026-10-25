@@ -628,7 +628,7 @@ class GeometryScene : public QGraphicsScene {
   // toolbar checked-state is seeded from this same member (MainWindow's
   // View > Grid > Show Grid and the Navigate toolbar button), so this one
   // change covers both.
-  bool m_showGrid = false;
+  bool m_showGrid = true; // on by default: an immediate sense of scale (#112)
   bool m_snapToGrid = false;
   double m_gridSize = 1.0;
 

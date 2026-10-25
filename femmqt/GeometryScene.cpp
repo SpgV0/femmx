@@ -3393,9 +3393,16 @@ void GeometryScene::drawBackground(QPainter* painter, const QRectF& rect)
   double r = 1.0 / std::max(screenScale, 1e-9); // 2px-diameter dot, matching the old pen width
   painter->setPen(Qt::NoPen);
   painter->setBrush(AppTheme::gridLine());
+  // Every fifth line is a "major" dot, half as big again, so spacing
+  // reads at a glance (#112).
   for (int i = 0; i < nx; i++) {
     double x = x0 + i * m_gridSize;
-    for (int j = 0; j < ny; j++)
-      painter->drawEllipse(QPointF(x, y0 + j * m_gridSize), r, r);
+    const bool majorX = std::llround(x / m_gridSize) % 5 == 0;
+    for (int j = 0; j < ny; j++) {
+      const double y = y0 + j * m_gridSize;
+      const bool major = majorX && std::llround(y / m_gridSize) % 5 == 0;
+      const double rr = major ? 1.6 * r : r;
+      painter->drawEllipse(QPointF(x, y), rr, rr);
+    }
   }
 }

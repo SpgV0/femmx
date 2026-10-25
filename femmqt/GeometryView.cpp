@@ -71,7 +71,10 @@ void GeometryView::fitInViewSafe(const QRectF& rect)
     return;
   QGraphicsView::ViewportAnchor prevAnchor = transformationAnchor();
   setTransformationAnchor(QGraphicsView::AnchorViewCenter);
-  fitInView(rect, Qt::KeepAspectRatio);
+  // A 5% margin all round: fitting edge to edge clipped the outline at
+  // the window border (#112).
+  const double mx = rect.width() * 0.05, my = rect.height() * 0.05;
+  fitInView(rect.adjusted(-mx, -my, mx, my), Qt::KeepAspectRatio);
   setTransformationAnchor(prevAnchor);
   refreshMarkerSizes();
 }
