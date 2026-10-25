@@ -3088,15 +3088,25 @@ void MainWindow::onHelpTopicsTriggered()
 // keyPressEvent check in GeometryScene/GeometryView -- see each row's own
 // source for where), listed here purely for discoverability. This is a
 // plain description of existing behavior, not a new binding -- keep it in
-// sync by hand if a shortcut is ever added/changed/removed above.
+// sync by hand if a shortcut is ever added/changed/removed above. The
+// Selection rows document Qt's own click/Ctrl/rubber-band model, which
+// differs from classic FEMM's accumulate-on-click (#125); a test checks
+// that every QAction shortcut appears here.
 void MainWindow::onKeyboardShortcutsTriggered()
 {
   QDialog dlg(this);
   dlg.setWindowTitle("Keyboard Shortcuts");
-  dlg.resize(420, 520);
+  dlg.setObjectName("keyboardShortcutsDialog");
+  dlg.resize(460, 600);
   auto* layout = new QVBoxLayout(&dlg);
 
   QString html = "<table cellspacing=6>"
+                  "<tr><td colspan=2><b>Selection</b> (Select tool)</td></tr>"
+                  "<tr><td><b>Click</b></td><td>Select one object, replacing the selection</td></tr>"
+                  "<tr><td><b>Ctrl+Click</b></td><td>Add an object to the selection, or take it out</td></tr>"
+                  "<tr><td><b>Drag</b></td><td>Select every object the box touches, replacing the selection</td></tr>"
+                  "<tr><td><b>Ctrl+Drag</b></td><td>Add what the box touches to the selection</td></tr>"
+                  "<tr><td><b>Click empty space</b></td><td>Clear the selection</td></tr>"
                   "<tr><td colspan=2><b>File</b></td></tr>"
                   "<tr><td><b>Ctrl+N</b></td><td>New</td></tr>"
                   "<tr><td><b>Ctrl+O</b></td><td>Open...</td></tr>"
@@ -3105,11 +3115,22 @@ void MainWindow::onKeyboardShortcutsTriggered()
                   "<tr><td><b>Ctrl+P</b></td><td>Print...</td></tr>"
                   "<tr><td colspan=2><b>Edit</b></td></tr>"
                   "<tr><td><b>Ctrl+Z</b></td><td>Undo</td></tr>"
+                  "<tr><td><b>Ctrl+Y</b> / <b>Ctrl+Shift+Z</b></td><td>Redo</td></tr>"
                   "<tr><td><b>Delete</b> / <b>Backspace</b></td><td>Delete selected</td></tr>"
                   "<tr><td><b>Space</b></td><td>Open Selected (edit properties)</td></tr>"
                   "<tr><td><b>Tab</b></td><td>Enter Point -- type an exact coordinate "
                   "while Add Node/Add Block Label is active</td></tr>"
+                  "<tr><td><b>Esc</b></td><td>Cancel a rectangle, circle or dimension "
+                  "waiting for its second click</td></tr>"
                   "<tr><td colspan=2><b>Tools</b></td></tr>"
+                  "<tr><td><b>N</b></td><td>Add Node</td></tr>"
+                  "<tr><td><b>L</b></td><td>Add Segment (line)</td></tr>"
+                  "<tr><td><b>A</b></td><td>Add Arc</td></tr>"
+                  "<tr><td><b>R</b></td><td>Rectangle</td></tr>"
+                  "<tr><td><b>C</b></td><td>Circle</td></tr>"
+                  "<tr><td><b>T</b></td><td>Trim</td></tr>"
+                  "<tr><td><b>E</b></td><td>Extend</td></tr>"
+                  "<tr><td><b>S</b></td><td>Split</td></tr>"
                   "<tr><td><b>D</b></td><td>Smart Dimension -- click a line for its "
                   "length, an arc for its radius, or two nodes for the distance "
                   "between them</td></tr>"

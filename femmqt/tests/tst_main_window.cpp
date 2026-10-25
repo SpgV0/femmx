@@ -157,6 +157,7 @@ class TestMainWindow : public QObject
   void aClickOrDoubleClickSelectsTheWholeNumber();
   void scaleAndMirrorAskInOneDialog();
   void selectionHintsGoToTheStatusBar();
+  void theShortcutListCoversSelectionAndEveryShortcut();
 };
 
 void TestMainWindow::initTestCase()
@@ -1308,6 +1309,38 @@ void TestMainWindow::selectionHintsGoToTheStatusBar()
   QCOMPARE(w.statusBar()->currentMessage(), QStringLiteral("Move: Nothing selected."));
   actionNamed(w, QStringLiteral("&Coincident"))->trigger();
   QCOMPARE(w.statusBar()->currentMessage(), QStringLiteral("Coincident: Select exactly 2 nodes."));
+}
+
+void TestMainWindow::theShortcutListCoversSelectionAndEveryShortcut()
+{
+  // The list said nothing about how selection works (it is not
+  // classic's), and had fallen behind: no Redo, no tool keys.
+  MainWindow w;
+  QString html;
+  QTimer::singleShot(0, [&html]() {
+    auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+    if (!dlg)
+      return;
+    if (auto* label = dlg->findChild<QLabel*>())
+      html = label->text();
+    dlg->accept();
+  });
+  actionNamed(w, QStringLiteral("&Keyboard Shortcuts..."))->trigger();
+  QVERIFY2(!html.isEmpty(), "the Keyboard Shortcuts dialog did not open");
+  QVERIFY(html.contains(QStringLiteral("Ctrl+Click")));
+  QVERIFY(html.contains(QStringLiteral("Ctrl+Drag")));
+
+  // Qt's short names for keys the list spells out.
+  const QMap<QString, QString> spelled = { { "Del", "Delete" }, { "PgUp", "Page Up" }, { "PgDown", "Page Down" },
+    { "Left", "Arrow keys" }, { "Right", "Arrow keys" }, { "Up", "Arrow keys" }, { "Down", "Arrow keys" } };
+  for (QAction* a : w.findChildren<QAction*>()) {
+    for (const QKeySequence& k : a->shortcuts()) {
+      QString key = k.toString(QKeySequence::PortableText);
+      key = spelled.value(key, key);
+      QVERIFY2(html.contains(QStringLiteral("<b>%1</b>").arg(key)),
+          qPrintable(QStringLiteral("%1 (%2) is missing from Keyboard Shortcuts").arg(key, a->text())));
+    }
+  }
 }
 
 QTEST_MAIN(TestMainWindow)
