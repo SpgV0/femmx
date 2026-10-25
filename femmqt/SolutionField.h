@@ -84,6 +84,10 @@ Quantity fieldQuantity(FemmProblemKind kind);
 // heat flow "T" in kelvin.
 Quantity potentialQuantity(FemmProblemKind kind);
 
+// The intensity -- the potential's gradient -- named and united for this
+// physics: |E| in V/m, |G| in K/m, |H| in A/m (#107).
+Quantity intensityQuantity(FemmProblemKind kind);
+
 // The gradient of the nodal potential across one element, in per-metre
 // units. Shared by all four; this is the whole of what the solution file
 // actually determines.

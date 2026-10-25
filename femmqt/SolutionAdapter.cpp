@@ -46,6 +46,16 @@ bool SolutionAdapter::toMeshSolution(const SolvedMesh& mesh, const FemmProblem& 
       dst.B2re = f.yRe;
       dst.B2im = f.yIm;
     }
+    // The intensity rides along so a density plot can show it too: |E|
+    // or |G|, the quantity classic offers beside the flux (#107). Only
+    // its magnitude is plotted, so the sign convention does not matter.
+    SolutionField::Vector2 g;
+    if (SolutionField::potentialGradient(mesh, p, i, g)) {
+      dst.g1re = g.xRe;
+      dst.g1im = g.xIm;
+      dst.g2re = g.yRe;
+      dst.g2im = g.yIm;
+    }
 
     const int n = out.nodes.size();
     if (src.p0 >= 0 && src.p0 < n && src.p1 >= 0 && src.p1 < n && src.p2 >= 0 && src.p2 < n) {

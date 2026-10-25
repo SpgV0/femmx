@@ -1,5 +1,7 @@
 #include "PlotStateArgs.h"
 
+#include <iterator>
+
 namespace {
 
 // In MeshSolutionItem::DensityQuantity order: BMag, BReMag, BImMag,
@@ -23,11 +25,15 @@ const QuantityName kQuantityNames[] = {
   { "jreal", 7 },
   { "jimag", 8 },
   { "logb", 9 },
+  // #107: the other physics' potential and intensity -- the letters
+  // classic's eo_/ho_/co_showdensityplot use for them.
+  { "potential", 10 }, { "v", 10 }, { "t", 10 },
+  { "intensity", 11 }, { "e", 11 }, { "g", 11 },
 };
 
 // The canonical spelling per index -- the first entry above for each.
-const char* const kCanonical[10] = { "bmag", "breal", "bimag", "hmag", "hreal",
-  "himag", "jmag", "jreal", "jimag", "logb" };
+const char* const kCanonical[12] = { "bmag", "breal", "bimag", "hmag", "hreal",
+  "himag", "jmag", "jreal", "jimag", "logb", "potential", "intensity" };
 
 bool takeDouble(const QStringList& args, int& i, const QString& option,
     double& out, QString& error)
@@ -80,7 +86,7 @@ int PlotStateArgs::quantityFromName(const QString& name)
 
 QString PlotStateArgs::nameForQuantity(int index)
 {
-  if (index < 0 || index >= 10)
+  if (index < 0 || index >= int(std::size(kCanonical)))
     return QString();
   return QString::fromLatin1(kCanonical[index]);
 }
@@ -107,7 +113,7 @@ bool PlotStateArgs::parse(const QStringList& args, PlotState& out, QString& erro
       if (q < 0) {
         error = QStringLiteral("--quantity: \"%1\" is not one of bmag, breal, "
                                "bimag, hmag, hreal, himag, jmag, jreal, jimag, "
-                               "logb")
+                               "logb, potential, intensity")
                     .arg(name);
         return false;
       }

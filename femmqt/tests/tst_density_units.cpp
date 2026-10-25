@@ -35,6 +35,8 @@
 #include <QLabel>
 #include "SolutionFileIO.h"
 #include "AnsFileIO.h"
+#include "FemmProblem.h"
+#include "SolutionAdapter.h"
 
 namespace {
 
@@ -54,6 +56,9 @@ QComboBox* quantityCombo(DensityPlotOptionsDialog& dlg)
   return dlg.findChild<QComboBox*>();
 }
 
+// Defined with the hover-readout helpers below.
+QString repoRoot();
+
 } // namespace
 
 class TestDensityUnits : public QObject
@@ -70,6 +75,7 @@ class TestDensityUnits : public QObject
   void magneticsKeepsAllTenQuantities();
   void theComboAndTheLegendAgree();
   void theComboAndTheLegendAgree_data();
+  void thePotentialAndIntensityPlotTheSolutionsOwnNumbers();
 
   // Issue #93.
   void theHoverReadoutUsesThisPhysicsUnits();
@@ -100,21 +106,24 @@ void TestDensityUnits::theQuantityIsNamedInThisPhysicsUnits()
   QComboBox* combo = quantityCombo(dlg);
   QVERIFY2(combo, "the dialog has no quantity combo");
 
-  QVERIFY2(combo->count() == 1,
-      qPrintable(QStringLiteral("%1 offers %2 density quantities; it has one "
-                                "field")
-                     .arg(ProblemKind::displayName(k)).arg(combo->count())));
+  // #107: the potential, the flux and the intensity, in classic's order
+  // -- it used to be the flux alone, disabled, so a heat-flow model had
+  // no temperature plot.
+  const QVector<SolutionField::Quantity> all = SolutionField::quantities(k);
+  QVERIFY2(combo->count() == all.size(),
+      qPrintable(QStringLiteral("%1 offers %2 density quantities; it has %3")
+                     .arg(ProblemKind::displayName(k)).arg(combo->count()).arg(all.size())));
+  QVERIFY(combo->isEnabled());
+  for (int i = 0; i < all.size(); i++)
+    QVERIFY2(combo->itemText(i).contains(all[i].unit), qPrintable(combo->itemText(i)));
 
-  const QString text = combo->itemText(0);
-  QVERIFY2(text.contains(unit),
-      qPrintable(QStringLiteral("the quantity reads \"%1\" -- expected %2")
-                     .arg(text, unit)));
-
-  // And it agrees with the one place that decides what the renderer is
-  // actually showing, rather than being a second opinion.
+  // The flux entry agrees with the one place that decides what the
+  // renderer's B slot holds, rather than being a second opinion.
   const SolutionField::Quantity f = SolutionField::fieldQuantity(k);
-  QVERIFY2(text.contains(f.name),
-      qPrintable(QStringLiteral("\"%1\" does not name %2").arg(text, f.name)));
+  bool found = false;
+  for (int i = 0; i < combo->count(); i++)
+    found = found || (combo->itemText(i).contains(f.name) && combo->itemText(i).contains(unit));
+  QVERIFY2(found, qPrintable(QStringLiteral("no entry names %1 in %2").arg(f.name, unit)));
   QCOMPARE(f.unit, unit);
 }
 
@@ -150,7 +159,7 @@ void TestDensityUnits::noOtherPhysicsQuantityIsOffered()
   DensityPlotOptionsDialog ac(&item, true, true, k);
   QComboBox* acCombo = quantityCombo(ac);
   QVERIFY(acCombo);
-  QCOMPARE(acCombo->count(), 1);
+  QCOMPARE(acCombo->count(), SolutionField::quantities(k).size());
 }
 
 void TestDensityUnits::magneticsKeepsAllTenQuantities()
@@ -169,7 +178,7 @@ void TestDensityUnits::magneticsKeepsAllTenQuantities()
   DensityPlotOptionsDialog ac(&item, true, true, FemmProblemKind::Magnetics);
   QComboBox* acCombo = quantityCombo(ac);
   QVERIFY(acCombo);
-  QCOMPARE(acCombo->count(), MeshSolutionItem::kDensityQuantityCount);
+  QCOMPARE(acCombo->count(), MeshSolutionItem::kMagneticsDensityQuantityCount);
   QVERIFY2(acCombo->itemText(0).contains("Tesla"),
       qPrintable(acCombo->itemText(0)));
 }
@@ -199,7 +208,66 @@ void TestDensityUnits::theComboAndTheLegendAgree()
 
   const QString legend = item.legendTitle(MeshSolutionItem::DensityQuantity::BMag);
   QVERIFY2(legend.contains(unit), qPrintable(legend));
-  QVERIFY2(combo->itemText(0).contains(unit), qPrintable(combo->itemText(0)));
+  // The combo now lists three; the one in the field's unit is the field.
+  bool found = false;
+  for (int i = 0; i < combo->count(); i++)
+    found = found || combo->itemText(i).contains(unit);
+  QVERIFY(found);
+
+  // and the other two name themselves in the legend too (#107)
+  item.setProblemKind(k);
+  const QString pot = item.legendTitle(MeshSolutionItem::DensityQuantity::Potential);
+  const QString inten = item.legendTitle(MeshSolutionItem::DensityQuantity::Intensity);
+  QVERIFY2(pot.contains(SolutionField::quantities(k).first().unit), qPrintable(pot));
+  QVERIFY2(inten.contains(SolutionField::intensityQuantity(k).unit), qPrintable(inten));
+}
+
+void TestDensityUnits::thePotentialAndIntensityPlotTheSolutionsOwnNumbers()
+{
+  // #107. The committed parallel-plate solution: the potential's plotted
+  // range must be the nodal voltages' range exactly, and in every element
+  // |D| = eps0 * er * |E| -- the intensity is the field the flux came
+  // from, not a relabelled copy of it.
+  const QString path = repoRoot() + "/test/fixtures/solutions/parallel_plate.res";
+  FemmProblem problem;
+  SolvedMesh solved;
+  QString error;
+  QVERIFY2(SolutionFileIO::read(path, problem, solved, error), qPrintable(error));
+  MeshSolution sol;
+  QVERIFY(SolutionAdapter::toMeshSolution(solved, problem, sol));
+
+  double vLo = 1e300, vHi = -1e300;
+  for (const SolutionNode& n : solved.nodes) {
+    vLo = std::min(vLo, n.potentialRe);
+    vHi = std::max(vHi, n.potentialRe);
+  }
+  QVERIFY2(vHi - vLo > 1, "precondition: the plates are at different voltages");
+
+  MeshSolutionItem item(&sol);
+  item.setProblemKind(FemmProblemKind::Electrostatics);
+  double lo = 0, hi = 0;
+  item.densityQuantityAutoRange(MeshSolutionItem::DensityQuantity::Potential, lo, hi);
+  QCOMPARE(lo, vLo);
+  QCOMPARE(hi, vHi);
+
+  constexpr double kEps0 = 8.8541878128e-12;
+  int checked = 0;
+  for (int i = 0; i < sol.elements.size(); i++) {
+    const MeshSolutionElement& e = sol.elements[i];
+    const double d = std::hypot(e.B1re, e.B2re);
+    const double eMag = std::hypot(e.g1re, e.g2re);
+    if (eMag <= 0)
+      continue;
+    const int mat = problem.blockLabels.value(e.lbl).blockTypeIndex - 1;
+    if (mat < 0 || mat >= problem.esMaterialProps.size())
+      continue;
+    const FemmEsMaterialProp& m = problem.esMaterialProps[mat];
+    const double expect = kEps0 * std::hypot(m.ex * e.g1re, m.ey * e.g2re);
+    QVERIFY2(std::abs(d - expect) <= 1e-9 * d + 1e-30,
+        qPrintable(QStringLiteral("element %1: |D| %2 vs eps0*er*|E| %3").arg(i).arg(d).arg(expect)));
+    checked++;
+  }
+  QVERIFY2(checked > 10, "too few elements checked to mean anything");
 }
 
 // ---------------------------------------------------------------------------

@@ -528,6 +528,30 @@ MeshSolutionItem::MeshSolutionItem(const MeshSolution* solution)
       for (int m = 0; m < g.elems.size(); m++)
         qd.cornerAvg[3 * g.elems[m] + g.corner[m]] = avg;
     }
+
+    // The potential IS nodal: its corners are the solved values exactly,
+    // not an average of element means, and its range is theirs (#107).
+    if (q == DensityQuantity::Potential) {
+      const int nn = solution->nodes.size();
+      bool firstNode = true;
+      for (int ei = 0; ei < numElements; ei++) {
+        const MeshSolutionElement& e = solution->elements[ei];
+        const int corners[3] = { e.p0, e.p1, e.p2 };
+        for (int k = 0; k < 3; k++) {
+          if (corners[k] < 0 || corners[k] >= nn)
+            continue;
+          const double pv = solution->nodes[corners[k]].Are;
+          qd.cornerAvg[3 * ei + k] = pv;
+          if (firstNode) {
+            qd.vMin = qd.vMax = pv;
+            firstNode = false;
+          } else {
+            qd.vMin = std::min(qd.vMin, pv);
+            qd.vMax = std::max(qd.vMax, pv);
+          }
+        }
+      }
+    }
   }
   m_lastDensityLo = m_quantityData[static_cast<int>(m_densityQuantity)].vMin;
   m_lastDensityHi = m_quantityData[static_cast<int>(m_densityQuantity)].vMax;
@@ -655,6 +679,19 @@ double MeshSolutionItem::elementQuantity(const MeshSolutionElement& e, DensityQu
   case DensityQuantity::JMag: return std::hypot(e.jRe, e.jIm);
   case DensityQuantity::JReMag: return std::fabs(e.jRe);
   case DensityQuantity::JImMag: return std::fabs(e.jIm);
+  // #107. The element's mean potential, for the flat (unsmoothed) case
+  // and the range; the plot itself uses the exact nodal values, see the
+  // corner values in the constructor. Signed: temperatures and voltages
+  // are, and the legend says so by carrying no bars. Offered only for
+  // the three real-potential physics, never for magnetics' complex A.
+  case DensityQuantity::Potential: {
+    const int n = m_solution->nodes.size();
+    if (e.p0 < 0 || e.p0 >= n || e.p1 < 0 || e.p1 >= n || e.p2 < 0 || e.p2 >= n)
+      return 0;
+    const auto& nodes = m_solution->nodes;
+    return (nodes[e.p0].Are + nodes[e.p1].Are + nodes[e.p2].Are) / 3.0;
+  }
+  case DensityQuantity::Intensity: return std::hypot(std::hypot(e.g1re, e.g1im), std::hypot(e.g2re, e.g2im));
   }
   return 0;
 }
@@ -757,6 +794,15 @@ void MeshSolutionItem::legendRange(double& lo, double& hi) const
 
 QString MeshSolutionItem::legendTitle(DensityQuantity q) const
 {
+  // #107: the other three physics' potential and intensity, by name.
+  if (q == DensityQuantity::Potential || q == DensityQuantity::Intensity) {
+    const QVector<SolutionField::Quantity> all = SolutionField::quantities(m_kind);
+    const SolutionField::Quantity f = q == DensityQuantity::Intensity
+        ? SolutionField::intensityQuantity(m_kind)
+        : (all.isEmpty() ? SolutionField::potentialQuantity(m_kind) : all.first());
+    return QStringLiteral("%1, %2").arg(f.name, f.unit);
+  }
+
   // #83: a non-magnetics solution renders its own field through the same
   // machinery, so the only thing that can be wrong is the label.
   if (!m_fieldLabelOverride.isEmpty())
@@ -773,6 +819,9 @@ QString MeshSolutionItem::legendTitle(DensityQuantity q) const
   case DensityQuantity::JReMag: return "|Js+Je|_re, MA/m^2";
   case DensityQuantity::JImMag: return "|Js+Je|_im, MA/m^2";
   case DensityQuantity::LogBMag: return "log10(|B|), log(Tesla)";
+  case DensityQuantity::Potential:
+  case DensityQuantity::Intensity:
+    break; // named above
   }
   return QString();
 }
@@ -901,6 +950,10 @@ void MeshSolutionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
 void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect)
 {
   const QuantityData& qd = m_quantityData[static_cast<int>(m_densityQuantity)];
+  // A potential is continuous across elements by construction, so it is
+  // always drawn from its nodal values -- flat per-element bands would
+  // show a staircase that is not in the solution (#107).
+  const bool smooth = m_smooth || m_densityQuantity == DensityQuantity::Potential;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-20: per
   // user request ("when zooming into a very detailed model, the field
@@ -971,7 +1024,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       double triMaxY = std::max({ n0.y, n1.y, n2.y });
       if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
         continue;
-      double v = m_smooth
+      double v = smooth
           ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0
           : elementQuantity(e, m_densityQuantity);
       double weight = std::sqrt(e.rsqr) * v * v;
@@ -1038,7 +1091,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
     if (triMaxX < exposedRect.left() || triMinX > exposedRect.right() || triMaxY < exposedRect.top() || triMinY > exposedRect.bottom())
       continue;
 
-    if (m_smooth && span > 0) {
+    if (smooth && span > 0) {
       // Marching-triangle band slicing on the 3 corners' individual
       // smoothed values -- see sliceTriangleIntoBands' comment. This is
       // what actually produces the smooth-gradient look (continuity
@@ -1050,7 +1103,7 @@ void MeshSolutionItem::paintDensity(QPainter* painter, const QRectF& exposedRect
       double bv2 = (qd.cornerAvg[3 * ei + 2] - bMin) / span * kNumBands;
       sliceTriangleIntoBands(QPointF(n0.x, n0.y), bv0, QPointF(n1.x, n1.y), bv1, QPointF(n2.x, n2.y), bv2, bandPaths);
     } else {
-      double bMag = m_smooth ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0 : elementQuantity(e, m_densityQuantity);
+      double bMag = smooth ? (qd.cornerAvg[3 * ei + 0] + qd.cornerAvg[3 * ei + 1] + qd.cornerAvg[3 * ei + 2]) / 3.0 : elementQuantity(e, m_densityQuantity);
       int band = (span > 0) ? (int)((bMag - bMin) / span * kNumBands) : 0;
       band = std::clamp(band, 0, kNumBands - 1);
 
@@ -2256,6 +2309,8 @@ bool SolutionWindow::openSolutionFile(const QString& path)
   // V/m" while showing |D| in C/m^2, wrong by eps0*er with numbers that
   // look plausible either way. fieldQuantity() names what elementField
   // actually returns.
+  if (m_item)
+    m_item->setProblemKind(kind);
   const SolutionField::Quantity primary = SolutionField::fieldQuantity(kind);
   if (m_item && !primary.name.isEmpty()) {
     m_item->setFieldLabelOverride(
@@ -3624,10 +3679,13 @@ bool SolutionWindow::applyPlotState(const PlotState& state, QString* error)
   // nothing at all in those formats. Drawing the field and calling it
   // whatever was asked for is the failure mode this whole area keeps
   // producing, so say no instead.
-  if (m_kind != FemmProblemKind::Magnetics && state.quantity > 0) {
+  const bool nonMagneticsQuantity = state.quantity <= 0
+      || state.quantity == static_cast<int>(MeshSolutionItem::DensityQuantity::Potential)
+      || state.quantity == static_cast<int>(MeshSolutionItem::DensityQuantity::Intensity);
+  if (m_kind != FemmProblemKind::Magnetics && !nonMagneticsQuantity) {
     if (error) {
       const SolutionField::Quantity f = SolutionField::fieldQuantity(m_kind);
-      *error = QStringLiteral("%1 solutions plot one density quantity, %2 -- "
+      *error = QStringLiteral("%1 solutions plot the potential, the intensity or %2 -- "
                               "not \"%3\"")
                    .arg(ProblemKind::displayName(m_kind), f.name,
                        PlotStateArgs::nameForQuantity(state.quantity));

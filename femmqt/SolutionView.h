@@ -119,7 +119,10 @@ class MeshSolutionItem : public QGraphicsItem {
   // direct 1:1 port instead of a subset. Nothing outside this app
   // persists these values (no .ans/.fem field, no QSettings key), so
   // reordering the existing 6 is safe.
-  enum class DensityQuantity { BMag, BReMag, BImMag, HMag, HReMag, HImMag, JMag, JReMag, JImMag, LogBMag };
+  // Potential and Intensity (#107) are the other three physics': the
+  // nodal potential (V or T) and |E| or |G|. Appended, so the indices the
+  // plot-state vocabulary uses keep their meaning.
+  enum class DensityQuantity { BMag, BReMag, BImMag, HMag, HReMag, HImMag, JMag, JReMag, JImMag, LogBMag, Potential, Intensity };
   // Modified by Claude (Anthropic), noreply@anthropic.com: named count for
   // DensityQuantity, used to size/fill m_quantityData below -- the enum
   // grew from 6 to 10 values without this (still hardcoded as 6 in both
@@ -132,7 +135,9 @@ class MeshSolutionItem : public QGraphicsItem {
   // real model. A named constant kept in lockstep with the enum, rather
   // than a second hardcoded number, is what actually prevents this class
   // of bug from recurring the next time a quantity is added.
-  static constexpr int kDensityQuantityCount = 10;
+  static constexpr int kDensityQuantityCount = 12;
+  // The first ten, magnetics' own -- what its Density Plot list offers.
+  static constexpr int kMagneticsDensityQuantityCount = 10;
   void setDensityQuantity(DensityQuantity q);
   DensityQuantity densityQuantity() const { return m_densityQuantity; }
 
@@ -192,6 +197,8 @@ class MeshSolutionItem : public QGraphicsItem {
   // Empty (the default) means magnetics, and legendTitle keeps its
   // existing per-quantity strings.
   void setFieldLabelOverride(const QString& label) { m_fieldLabelOverride = label; }
+  // Which physics the solution is, for the legend's per-quantity names.
+  void setProblemKind(FemmProblemKind kind) { m_kind = kind; }
   PlotMode plotMode() const { return m_mode; }
 
   // Matches femm/FemmviewView.cpp's OnCplot/IDD_CPLOTDLG(2) -- Number of
@@ -292,6 +299,7 @@ class MeshSolutionItem : public QGraphicsItem {
   PlotMode m_mode = PlotMode::Contour;
   DensityQuantity m_densityQuantity = DensityQuantity::BMag;
   QString m_fieldLabelOverride; // #83, see setFieldLabelOverride
+  FemmProblemKind m_kind = FemmProblemKind::Magnetics; // #107
   bool m_smooth = true;
   // See setGrayscale/setCustomRange's declarations above.
   bool m_grayscale = false;

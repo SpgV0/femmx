@@ -32,6 +32,10 @@ const char* kQuantityLabels[DensityPlotOptionsDialog::kNumQuantities] = {
   "|J_re| (MA/m^2)",
   "|J_im| (MA/m^2)",
   "log10(|B|)",
+  // #107 -- never shown from this table: the other physics name these
+  // from SolutionField. Present so the array covers every quantity.
+  "Potential",
+  "Intensity",
 };
 // Matches femm/cv_DPlotDlg2.cpp's OnInitDialog listtype==1 (DC) case --
 // only the magnitude/log quantities (no Re/Im split, meaningless for a
@@ -52,23 +56,26 @@ DensityPlotOptionsDialog::DensityPlotOptionsDialog(MeshSolutionItem* item,
   auto* form = new QFormLayout;
   m_quantityCombo = new QComboBox(this);
   if (kind != FemmProblemKind::Magnetics) {
-    // One quantity, named in ITS units. The labels above are magnetics'
-    // and saying "|B| (Tesla)" over a heat-flux plot is the defect this
-    // fixes, not a harmless caption.
-    const SolutionField::Quantity f = SolutionField::fieldQuantity(kind);
-    m_comboToQuantity.push_back(static_cast<int>(MeshSolutionItem::DensityQuantity::BMag));
-    m_quantityCombo->addItem(QStringLiteral("%1 (%2)").arg(f.name, f.unit));
-    // Disabled rather than hidden: an empty row would read as a missing
-    // feature, where the real answer is that this physics has one field.
-    m_quantityCombo->setEnabled(false);
-    m_quantityCombo->setToolTip(
-        QStringLiteral("%1 solutions carry one field quantity. The others in "
-                       "this list are magnetics': |H| and |J| come from "
-                       "permeability and conductivity, which mean something "
-                       "else in this format.")
-            .arg(ProblemKind::displayName(kind)));
+    // This physics' own three, in classic's order, each named in its own
+    // units: the potential (V or T), the flux (|D|, |F|, |J|) and the
+    // intensity (|E|, |G|). It used to offer the flux alone, disabled --
+    // no temperature plot for a heat-flow model (#107). The magnetics
+    // labels above stay out: "|B| (Tesla)" over a heat-flux plot was
+    // #87's defect.
+    const SolutionField::Quantity field = SolutionField::fieldQuantity(kind);
+    const SolutionField::Quantity intensity = SolutionField::intensityQuantity(kind);
+    const QVector<SolutionField::Quantity> all = SolutionField::quantities(kind);
+    for (int i = 0; i < all.size(); i++) {
+      MeshSolutionItem::DensityQuantity q = MeshSolutionItem::DensityQuantity::Potential;
+      if (all[i].name == field.name)
+        q = MeshSolutionItem::DensityQuantity::BMag;
+      else if (all[i].name == intensity.name)
+        q = MeshSolutionItem::DensityQuantity::Intensity;
+      m_comboToQuantity.push_back(static_cast<int>(q));
+      m_quantityCombo->addItem(QStringLiteral("%1 (%2)").arg(all[i].name, all[i].unit));
+    }
   } else if (isAcSolution) {
-    for (int i = 0; i < kNumQuantities; i++) {
+    for (int i = 0; i < MeshSolutionItem::kMagneticsDensityQuantityCount; i++) {
       m_comboToQuantity.push_back(i);
       m_quantityCombo->addItem(kQuantityLabels[i]);
     }

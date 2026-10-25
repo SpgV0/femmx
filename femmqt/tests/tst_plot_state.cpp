@@ -25,6 +25,7 @@
 // particular palette, antialiasing setting or Qt version.
 
 #include <QtTest>
+#include "SolutionView.h"
 
 #include "PlotStateArgs.h"
 #include "FemmProblem.h"
@@ -240,6 +241,9 @@ void TestPlotState::everyQuantityNameTheScriptLanguageAcceptsIsUnderstood()
     { "hmag", 3 }, { "hreal", 4 }, { "himag", 5 },
     { "jmag", 6 }, { "jreal", 7 }, { "jimag", 8 },
     { "logb", 9 },
+    // #107: the other physics' potential and intensity
+    { "potential", 10 }, { "v", 10 }, { "t", 10 },
+    { "intensity", 11 }, { "e", 11 }, { "g", 11 },
   };
   for (const auto& e : expected) {
     QCOMPARE(PlotStateArgs::quantityFromName(e.first), e.second);
@@ -252,14 +256,14 @@ void TestPlotState::everyQuantityNameTheScriptLanguageAcceptsIsUnderstood()
   QCOMPARE(PlotStateArgs::quantityFromName(""), -1);
 
   // The indices have to match MeshSolutionItem::DensityQuantity's order,
-  // which is what applyPlotState casts them to. Ten of them, and the
+  // which is what applyPlotState casts them to. Twelve of them, and the
   // canonical name must round-trip.
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < MeshSolutionItem::kDensityQuantityCount; i++) {
     const QString name = PlotStateArgs::nameForQuantity(i);
     QVERIFY2(!name.isEmpty(), qPrintable(QStringLiteral("no name for %1").arg(i)));
     QCOMPARE(PlotStateArgs::quantityFromName(name), i);
   }
-  QVERIFY(PlotStateArgs::nameForQuantity(10).isEmpty());
+  QVERIFY(PlotStateArgs::nameForQuantity(MeshSolutionItem::kDensityQuantityCount).isEmpty());
   QVERIFY(PlotStateArgs::nameForQuantity(-1).isEmpty());
 }
 
@@ -655,6 +659,14 @@ void TestPlotState::aQuantityTheOtherPhysicsCannotDrawIsRefusedByName()
                          "220", "--density" },
                &err),
       qPrintable("a plain density render was refused too: " + err));
+
+  // #107: and its potential and intensity, which it now plots.
+  for (const char* q : { "potential", "intensity" }) {
+    QVERIFY2(runRender({ "--render-png", path, m_tmp.filePath(QStringLiteral("q_%1.png").arg(q)), "300",
+                           "220", "--density", "--quantity", QString::fromLatin1(q) },
+                 &err),
+        qPrintable(QStringLiteral("--quantity %1 was refused: %2").arg(q, err)));
+  }
 }
 
 void TestPlotState::noMagneticsOnlyRefusalIsLeftStanding()

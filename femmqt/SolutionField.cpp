@@ -90,6 +90,20 @@ QVector<SolutionField::Quantity> SolutionField::quantities(FemmProblemKind kind)
   return {};
 }
 
+SolutionField::Quantity SolutionField::intensityQuantity(FemmProblemKind kind)
+{
+  switch (kind) {
+  case FemmProblemKind::Magnetics:
+    return { QStringLiteral("Field intensity |H|"), QStringLiteral("A/m"), QStringLiteral("H") };
+  case FemmProblemKind::Electrostatics:
+  case FemmProblemKind::CurrentFlow:
+    return { QStringLiteral("Field intensity |E|"), QStringLiteral("V/m"), QStringLiteral("E") };
+  case FemmProblemKind::HeatFlow:
+    return { QStringLiteral("Temperature gradient |G|"), QStringLiteral("K/m"), QStringLiteral("G") };
+  }
+  return {};
+}
+
 SolutionField::Quantity SolutionField::potentialQuantity(FemmProblemKind kind)
 {
   switch (kind) {
