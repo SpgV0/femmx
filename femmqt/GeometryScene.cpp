@@ -691,7 +691,13 @@ QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QP
       addArrowhead(path, dimB, -along, arrowLen);
     }
     textPos = (dimA + dimB) / 2.0;
-    text = QString::number(d.value, 'g', 6);
+    // Round-off is not a measurement: a value a billionth of the
+    // coordinates it spans reads 0, not "2.89256e-10" (#118).
+    {
+      const double scale = std::max({ 1.0, std::abs(a.x()), std::abs(a.y()), std::abs(b.x()), std::abs(b.y()) });
+      const double v = std::abs(d.value) < 1e-9 * scale ? 0.0 : d.value;
+      text = QString::number(v, 'g', 6);
+    }
     break;
   }
   case DimensionType::Radius: {
@@ -1986,6 +1992,13 @@ void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
   // which is fine, since refA/refB/refC/type were already captured above.
   cancelSmartDimensionPreview();
 
+  // The prompt offers the measurement, not its round-off (#118).
+  {
+    const QRectF b = computeProblemBounds();
+    const double scale = std::max({ 1.0, std::abs(b.left()), std::abs(b.right()), std::abs(b.top()), std::abs(b.bottom()) });
+    if (std::abs(curValue) < 1e-9 * scale)
+      curValue = 0;
+  }
   bool ok = false;
   double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
       "Smart Dimension", label, curValue, minVal, maxVal, 6, &ok);

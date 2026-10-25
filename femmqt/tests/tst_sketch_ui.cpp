@@ -196,6 +196,8 @@ private slots:
   void theDistanceToolPlacesWhereYouClick();
   void theRadiusToolPlacesWhereYouClick();
   void aPlacedDimensionCanBeDragged();
+  // #118
+  void aRoundOffDimensionReadsZero();
 };
 
 // ---------------------------------------------------------------------------
@@ -1648,6 +1650,32 @@ void TestSketchUi::aPlacedDimensionCanBeDragged()
   QCOMPARE(p.dimensions[0].labelOffsetX, 0.0);
   QCOMPARE(p.dimensions[0].labelOffsetY, 40.0); // above the edge now
   QCOMPARE(p.dimensions[0].value, 100.0);       // a move, not an edit
+}
+
+void TestSketchUi::aRoundOffDimensionReadsZero()
+{
+  // The review's preview: a vertical distance between two nodes of a
+  // horizontal edge, measured as 2.89256e-10.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 60, 2.89256e-10);
+  FemmDimension d;
+  d.type = DimensionType::VerticalDistance;
+  d.refA = 0;
+  d.refB = 1;
+  d.value = 2.89256e-10;
+  d.labelOffsetX = 10;
+  p.dimensions << d;
+  FemmDimension e = d;
+  e.type = DimensionType::Distance;
+  e.value = 60.000000000123;
+  e.labelOffsetX = 0;
+  e.labelOffsetY = -10;
+  p.dimensions << e;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  QCOMPARE(dimensionLabel(h.scene, 0)->text(), QStringLiteral("0"));
+  QCOMPARE(dimensionLabel(h.scene, 1)->text(), QStringLiteral("60"));
 }
 
 QTEST_MAIN(TestSketchUi)
