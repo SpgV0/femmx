@@ -1,6 +1,6 @@
 ---
 name: push-branch-policy
-description: "In femmx (SpgV0/femmx), work and push go to new_features as of 2026-09-12; main is no longer the working branch"
+description: "In femmx (SpgV0/femmx), work and push go to main as of 2026-10-25; new_features was merged and deleted (rule has flipped twice)"
 metadata: 
   node_type: memory
   type: feedback
@@ -8,7 +8,14 @@ metadata:
   modified: 2026-09-12T00:00:00.000Z
 ---
 
-**Current rule (2026-09-12): work on `new_features` and push there.**
+**Current rule (2026-10-25): work on `main` and push there.** The user
+said: "delete new features and rc branch, and start working only in main".
+`new_features` (39 commits ahead of main) was fast-forwarded into `main`
+and pushed, then deleted locally and on origin. `rc` did not exist.
+
+**Superseded (2026-09-12 to 2026-10-25): work on `new_features`.**
+
+Earlier note, 2026-09-12:
 The user reversed the main-only rule with: "Continue work on
 new_features branch instead of main and push changes there from now on."
 `new_features` was recreated from `main` at commit ed2c2ed and pushed;
