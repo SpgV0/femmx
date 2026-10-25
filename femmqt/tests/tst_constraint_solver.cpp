@@ -24,6 +24,7 @@
 // staying out of a saved .fem.
 
 #include <QtTest>
+#include "SketchTransform.h"
 
 #include "ConstraintSolver.h"
 #include "FemmFileIO.h"
@@ -608,6 +609,12 @@ private slots:
   void typingTheNaturalAngleKeepsTheVertexOnItsSide();
   void aSignedAngleFromAnOlderFileActsAsItsMagnitude();
   void constraintsAreRefusedTheWayDimensionsAre();
+
+  // #106: Fix
+  void aFixedCornerStaysPutWhileADimensionStretchesTheEdge();
+  void aFixedNodeDraggedAwayIsPulledBackBySolve();
+  void movingAFixedNodeOnPurposeMovesWhereItIsFixed();
+  void twoFixesThatDisagreeWithADimensionAreAConflict();
 };
 
 // ---------------------------------------------------------------------------
@@ -1213,6 +1220,99 @@ void TestConstraintSolver::constraintsAreRefusedTheWayDimensionsAre()
   QCOMPARE(ConstraintSolver::addConstraint(p, up).outcome, ConstraintSolver::EditOutcome::Applied);
   QCOMPARE(p.constraints.size(), 2);
   QVERIFY(std::abs(p.nodes[2].x - p.nodes[1].x) < 1e-8);
+}
+
+namespace {
+
+FemmConstraint fixAt(const FemmProblem& p, int node)
+{
+  FemmConstraint c;
+  c.type = ConstraintType::Fix;
+  c.refA = node;
+  c.fixX = p.nodes[node].x;
+  c.fixY = p.nodes[node].y;
+  return c;
+}
+
+} // namespace
+
+void TestConstraintSolver::aFixedCornerStaysPutWhileADimensionStretchesTheEdge()
+{
+  // The review: a rectangle's bottom edge dimensioned 50 -> 70 moved BOTH
+  // ends 10, so the corner placed at the origin left it.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 50, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  QCOMPARE(ConstraintSolver::addConstraint(p, fixAt(p, 0)).outcome, ConstraintSolver::EditOutcome::Applied);
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 0;
+  d.refB = 1;
+  d.value = 70;
+  QCOMPARE(ConstraintSolver::addDimension(p, d).outcome, ConstraintSolver::EditOutcome::Applied);
+  QVERIFY2(std::abs(p.nodes[0].x) < 1e-8 && std::abs(p.nodes[0].y) < 1e-8,
+      qPrintable(QStringLiteral("the fixed corner moved to (%1, %2)").arg(p.nodes[0].x).arg(p.nodes[0].y)));
+  QVERIFY(std::abs(p.nodes[1].x - 70) < 1e-6);
+  // A fixed point has no freedom left of its own.
+  QCOMPARE(ConstraintSolver::classify(p).nodeStatus.value(0), ConstraintSolver::SketchStatus::UnderConstrained);
+}
+
+void TestConstraintSolver::aFixedNodeDraggedAwayIsPulledBackBySolve()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 3, 4);
+  p.constraints << fixAt(p, 0);
+  p.nodes[0].x = 9; // what a drag does
+  QVERIFY(!ConstraintSolver::classify(p).converged);
+  QVERIFY(ConstraintSolver::solve(p).converged);
+  QVERIFY(std::abs(p.nodes[0].x - 3) < 1e-8 && std::abs(p.nodes[0].y - 4) < 1e-8);
+  QCOMPARE(ConstraintSolver::classify(p).nodeStatus.value(0), ConstraintSolver::SketchStatus::FullyConstrained);
+}
+
+void TestConstraintSolver::movingAFixedNodeOnPurposeMovesWhereItIsFixed()
+{
+  // Move/Rotate/Scale/Mirror is the user moving it, unlike a drag that
+  // a solve corrects. The next solve must not undo the transform.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 3, 4);
+  p.constraints << fixAt(p, 0);
+  p.nodes[0].isSelected = true;
+  p.nodes[0].x += 10; // the transform itself
+  SketchTransform::Motion m;
+  m.type = SketchTransform::Motion::Translate;
+  SketchTransform::adjustAfterInPlace(p, m, nullptr);
+  QCOMPARE(p.constraints[0].fixX, 13.0);
+  QCOMPARE(p.constraints[0].fixY, 4.0);
+  QVERIFY(ConstraintSolver::classify(p).converged);
+
+  // A copy is fixed where the copy is.
+  FemmProblem q;
+  FemmProblemEdit::addNode(q, 1, 1);
+  q.constraints << fixAt(q, 0);
+  FemmProblemEdit::addNode(q, 6, 1); // the copy of node 0
+  SketchTransform::copyOntoCopies(q, { { 0, 1 } }, {}, {}, m, nullptr);
+  QCOMPARE(q.constraints.size(), 2);
+  QCOMPARE(q.constraints[1].refA, 1);
+  QCOMPARE(q.constraints[1].fixX, 6.0);
+  QVERIFY(ConstraintSolver::classify(q).converged);
+}
+
+void TestConstraintSolver::twoFixesThatDisagreeWithADimensionAreAConflict()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 50, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  p.constraints << fixAt(p, 0) << fixAt(p, 1);
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 0;
+  d.refB = 1;
+  d.value = 70;
+  QCOMPARE(ConstraintSolver::addDimension(p, d).outcome, ConstraintSolver::EditOutcome::Conflicting);
+  d.value = 50;
+  QCOMPARE(ConstraintSolver::addDimension(p, d).outcome, ConstraintSolver::EditOutcome::Redundant);
 }
 
 QTEST_GUILESS_MAIN(TestConstraintSolver)

@@ -90,6 +90,7 @@ private slots:
   void aDeletedReferenceIsReportedNotReattached();
   void anAmbiguousReferenceIsReportedRatherThanGuessed();
   void aNewerFormatIsRefusedRatherThanMisread();
+  void aFixKeepsWhereItHoldsItsNodeAcrossAReload();
 };
 
 // ---------------------------------------------------------------------------
@@ -424,6 +425,38 @@ void TestSketchPersistence::aNewerFormatIsRefusedRatherThanMisread()
       "a sidecar from a newer format version was read anyway");
   QVERIFY2(error.contains("newer"), qPrintable(error));
   QCOMPARE(p.constraints.size(), 0);
+}
+
+void TestSketchPersistence::aFixKeepsWhereItHoldsItsNodeAcrossAReload()
+{
+  // #106. Saved while its node sits AWAY from the fixed spot (mid-drag,
+  // before a solve), the fix must come back holding the original spot,
+  // not wherever the node happened to be.
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  const QString fem = dir.filePath("fixed.fem");
+  FemmProblem p = sketchedRectangle();
+  FemmConstraint fix;
+  fix.type = ConstraintType::Fix;
+  fix.refA = 0;
+  fix.fixX = -1.25;
+  fix.fixY = 0.5;
+  p.constraints.push_back(fix);
+  QString error;
+  QVERIFY2(FemmFileIO::writeFem(fem, p, error), qPrintable(error));
+  QVERIFY2(SketchFileIO::writeSketch(fem, p, error), qPrintable(error));
+
+  FemmProblem back;
+  QVERIFY2(FemmFileIO::readFem(fem, back, error), qPrintable(error));
+  QStringList report;
+  QVERIFY2(SketchFileIO::readSketch(fem, back, report, error), qPrintable(error));
+  QVERIFY2(report.isEmpty(), qPrintable(report.join("; ")));
+  QCOMPARE(back.constraints.size(), p.constraints.size());
+  const FemmConstraint& f = back.constraints.last();
+  QCOMPARE((int)f.type, (int)ConstraintType::Fix);
+  QCOMPARE(f.refA, 0);
+  QCOMPARE(f.fixX, -1.25);
+  QCOMPARE(f.fixY, 0.5);
 }
 
 QTEST_GUILESS_MAIN(TestSketchPersistence)

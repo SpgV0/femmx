@@ -204,6 +204,10 @@ void FemmProblemEdit::remapSketchReferences(FemmProblem& p,
       n.refC = mapped(segmentMap, c.refC);
       ok = n.refA >= 0 && n.refB >= 0 && n.refC >= 0;
       break;
+    case ConstraintType::Fix:
+      n.refA = mapped(nodeMap, c.refA);
+      ok = n.refA >= 0;
+      break;
     }
     if (ok)
       keptConstraints.push_back(n);

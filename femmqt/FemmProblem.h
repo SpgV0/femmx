@@ -409,6 +409,9 @@ enum class ConstraintType {
   Tangent,
   Concentric,
   Symmetric,
+  // Appended, not inserted: the .fes sidecar stores the type as its
+  // number, so every existing value must keep its meaning (#106).
+  Fix,
 };
 
 // Meaning of refA/refB/refC depends on `type`:
@@ -422,11 +425,16 @@ enum class ConstraintType {
 //   Concentric:    refA, refB = arc indices
 //   Symmetric:     refA, refB = node indices, refC = segment index
 //                  (the mirror line)
+//   Fix:           refA = node index, held at (fixX, fixY) -- where it
+//                  was when fixed. Without it a dimension solve moved
+//                  every end it could, so a corner placed at the origin
+//                  left the origin (#106).
 struct FemmConstraint {
   ConstraintType type = ConstraintType::Coincident;
   int refA = -1, refB = -1, refC = -1;
   bool isArcPair = false; // Equal only: refA/refB are arc, not segment, indices
   bool firstIsArc = false; // Tangent only: refA is an arc, not a segment, index
+  double fixX = 0, fixY = 0; // Fix only
 };
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: HorizontalDistance/

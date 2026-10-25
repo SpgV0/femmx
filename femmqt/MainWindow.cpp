@@ -124,6 +124,7 @@ QString constraintTypeName(ConstraintType type)
   case ConstraintType::Tangent: return "Tangent";
   case ConstraintType::Concentric: return "Concentric";
   case ConstraintType::Symmetric: return "Symmetric";
+  case ConstraintType::Fix: return "Fix";
   }
   return "?";
 }
@@ -316,6 +317,7 @@ MainWindow::MainWindow(QWidget* parent)
   constraintsMenu->addAction("&Tangent", this, &MainWindow::onTangentConstraintTriggered);
   constraintsMenu->addAction("Co&ncentric", this, &MainWindow::onConcentricConstraintTriggered);
   constraintsMenu->addAction("&Symmetric", this, &MainWindow::onSymmetricConstraintTriggered);
+  constraintsMenu->addAction("&Fix", this, &MainWindow::onFixConstraintTriggered);
   constraintsMenu->addSeparator();
   constraintsMenu->addAction("&Solve Constraints", this, &MainWindow::onSolveConstraintsTriggered);
   constraintsMenu->addAction("Constraint &List...", this, &MainWindow::onConstraintListTriggered);
@@ -692,6 +694,7 @@ MainWindow::MainWindow(QWidget* parent)
   addThemedAction(constraintsToolBar, ":/icons/constraint_tangent.svg", "Tangent", "Tangent -- select 1 segment + 1 arc, or 2 arcs", &MainWindow::onTangentConstraintTriggered);
   addThemedAction(constraintsToolBar, ":/icons/constraint_concentric.svg", "Concentric", "Concentric -- select 2 arcs", &MainWindow::onConcentricConstraintTriggered);
   addThemedAction(constraintsToolBar, ":/icons/constraint_symmetric.svg", "Symmetric", "Symmetric -- select 2 nodes + 1 segment (the mirror line)", &MainWindow::onSymmetricConstraintTriggered);
+  addThemedAction(constraintsToolBar, ":/icons/constraint_fix.svg", "Fix", "Fix -- select 1 or more nodes to hold where they are", &MainWindow::onFixConstraintTriggered);
   HoverTooltip::installOn(constraintsToolBar);
 
   QToolBar* meshToolBar = addToolBar("Mesh");
@@ -2689,6 +2692,53 @@ void MainWindow::onSymmetricConstraintTriggered()
   c.refB = nodes[1];
   c.refC = segments[0];
   applyConstraint(c);
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-10-25 (#106).
+// Holds each selected node where it is, so a dimension solve moves the
+// geometry around it instead of moving it -- the corner at the origin
+// stays at the origin. Every node in one undo step.
+void MainWindow::onFixConstraintTriggered()
+{
+  QVector<int> nodes, segments, arcs, blocks;
+  m_scene->selectedByKind(nodes, segments, arcs, blocks);
+  if (nodes.isEmpty() || !segments.isEmpty() || !arcs.isEmpty()) {
+    Notify::information(this, "Fix", "Select one or more nodes (nothing else).");
+    return;
+  }
+  FemmProblem trial = m_problem;
+  ConstraintSolver::EditResult r;
+  int added = 0;
+  for (int n : nodes) {
+    bool already = false;
+    for (const FemmConstraint& c : trial.constraints)
+      already = already || (c.type == ConstraintType::Fix && c.refA == n);
+    if (already)
+      continue;
+    FemmConstraint c;
+    c.type = ConstraintType::Fix;
+    c.refA = n;
+    c.fixX = trial.nodes[n].x;
+    c.fixY = trial.nodes[n].y;
+    r = ConstraintSolver::addConstraint(trial, c);
+    if (r.outcome != ConstraintSolver::EditOutcome::Applied) {
+      Notify::warning(this, "Constraint Not Added",
+          ConstraintSolver::refusalMessage(r.outcome, QStringLiteral("Fix")));
+      return;
+    }
+    added++;
+  }
+  if (added == 0) {
+    statusBar()->showMessage("Already fixed.", 4000);
+    return;
+  }
+  snapshotForUndo();
+  m_problem.nodes = trial.nodes;
+  m_problem.constraints = trial.constraints;
+  m_scene->setSketchStatus(r.solve);
+  m_scene->rebuild();
+  markEdited();
+  statusBar()->showMessage(QStringLiteral("Fixed %1 node(s).").arg(added), 4000);
 }
 
 void MainWindow::onSolveConstraintsTriggered()

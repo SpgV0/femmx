@@ -100,6 +100,8 @@ class TestMainWindow : public QObject
   void solvingAnAlreadySatisfiedSketchIsNotAnEdit();
   // #103
   void anImpossibleDimensionEditIsRefusedThroughTheWindow();
+  // #106
+  void fixFromTheMenuHoldsTheSelectedNodesInOneUndoStep();
 };
 
 void TestMainWindow::initTestCase()
@@ -570,6 +572,40 @@ void TestMainWindow::anImpossibleDimensionEditIsRefusedThroughTheWindow()
     QCOMPARE(p.nodes[i].y, before.nodes[i].y);
   }
   QCOMPARE(w.windowTitle(), title); // not dirty, so no edit happened
+}
+
+void TestMainWindow::fixFromTheMenuHoldsTheSelectedNodesInOneUndoStep()
+{
+  // Two free nodes and a third left alone. (Fixing a node whose
+  // position the sketch already determines is refused as redundant --
+  // that is the solver tests' business, not this one's.)
+  MainWindow w;
+  w.newDocument(FemmProblemKind::Magnetics);
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addNode(p, 20, 5);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  auto* scene = w.findChild<GeometryScene*>();
+  scene->rebuild();
+  for (QGraphicsItem* item : scene->items()) {
+    if (item->data(0).isValid() && item->data(0).toInt() == static_cast<int>(FemmItemKind::Node)
+        && (item->data(1).toInt() == 0 || item->data(1).toInt() == 2))
+      item->setSelected(true);
+  }
+  const int before = w.problem().constraints.size();
+  QAction* fix = actionNamed(w, QStringLiteral("&Fix"));
+  QVERIFY2(fix, "Constraints > Fix is missing");
+  fix->trigger();
+  QCOMPARE(w.problem().constraints.size(), before + 2);
+  for (int i = before; i < before + 2; i++) {
+    const FemmConstraint& c = w.problem().constraints[i];
+    QCOMPARE((int)c.type, (int)ConstraintType::Fix);
+    QCOMPARE(c.fixX, w.problem().nodes[c.refA].x);
+    QCOMPARE(c.fixY, w.problem().nodes[c.refA].y);
+  }
+  actionNamed(w, QStringLiteral("&Undo"))->trigger();
+  QCOMPARE(w.problem().constraints.size(), before);
 }
 
 QTEST_MAIN(TestMainWindow)

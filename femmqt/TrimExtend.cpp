@@ -285,6 +285,7 @@ int countReferences(const FemmProblem& p, EntityKind kind, int index)
         n++;
       break;
     case ConstraintType::Coincident:
+    case ConstraintType::Fix:
       break;
     }
   }

@@ -129,6 +129,7 @@ int residualCountForConstraint(ConstraintType type)
   case ConstraintType::Coincident:
   case ConstraintType::Concentric:
   case ConstraintType::Symmetric:
+  case ConstraintType::Fix:
     return 2;
   default:
     return 1;
@@ -419,6 +420,8 @@ double evaluateOne(const FemmProblem& p, const ResidualSource& src)
     residualSymmetric(p, c, r0, r1);
     return src.subIndex == 0 ? r0 : r1;
   }
+  case ConstraintType::Fix:
+    return src.subIndex == 0 ? nx(p, c.refA) - c.fixX : ny(p, c.refA) - c.fixY;
   }
   return 0;
 }
@@ -500,6 +503,8 @@ QVector<int> touchedNodes(const FemmProblem& p, const FemmConstraint& c)
     const FemmSegment& mirror = p.segments[c.refC];
     return {c.refA, c.refB, mirror.n0, mirror.n1};
   }
+  case ConstraintType::Fix:
+    return {c.refA};
   }
   return {};
 }

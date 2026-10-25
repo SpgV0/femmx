@@ -848,6 +848,7 @@ QString constraintIconPath(ConstraintType type)
   case ConstraintType::Tangent: return ":/icons/constraint_tangent.svg";
   case ConstraintType::Concentric: return ":/icons/constraint_concentric.svg";
   case ConstraintType::Symmetric: return ":/icons/constraint_symmetric.svg";
+  case ConstraintType::Fix: return ":/icons/constraint_fix.svg";
   }
   return QString();
 }

@@ -51,6 +51,9 @@ void constraintRefLists(const FemmConstraint& c, RefList out[3])
     out[0] = out[1] = RefList::Node;
     out[2] = RefList::Segment;
     break;
+  case ConstraintType::Fix:
+    out[0] = RefList::Node;
+    break;
   }
 }
 
@@ -264,6 +267,12 @@ void SketchTransform::copyOntoCopies(FemmProblem& p, const QHash<int, int>& node
         copy.type = swapAxis(c.type);
     }
 
+    // A copy's Fix holds the COPY where the copy landed -- not the
+    // original's spot, which would drag it back on the next solve (#106).
+    if (copy.type == ConstraintType::Fix && copy.refA >= 0 && copy.refA < p.nodes.size()) {
+      copy.fixX = p.nodes[copy.refA].x;
+      copy.fixY = p.nodes[copy.refA].y;
+    }
     p.constraints.push_back(copy);
     if (report)
       report->constraintsCopied++;
@@ -344,6 +353,14 @@ void SketchTransform::adjustAfterInPlace(FemmProblem& p, const Motion& motion, R
   const AxisFate fate = axisFate(motion);
 
   for (FemmConstraint& c : p.constraints) {
+    // Moving a fixed node on purpose -- Move, Rotate, Scale, Mirror --
+    // moves where it is fixed. Otherwise the next solve undoes the
+    // transform the user just asked for (#106).
+    if (c.type == ConstraintType::Fix && nodeMoved(c.refA)) {
+      c.fixX = p.nodes[c.refA].x;
+      c.fixY = p.nodes[c.refA].y;
+      continue;
+    }
     if (!isAxisConstraint(c.type))
       continue; // every other kind is preserved by a rigid motion or a uniform scale
     RefList lists[3];

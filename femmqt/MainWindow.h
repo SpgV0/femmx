@@ -134,6 +134,7 @@ class MainWindow : public QMainWindow {
   void onTangentConstraintTriggered();
   void onConcentricConstraintTriggered();
   void onSymmetricConstraintTriggered();
+  void onFixConstraintTriggered();
   // Forces a re-solve of every current constraint/dimension -- useful
   // after a batch of edits, or just to double-check sketch health.
   void onSolveConstraintsTriggered();

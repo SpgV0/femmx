@@ -54,6 +54,7 @@
     <file alias="constraint_tangent.svg">toolbar_icons/constraint_tangent.svg</file>
     <file alias="constraint_concentric.svg">toolbar_icons/constraint_concentric.svg</file>
     <file alias="constraint_symmetric.svg">toolbar_icons/constraint_symmetric.svg</file>
+    <file alias="constraint_fix.svg">toolbar_icons/constraint_fix.svg</file>
     <file alias="dimension_distance.svg">toolbar_icons/dimension_distance.svg</file>
     <file alias="dimension_radius.svg">toolbar_icons/dimension_radius.svg</file>
     <file alias="dimension_angle.svg">toolbar_icons/dimension_angle.svg</file>

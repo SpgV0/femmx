@@ -70,6 +70,9 @@ void constraintRefKinds(const FemmConstraint& c, RefKind kinds[3])
     kinds[0] = kinds[1] = RefKind::Node;
     kinds[2] = RefKind::Segment;
     break;
+  case ConstraintType::Fix:
+    kinds[0] = RefKind::Node;
+    break;
   }
 }
 
@@ -370,6 +373,10 @@ bool SketchFileIO::writeSketch(const QString& modelPath, const FemmProblem& p,
           << (ok ? fingerprintToString(f, kinds[i])
                  : QStringLiteral("0 0 0 0"));
     }
+    // Fix carries where it holds its node -- appended, so a reader that
+    // predates it (which never meets a Fix) still parses every line.
+    if (c.type == ConstraintType::Fix)
+      out << " " << QString::number(c.fixX, 'g', 17) << " " << QString::number(c.fixY, 'g', 17);
     out << "\n";
   }
 
@@ -526,6 +533,15 @@ bool SketchFileIO::readSketch(const QString& modelPath, FemmProblem& p,
       c.refA = resolved[0];
       c.refB = resolved[1];
       c.refC = resolved[2];
+      if (c.type == ConstraintType::Fix) {
+        if (f.size() >= 4 + 3 * 5 + 2) {
+          c.fixX = f[4 + 3 * 5].toDouble();
+          c.fixY = f[4 + 3 * 5 + 1].toDouble();
+        } else {
+          c.fixX = p.nodes[c.refA].x;
+          c.fixY = p.nodes[c.refA].y;
+        }
+      }
       p.constraints.push_back(c);
       continue;
     }
