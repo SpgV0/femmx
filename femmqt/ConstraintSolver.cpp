@@ -318,8 +318,14 @@ double residualAngle(const FemmProblem& p, const FemmDimension& d)
     diff -= 2 * M_PI;
   while (diff <= -M_PI)
     diff += 2 * M_PI;
-  double targetRad = d.value * M_PI / 180.0;
-  return diff - targetRad;
+  // A MAGNITUDE, 0..180: the angle between the two rays, on whichever
+  // side of the vertex the geometry already is. It used to be signed,
+  // ray1 -> ray2: the Smart preview read -75.96 for a trapezoid's corner,
+  // and typing the natural 90 swung the vertex to the other side and made
+  // a bow-tie (#105). abs() of the stored value also reads a signed one
+  // from an older .fes the way it was always drawn.
+  double targetRad = std::abs(d.value) * M_PI / 180.0;
+  return std::abs(diff) - targetRad;
 }
 
 // Angle between two LINES, measured at their intersection (real or

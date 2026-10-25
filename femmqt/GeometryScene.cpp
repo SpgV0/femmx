@@ -768,7 +768,9 @@ QPainterPath buildDimensionPath(const FemmProblem& p, const FemmDimension& d, QP
 
     double midAngle = a1 + diff / 2.0;
     textPos = v + r * 1.3 * QPointF(std::cos(midAngle), std::sin(midAngle));
-    text = QString("%1 deg").arg(d.value, 0, 'g', 6);
+    // AngleLines is already 0..180; Angle is a magnitude too (#105), and
+    // a signed value from an older sketch file shows as one.
+    text = QString("%1 deg").arg(std::abs(d.value), 0, 'g', 6);
     break;
   }
   }
@@ -1816,7 +1818,7 @@ void GeometryScene::updateSmartDimensionPreview(QPointF mousePos)
       diff -= 2 * M_PI;
     while (diff <= -M_PI)
       diff += 2 * M_PI;
-    preview.value = diff * 180.0 / M_PI;
+    preview.value = std::abs(diff) * 180.0 / M_PI; // a magnitude (#105)
     break;
   }
   }
@@ -1948,10 +1950,12 @@ void GeometryScene::commitSmartDimensionPlacement(QPointF mousePos)
       diff -= 2 * M_PI;
     while (diff <= -M_PI)
       diff += 2 * M_PI;
-    curValue = diff * 180.0 / M_PI;
+    // The angle between the rays, 0..180, kept on the side it is on
+    // (#105) -- see residualAngle in ConstraintSolver.cpp.
+    curValue = std::abs(diff) * 180.0 / M_PI;
     label = "Angle (deg):";
-    minVal = -359.99;
-    maxVal = 359.99;
+    minVal = 0.0;
+    maxVal = 180.0;
     break;
   }
   }
@@ -2652,10 +2656,10 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
           diff -= 2 * M_PI;
         while (diff <= -M_PI)
           diff += 2 * M_PI;
-        double curDeg = diff * 180.0 / M_PI;
+        double curDeg = std::abs(diff) * 180.0 / M_PI; // a magnitude (#105)
         bool ok = false;
         double value = QInputDialog::getDouble(views().isEmpty() ? nullptr : views().first(),
-            "Angle Dimension", "Angle (deg, ray1 -> ray2):", curDeg, -359.99, 359.99, 2, &ok);
+            "Angle Dimension", "Angle (deg):", curDeg, 0.0, 180.0, 2, &ok);
         if (ok) {
           FemmDimension dim;
           dim.type = DimensionType::Angle;

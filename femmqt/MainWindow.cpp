@@ -2157,9 +2157,11 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
       label = "Radius:";
       break;
     case DimensionType::Angle:
+      // A magnitude: the angle between the rays, kept on the side of the
+      // vertex it is on (#105).
       label = "Angle (deg):";
-      minVal = -359.99;
-      maxVal = 359.99;
+      minVal = 0.0;
+      maxVal = 180.0;
       break;
     case DimensionType::AngleLines:
       // Lines have no direction, so their angle only spans (0,180) -- see
@@ -2170,8 +2172,11 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
       break;
     }
     bool ok = false;
-    double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, dim.value, minVal, maxVal, 6, &ok);
-    if (ok && newValue != dim.value) {
+    // abs(): an Angle saved signed by an older version is offered as the
+    // magnitude it is drawn as, not clamped to 0 by the dialog's range.
+    const double shown = dim.type == DimensionType::Angle ? std::abs(dim.value) : dim.value;
+    double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, shown, minVal, maxVal, 6, &ok);
+    if (ok && newValue != shown) {
       // Tried on a copy: an impossible value used to be kept, with the
       // geometry unmoved and the nodes red and nothing said (#103).
       FemmProblem trial = m_problem;

@@ -603,6 +603,10 @@ private slots:
   void aValueThatOnlyCrossingLinesCanMeetIsRefused();
   void anImpossibleValueEditIsRefusedAndAPossibleOneApplied();
   void classifyNamesTheUnsatisfiedDimensions();
+
+  // #105: an angle dimension is a magnitude, kept on its side.
+  void typingTheNaturalAngleKeepsTheVertexOnItsSide();
+  void aSignedAngleFromAnOlderFileActsAsItsMagnitude();
 };
 
 // ---------------------------------------------------------------------------
@@ -1115,6 +1119,73 @@ void TestConstraintSolver::classifyNamesTheUnsatisfiedDimensions()
   const ConstraintSolver::SolveResult r = ConstraintSolver::classify(p);
   QVERIFY(!r.converged);
   QVERIFY2(r.unsatisfiedDimensions.contains(1), "the conflicting dimension was not named");
+}
+
+namespace {
+
+// The review's trapezoid and its corner angle: vertex 0, rays to the
+// left side's top (3) and along the bottom (1) -- -75.96 degrees signed.
+FemmProblem trapezoid()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 70, 0);
+  FemmProblemEdit::addNode(p, 60, 40);
+  FemmProblemEdit::addNode(p, 10, 40);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmProblemEdit::addSegment(p, 2, 3);
+  FemmProblemEdit::addSegment(p, 3, 0);
+  return p;
+}
+
+double signedCornerDegrees(const FemmProblem& p)
+{
+  const double a1 = std::atan2(p.nodes[3].y - p.nodes[0].y, p.nodes[3].x - p.nodes[0].x);
+  const double a2 = std::atan2(p.nodes[1].y - p.nodes[0].y, p.nodes[1].x - p.nodes[0].x);
+  double d = a2 - a1;
+  while (d > M_PI)
+    d -= 2 * M_PI;
+  while (d <= -M_PI)
+    d += 2 * M_PI;
+  return d * 180.0 / M_PI;
+}
+
+} // namespace
+
+void TestConstraintSolver::typingTheNaturalAngleKeepsTheVertexOnItsSide()
+{
+  FemmProblem p = trapezoid();
+  QVERIFY(std::abs(signedCornerDegrees(p) + 75.963756532) < 1e-6);
+  FemmDimension d;
+  d.type = DimensionType::Angle;
+  d.refA = 0;
+  d.refB = 3;
+  d.refC = 1;
+  d.value = 90; // what anyone types for a right angle
+  const ConstraintSolver::EditResult r = ConstraintSolver::addDimension(p, d);
+  QVERIFY2(r.outcome == ConstraintSolver::EditOutcome::Applied,
+      qPrintable(QStringLiteral("refused: %1").arg(ConstraintSolver::refusalMessage(r.outcome))));
+  QVERIFY2(std::abs(signedCornerDegrees(p) + 90) < 1e-5,
+      qPrintable(QStringLiteral("the corner is now %1 degrees signed; -90 keeps it on its side")
+                     .arg(signedCornerDegrees(p))));
+  // The left side stayed above the bottom edge: still a trapezoid.
+  QVERIFY(p.nodes[3].y > 0);
+}
+
+void TestConstraintSolver::aSignedAngleFromAnOlderFileActsAsItsMagnitude()
+{
+  FemmProblem p = trapezoid();
+  FemmDimension d;
+  d.type = DimensionType::Angle;
+  d.refA = 0;
+  d.refB = 3;
+  d.refC = 1;
+  d.value = -75.963756532073536; // as the old Smart Dimension stored it
+  p.dimensions << d;
+  QVERIFY(ConstraintSolver::classify(p).converged); // already satisfied
+  p.dimensions[0].value = 75.963756532073536;
+  QVERIFY(ConstraintSolver::classify(p).converged); // and so is its magnitude
 }
 
 QTEST_GUILESS_MAIN(TestConstraintSolver)

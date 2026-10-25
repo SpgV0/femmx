@@ -412,7 +412,7 @@ void TestMainWindow::editingAnAngleDimensionThenUndoRestoresTheValueToo()
   QVERIFY(!qIsNaN(at.x()));
   const QPointF before3(p.nodes[3].x, p.nodes[3].y);
 
-  answerNextInputDialog(-80); // same side of the vertex: the signed convention until #104
+  answerNextInputDialog(80);
   QGraphicsSceneMouseEvent dbl(QEvent::GraphicsSceneMouseDoubleClick);
   dbl.setScenePos(at);
   dbl.setButton(Qt::LeftButton);
@@ -420,6 +420,15 @@ void TestMainWindow::editingAnAngleDimensionThenUndoRestoresTheValueToo()
   QApplication::sendEvent(scene, &dbl);
   QVERIFY2(std::abs(std::abs(p.dimensions[0].value) - 80) < 1e-9,
       qPrintable(QStringLiteral("the edit did not take: value %1").arg(p.dimensions[0].value)));
+  // #105: the label reads the magnitude, and the vertex stayed on its
+  // side -- typing 80 for a -75.96 corner used to make a bow-tie.
+  for (QGraphicsItem* item : scene->items()) {
+    if (auto* t = qgraphicsitem_cast<QGraphicsSimpleTextItem*>(item)) {
+      if (t->data(0).toInt() == static_cast<int>(FemmItemKind::Dimension) && t->data(0).isValid())
+        QVERIFY2(!t->text().startsWith('-'), qPrintable(t->text()));
+    }
+  }
+  QVERIFY2(p.nodes[3].y > 0, "the corner swung below the bottom edge");
 
   QAction* undo = actionNamed(w, QStringLiteral("&Undo"));
   undo->trigger();
