@@ -1,11 +1,59 @@
 #include "AppTheme.h"
 
 #include <QApplication>
+#include <QPainter>
+#include <QProxyStyle>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QStyleOption>
 
 namespace {
 bool g_dark = false;
+
+// Fusion strokes check and radio indicators in a colour derived from
+// QPalette::Window alone -- window.darker(140).lighter(110) -- so no
+// palette role can strengthen it. On the light theme's #F3F4F6 panels
+// that was 52 luminance levels: on a real screen, an unchecked box read
+// as no checkbox at all (#101). This draws Fusion's indicator and then
+// a crisp outline in QPalette::Dark, which each theme sets. Line-edit
+// frames get the same treatment for the same reason.
+class FemmxStyle : public QProxyStyle {
+  public:
+  using QProxyStyle::QProxyStyle;
+
+  void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter,
+      const QWidget* widget) const override
+  {
+    QProxyStyle::drawPrimitive(element, option, painter, widget);
+    if (element != PE_IndicatorCheckBox && element != PE_IndicatorRadioButton
+        && element != PE_FrameLineEdit)
+      return;
+    painter->save();
+    QColor edge = option->palette.color(QPalette::Dark);
+    if (!(option->state & State_Enabled))
+      edge.setAlpha(110);
+    painter->setPen(QPen(edge, 1));
+    painter->setBrush(Qt::NoBrush);
+    const QRectF r = QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5);
+    if (element == PE_IndicatorRadioButton) {
+      painter->setRenderHint(QPainter::Antialiasing, true);
+      painter->drawEllipse(r);
+    } else if (element == PE_FrameLineEdit) {
+      // Same derivation, same problem, worst on the dark theme: a field's
+      // frame was 17 levels off the panel there. Fusion rounds it by 2.
+      painter->setRenderHint(QPainter::Antialiasing, true);
+      painter->drawRoundedRect(r, 2, 2);
+    } else {
+      painter->drawRect(r);
+    }
+    painter->restore();
+  }
+};
+
+QStyle* femmxStyle()
+{
+  return new FemmxStyle(QStyleFactory::create("Fusion"));
+}
 }
 
 bool AppTheme::isDark()
@@ -35,7 +83,7 @@ void AppTheme::setDark(bool dark)
     // Fusion is Qt's own recommended style for custom palettes -- it
     // honors every role below, including Base -- so dark mode switches
     // to it explicitly rather than fighting the native style.
-    qApp->setStyle(QStyleFactory::create("Fusion"));
+    qApp->setStyle(femmxStyle());
 
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
     // user-supplied reference palette ("FEMMX GUI -- Dark Theme, 5 Color
@@ -56,8 +104,11 @@ void AppTheme::setDark(bool dark)
     QColor accent(0x00, 0x7A, 0xCC);
     p.setColor(QPalette::Window, surface);
     p.setColor(QPalette::WindowText, text);
-    p.setColor(QPalette::Base, surface);
+    // Darker than the panels, so a field reads as a field (#101). The
+    // canvas background tone, #1E1E1E.
+    p.setColor(QPalette::Base, QColor(0x1E, 0x1E, 0x1E));
     p.setColor(QPalette::AlternateBase, QColor(0x25, 0x25, 0x26));
+    p.setColor(QPalette::Dark, QColor(0x8A, 0x8A, 0x8A)); // indicator outline, see FemmxStyle
     p.setColor(QPalette::ToolTipBase, QColor(0x3C, 0x3C, 0x3C));
     p.setColor(QPalette::ToolTipText, text);
     p.setColor(QPalette::Text, text);
@@ -84,7 +135,7 @@ void AppTheme::setDark(bool dark)
     // underlying problem (native styles not honoring a custom palette on
     // these controls) -- switch to Fusion here too, with a clean, modern
     // light palette instead of trusting the native style's own colors.
-    qApp->setStyle(QStyleFactory::create("Fusion"));
+    qApp->setStyle(femmxStyle());
 
     // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-22: per
     // the same user-supplied reference palette as the dark branch above
@@ -101,8 +152,11 @@ void AppTheme::setDark(bool dark)
     QColor accent(0x00, 0x7A, 0xCC);
     p.setColor(QPalette::Window, surface);
     p.setColor(QPalette::WindowText, text);
-    p.setColor(QPalette::Base, surface);
-    p.setColor(QPalette::AlternateBase, Qt::white);
+    // White, not the panel colour: with Base == Window every field and
+    // every checkbox interior was the panel itself (#101).
+    p.setColor(QPalette::Base, Qt::white);
+    p.setColor(QPalette::AlternateBase, QColor(0xF8, 0xF9, 0xFA));
+    p.setColor(QPalette::Dark, QColor(0x7A, 0x80, 0x88)); // indicator outline, see FemmxStyle
     p.setColor(QPalette::ToolTipBase, Qt::white);
     p.setColor(QPalette::ToolTipText, text);
     p.setColor(QPalette::Text, text);

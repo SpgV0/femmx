@@ -1228,6 +1228,10 @@ void MeshSolutionItem::paintMeshOverlay(QPainter* painter, const QRectF& exposed
     pen.setCosmetic(true);
     pen.setWidth(0); // see addNodeItem's (GeometryScene.cpp) comment on width 0 vs the QPen(color) ctor's default of 1
     painter->setPen(pen);
+    // Outlines only. paintDensity() leaves its last fill brush set, and
+    // drawPath() fills a closed path with whatever brush is current: the
+    // whole mesh came out in the top legend colour, hiding the plot (#100).
+    painter->setBrush(Qt::NoBrush);
     painter->drawPath(path);
   }
 
