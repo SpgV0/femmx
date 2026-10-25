@@ -187,6 +187,7 @@ LoadMonitorDialog::LoadMonitorDialog(QWidget* parent)
   m_log->setReadOnly(true);
   m_log->setMaximumBlockCount(1200); // ~200 solves worth of 6-line groups, matches femm/LoadMonitorDlg.h's kMaxLogLines intent
   m_log->setFixedHeight(120);
+  m_log->setPlaceholderText(QStringLiteral("Live load above. Each solve's time and max/avg load is logged here."));
   layout->addWidget(m_log);
 
   auto* saveButton = new QPushButton("Save Chart as PNG...", content);
@@ -359,12 +360,14 @@ void LoadMonitorDialog::appendLogLines(const QString& label, double durationSec,
 
 void LoadMonitorDialog::onTick()
 {
-  if (!m_solveInProgress)
-    return;
+  // Live whenever the monitor is open (#121); only the solve's own
+  // samples go into its max/avg.
   float cpu = sampleCpuPercent();
   float gpu = sampleGpuPercent();
   float ram = sampleRamPercent();
   m_chart->pushSample(cpu, gpu, m_gpuAvailable, ram);
+  if (!m_solveInProgress)
+    return;
 
   m_solveCpuSum += cpu;
   m_solveCpuMax = std::max(m_solveCpuMax, cpu);

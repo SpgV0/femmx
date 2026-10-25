@@ -49,6 +49,7 @@
 #include "ProblemFileIO.h"
 #include "SketchFileIO.h"
 #include "BlockLabelPropDialog.h"
+#include "LoadMonitorDialog.h"
 #include "BoundaryPropDialog.h"
 #include "MaterialLibraryDialog.h"
 #include "PropertyListDialog.h"
@@ -148,6 +149,7 @@ class TestMainWindow : public QObject
   void addNewOpensTheEditorAndFixedAShowsItsFormula();
   // #120
   void everySolverProcessStartsQuietly();
+  void theLoadMonitorIsLiveBeforeAnySolve();
 };
 
 void TestMainWindow::initTestCase()
@@ -1178,6 +1180,19 @@ void TestMainWindow::everySolverProcessStartsQuietly()
         qPrintable(QStringLiteral("SolveRunner.cpp line %1 starts %2 without startQuietly").arg(i + 1).arg(proc)));
   }
   QVERIFY2(starts >= 2, "found fewer process starts than triangle + solver");
+}
+
+void TestMainWindow::theLoadMonitorIsLiveBeforeAnySolve()
+{
+  // Opened with no solve running, the chart used to stay empty forever.
+  LoadMonitorDialog monitor;
+  monitor.setMonitoring(true);
+  auto* chart = monitor.findChild<LoadMonitorChartWidget*>();
+  QVERIFY(chart);
+  QTRY_VERIFY2_WITH_TIMEOUT(chart->sampleCount() >= 2, "no samples without a solve", 3000);
+  auto* log = monitor.findChild<QPlainTextEdit*>();
+  QVERIFY2(log && !log->placeholderText().isEmpty(), "the empty log says nothing");
+  monitor.setMonitoring(false);
 }
 
 QTEST_MAIN(TestMainWindow)

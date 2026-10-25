@@ -24,6 +24,7 @@ class LoadMonitorChartWidget : public QWidget {
   void reset();
   void pushSample(float cpu, float gpu, bool gpuAvailable, float ram);
   void addMarker(bool start);
+  int sampleCount() const { return m_cpuHistory.size(); }
 
   protected:
   void paintEvent(QPaintEvent* event) override;
@@ -48,9 +49,10 @@ class LoadMonitorChartWidget : public QWidget {
 // Qt port of femm/LoadMonitorDlg.h's CLoadMonitorDlg -- see that header's
 // comment for the overall design this mirrors (CPU via GetSystemTimes,
 // GPU via NVML loaded dynamically so there's no hard CUDA link dependency,
-// RAM via GlobalMemoryStatusEx; only samples -- and only advances the
-// chart -- while a solve is actually bracketed between markSolveStart()/
-// markSolveEnd(), same as the classic dialog's own OnTimer). Owned by
+// RAM via GlobalMemoryStatusEx). Unlike the classic dialog, the chart is
+// live whenever the monitor is open -- it used to advance only between
+// markSolveStart()/markSolveEnd() and so looked dead until a solve ran
+// (#121); the per-solve max/avg log still covers only the solve. Owned by
 // MainWindow (only the geometry editor ever triggers a solve in femmqt;
 // SolutionWindow has no matching "Load Monitor" menu item, see
 // MainWindow.cpp's View menu comment for why that scoping is enough).
