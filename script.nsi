@@ -143,6 +143,20 @@ Unicode True
 ; that's a value name, not a subkey index, so it never actually detected an
 ; existing install at all.
 Function .onInit
+    ; One installer at a time (#128). A single Explorer double-click
+    ; started two, and both went on to ask about the existing install;
+    ; two running at once would uninstall and write the same files. The
+    ; mutex is held until this process exits. ?e pushes GetLastError:
+    ; 183 is ERROR_ALREADY_EXISTS.
+    System::Call 'kernel32::CreateMutex(p 0, i 0, t "FEMMX_Installer") p .r9 ?e'
+    Pop $8
+    ${If} $8 = 183
+        ${IfNot} ${Silent}
+            MessageBox MB_OK|MB_ICONEXCLAMATION "The ${PROJECT_NAME} installer is already running."
+        ${EndIf}
+        Abort
+    ${EndIf}
+
     ClearErrors
     ReadRegStr $0 HKCU "${PROJECT_REG_UNINSTALL_KEY}" "QuietUninstallString"
     IfErrors done

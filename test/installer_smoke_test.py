@@ -69,6 +69,11 @@ def _note(text):
 
 
 def _installer():
+    # FEMMX_INSTALLER names a specific build -- one staged outside bin/,
+    # say -- instead of the newest one there.
+    override = os.environ.get("FEMMX_INSTALLER")
+    if override:
+        return override if os.path.exists(override) else None
     found = sorted(glob.glob(os.path.join(BIN_DIR, "FEMMX_v*_installer.exe")))
     return found[-1] if found else None
 
@@ -652,6 +657,60 @@ def test_uninstall_removes_everything_it_installed(installed):
     assert dir_gone, (
         "%s still exists after uninstall; contents: %r"
         % (installed, os.listdir(installed)[:10]))
+
+
+@pytest.mark.slow
+def test_a_second_installer_stops_while_one_is_running(restored_com,
+                                                       hidden_existing_install):
+    """One Explorer double-click started two installers (#128).
+
+    The running installer is stood in for by holding its mutex here. A
+    second, silent installer must then stop without installing -- and
+    within seconds, not by sitting on a dialog nobody can answer. The
+    two fixtures matter even though nothing should install: if the
+    mutex check ever regresses, this run is a real silent install, and
+    .onInit's upgrade path would otherwise uninstall the machine's own
+    FEMMX.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    installer = _installer()
+    if not installer:
+        pytest.skip("no FEMMX_v*_installer.exe -- build it first")
+    target = INSTALL_DIR + "_mutex"
+    if os.path.isdir(target):
+        shutil.rmtree(target, ignore_errors=True)
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL,
+                                      wintypes.LPCWSTR)
+    handle = kernel32.CreateMutexW(None, False, "FEMMX_Installer")
+    assert handle, "could not create the installer mutex"
+    try:
+        proc = subprocess.Popen([installer, "/S", "/D=%s" % target],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        try:
+            proc.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise AssertionError("the second installer neither stopped nor "
+                                 "finished within 60s")
+        installed_anyway = os.path.exists(
+            os.path.join(target, "bin", "femmx.exe"))
+        _note("    second installer with the mutex held: exit %d, "
+              "installed %s" % (proc.returncode, installed_anyway))
+        if installed_anyway:
+            _uninstall(target)
+        assert not installed_anyway, (
+            "a second installer ran to completion while the first held "
+            "the mutex")
+        assert proc.returncode != 0, "an aborted install reported success"
+    finally:
+        kernel32.CloseHandle(handle)
+        shutil.rmtree(target, ignore_errors=True)
 
 
 def test_write_report():

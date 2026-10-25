@@ -161,6 +161,7 @@ class TestMainWindow : public QObject
   void theShortcutListCoversSelectionAndEveryShortcut();
   void createMeshLeavesNoFilesBesideTheModel();
   void theExteriorShellsDoNotSetTheRange();
+  void theInstallerRunsOneAtATime();
 };
 
 void TestMainWindow::initTestCase()
@@ -1419,6 +1420,23 @@ void TestMainWindow::theExteriorShellsDoNotSetTheRange()
   QVERIFY2(AnsxFileIO::readAnsx(ansx, cached, err), qPrintable(err));
   QCOMPARE(cached.bMagMin, lo);
   QCOMPARE(cached.bMagMax, hi);
+}
+
+void TestMainWindow::theInstallerRunsOneAtATime()
+{
+  // One double-click started two installers. The behaviour is tested
+  // against a built installer in test/installer_smoke_test.py; this keeps
+  // the mutex where it must be -- first in .onInit, before the existing-
+  // install check that would otherwise run twice.
+  QFile f(QStringLiteral(FEMMQT_SOURCE_DIR "/../script.nsi"));
+  QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString nsi = QString::fromUtf8(f.readAll());
+  const int onInit = nsi.indexOf(QStringLiteral("Function .onInit"));
+  QVERIFY(onInit > 0);
+  const int mutex = nsi.indexOf(QStringLiteral("CreateMutex"), onInit);
+  const int existing = nsi.indexOf(QStringLiteral("QuietUninstallString"), onInit);
+  QVERIFY2(mutex > 0 && mutex < existing, "the installer takes no mutex before checking for an existing install");
+  QVERIFY(nsi.indexOf(QStringLiteral("Abort"), mutex) < existing);
 }
 
 QTEST_MAIN(TestMainWindow)
