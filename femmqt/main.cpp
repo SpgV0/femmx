@@ -21,6 +21,7 @@
 #include "PlotStateArgs.h"
 #include "MeshSolution.h"
 #include "SolutionView.h"
+#include "SpinBoxSelectAll.h"
 
 #include <cmath>
 #include <complex>
@@ -228,6 +229,7 @@ int main(int argc, char* argv[])
   // could find on purpose.
   QCoreApplication::setOrganizationName("FEMMX");
   QCoreApplication::setApplicationName("femmqt");
+  installSpinBoxSelectAll(&app);
 
   // Must happen before any window is constructed -- IconTheme::
   // themedToolIcon() and GeometryScene/SolutionWindow's background brush

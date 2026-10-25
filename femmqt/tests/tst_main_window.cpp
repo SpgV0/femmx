@@ -14,6 +14,8 @@
 // file and the demos directory is committed.
 
 #include <QtTest>
+#include <QVBoxLayout>
+#include <QDoubleSpinBox>
 
 #include <QCheckBox>
 #include <QAbstractButton>
@@ -50,6 +52,7 @@
 #include "SketchFileIO.h"
 #include "BlockLabelPropDialog.h"
 #include "LoadMonitorDialog.h"
+#include "SpinBoxSelectAll.h"
 #include "BoundaryPropDialog.h"
 #include "MaterialLibraryDialog.h"
 #include "PropertyListDialog.h"
@@ -150,6 +153,7 @@ class TestMainWindow : public QObject
   // #120
   void everySolverProcessStartsQuietly();
   void theLoadMonitorIsLiveBeforeAnySolve();
+  void aClickOrDoubleClickSelectsTheWholeNumber();
 };
 
 void TestMainWindow::initTestCase()
@@ -1193,6 +1197,43 @@ void TestMainWindow::theLoadMonitorIsLiveBeforeAnySolve()
   auto* log = monitor.findChild<QPlainTextEdit*>();
   QVERIFY2(log && !log->placeholderText().isEmpty(), "the empty log says nothing");
   monitor.setMonitoring(false);
+}
+
+void TestMainWindow::aClickOrDoubleClickSelectsTheWholeNumber()
+{
+  // A double-click selected one word -- "75" of "-75.90" -- and a click
+  // into the box placed a caret, so typing a new value mangled the old.
+  installSpinBoxSelectAll(qApp);
+  installSpinBoxSelectAll(qApp); // idempotent
+  QWidget host;
+  auto* layout = new QVBoxLayout(&host);
+  auto* other = new QLineEdit(&host);
+  auto* spin = new QDoubleSpinBox(&host);
+  spin->setRange(-1000, 1000);
+  spin->setValue(-75.9);
+  layout->addWidget(other);
+  layout->addWidget(spin);
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  QLineEdit* edit = spin->findChild<QLineEdit*>();
+  QVERIFY(edit);
+  const QPoint middle = edit->rect().center();
+
+  other->setFocus();
+  QTest::mouseClick(edit, Qt::LeftButton, {}, middle);
+  QTRY_COMPARE(edit->selectedText(), edit->text());
+
+  edit->deselect();
+  QTest::mouseDClick(edit, Qt::LeftButton, {}, middle);
+  QTRY_COMPARE(edit->selectedText(), edit->text());
+
+  // Once focused, a plain click places the caret as usual (after the
+  // triple-click window, which selects all by itself).
+  QTest::qWait(QApplication::doubleClickInterval() + 50);
+  edit->deselect();
+  QTest::mouseClick(edit, Qt::LeftButton, {}, middle);
+  QTest::qWait(20);
+  QVERIFY(edit->selectedText().isEmpty());
 }
 
 QTEST_MAIN(TestMainWindow)
