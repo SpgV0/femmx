@@ -31,7 +31,9 @@
 
 #include "AnsFileIO.h"
 #include "FemmProblem.h"
+#include "ContourSampler.h"
 #include "MagneticsIntegrals.h"
+#include "PlotXYChartWidget.h"
 #include "MeshSolution.h"
 
 #include <cmath>
@@ -78,6 +80,11 @@ class TestMagneticsIntegrals : public QObject
   void everyIntegralMatchesClassic();
   void aStressTensorSelectionTouchingIronIsRefused();
   void thePolynomialIntegralsAreExactForLinearFields();
+
+  // #114: Plot X-Y's sampler, against the straight wire's closed form.
+  void aRadialContourMeetsTheWiresAnalyticField();
+  void plotXYOffersClassicsQuantities();
+  void theChartHasAxisTitlesAndNiceTicks();
 };
 
 void TestMagneticsIntegrals::initTestCase()
@@ -187,6 +194,82 @@ void TestMagneticsIntegrals::thePolynomialIntegralsAreExactForLinearFields()
   QCOMPARE(MagneticsIntegrals::plnInt(2.0, one, lin).real(), 2.0 * 3.0);
   const double r[3] = { 1., 2., 3. };
   QVERIFY(std::abs(MagneticsIntegrals::axiInt(0.5, one, one, r).real() - 2. * M_PI * 2. * 0.5) < 1e-12);
+}
+
+void TestMagneticsIntegrals::aRadialContourMeetsTheWiresAnalyticField()
+{
+  // 10 A in a 1 mm wire: outside it |B| = mu0 I / (2 pi r) exactly. A
+  // radial contour from r = 2 to 9 mm along +x: the field is azimuthal,
+  // so it crosses the contour -- B.n is all of it, B.t is ~nothing.
+  FemmProblem p;
+  MeshSolution s;
+  QString err;
+  QVERIFY2(AnsFileIO::readAns(fixture("straight_wire.ans"), p, s, err), qPrintable(err));
+  const QVector<QPointF> contour = { QPointF(2, 0), QPointF(9, 0) };
+
+  auto meanError = [&](bool smooth, ContourSampler::Result* keep) {
+    const ContourSampler::Result r = ContourSampler::sample(s, p, FemmProblemKind::Magnetics, smooth, contour, 35);
+    double sum = 0;
+    for (int i = 0; i < r.arc.size(); i++) {
+      const double rM = r.x[i] * 1e-3;
+      const double analytic = 2e-7 * 10. / rM;
+      sum += std::abs(r.series[1].values[i] - analytic) / analytic;
+    }
+    if (keep)
+      *keep = r;
+    return sum / r.arc.size();
+  };
+  ContourSampler::Result smooth;
+  const double eSmooth = meanError(true, &smooth);
+  const double eFlat = meanError(false, nullptr);
+  QVERIFY2(eSmooth < 0.02, qPrintable(QStringLiteral("smoothed |B| is %1% off the analytic field on average").arg(eSmooth * 100)));
+  QVERIFY2(eSmooth < eFlat, qPrintable(QStringLiteral("smoothing did not help: %1 vs %2").arg(eSmooth).arg(eFlat)));
+
+  QCOMPARE(smooth.series[2].label, QStringLiteral("B.n"));
+  QCOMPARE(smooth.series[3].label, QStringLiteral("B.t"));
+  for (int i = 0; i < smooth.arc.size(); i++) {
+    const double b = smooth.series[1].values[i];
+    QVERIFY2(std::abs(std::abs(smooth.series[2].values[i]) - b) < 0.03 * b, "B.n is not the whole field across a radial line");
+    QVERIFY2(std::abs(smooth.series[3].values[i]) < 0.05 * b, "B.t is not ~0 along a radial line");
+  }
+  // H = B / mu0 in air.
+  QVERIFY(std::abs(smooth.series[4].values[10] - smooth.series[1].values[10] / (4e-7 * M_PI)) < 1e-3 * smooth.series[4].values[10]);
+  QCOMPARE(smooth.lengthUnit, QStringLiteral("mm"));
+}
+
+void TestMagneticsIntegrals::plotXYOffersClassicsQuantities()
+{
+  FemmProblem p;
+  MeshSolution s;
+  QString err;
+  QVERIFY2(AnsFileIO::readAns(fixture("coax_cable.ans"), p, s, err), qPrintable(err));
+  const QVector<QPointF> contour = { QPointF(0, 0), QPointF(6, 0) };
+  ContourSampler::Result dc = ContourSampler::sample(s, p, FemmProblemKind::Magnetics, true, contour, 10);
+  QStringList names;
+  for (const auto& ser : dc.series)
+    names << ser.label;
+  QCOMPARE(names, (QStringList { "A", "|B|", "B.n", "B.t", "|H|", "H.n", "H.t" }));
+
+  FemmProblem pac;
+  MeshSolution sac;
+  QVERIFY2(AnsFileIO::readAns(fixture("coax_cable_ac.ans"), pac, sac, err), qPrintable(err));
+  ContourSampler::Result ac = ContourSampler::sample(sac, pac, FemmProblemKind::Magnetics, true, contour, 10);
+  QCOMPARE(ac.series.size(), 9);
+  QCOMPARE(ac.series[0].label, QStringLiteral("|A|"));
+  QCOMPARE(ac.series[7].label, QStringLiteral("|Je|"));
+  // In the inner conductor at 10 kHz there IS an eddy current.
+  QVERIFY(ac.series[7].values[1] > 0);
+}
+
+void TestMagneticsIntegrals::theChartHasAxisTitlesAndNiceTicks()
+{
+  QCOMPARE(PlotXYChartWidget::niceTicks(0, 7.3), (QVector<double> { 0, 2, 4, 6 }));
+  const QVector<double> small = PlotXYChartWidget::niceTicks(0.0011, 0.0019, 4);
+  const QVector<double> want = { 0.0012, 0.0014, 0.0016, 0.0018 };
+  QCOMPARE(small.size(), want.size());
+  for (int i = 0; i < want.size(); i++)
+    QVERIFY(std::abs(small[i] - want[i]) < 1e-15);
+  QVERIFY(PlotXYChartWidget::niceTicks(1, 1).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMagneticsIntegrals)

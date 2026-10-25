@@ -1,38 +1,54 @@
 #include "PlotXYChartWidget.h"
 
-#include <QFont>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
 
 #include <algorithm>
+#include <cmath>
 
-PlotXYChartWidget::PlotXYChartWidget(QVector<double> arcLength, QVector<double> aMag, QVector<double> bMag, QWidget* parent)
+PlotXYChartWidget::PlotXYChartWidget(QVector<double> x, QString xTitle, QWidget* parent)
     : QWidget(parent)
-    , m_arcLength(std::move(arcLength))
-    , m_aMag(std::move(aMag))
-    , m_bMag(std::move(bMag))
+    , m_x(std::move(x))
+    , m_xTitle(std::move(xTitle))
 {
   setMinimumSize(360, 260);
-  // Matches the Solution Viewer's other custom-painted plots -- draw our
-  // own background rather than inheriting whatever's behind this widget.
   setAutoFillBackground(true);
 }
 
-void PlotXYChartWidget::setQuantity(Quantity q)
+void PlotXYChartWidget::setSeries(const QString& name, const QString& unit, QVector<double> y)
 {
-  if (m_quantity == q)
-    return;
-  m_quantity = q;
+  m_name = name;
+  m_unit = unit;
+  m_y = std::move(y);
   update();
 }
 
-void PlotXYChartWidget::setTitles(const QString& aTitle, const QString& bTitle)
+QString PlotXYChartWidget::yTitle() const
 {
-  m_aTitle = aTitle;
-  m_bTitle = bTitle;
-  update();
+  return m_unit.isEmpty() ? m_name : QStringLiteral("%1 (%2)").arg(m_name, m_unit);
+}
+
+QVector<double> PlotXYChartWidget::niceTicks(double lo, double hi, int target)
+{
+  QVector<double> ticks;
+  if (!(hi > lo) || target < 1)
+    return ticks;
+  const double raw = (hi - lo) / target;
+  const double mag = std::pow(10., std::floor(std::log10(raw)));
+  double step = mag;
+  for (double m : { 1., 2., 5., 10. }) {
+    step = m * mag;
+    if (step >= raw)
+      break;
+  }
+  // Integer multiples of the step, not a running sum, which drifts.
+  const long long k0 = (long long)std::ceil(lo / step - 1e-9);
+  const long long k1 = (long long)std::floor(hi / step + 1e-9);
+  for (long long k = k0; k <= k1; k++)
+    ticks << k * step;
+  return ticks;
 }
 
 void PlotXYChartWidget::paintEvent(QPaintEvent*)
@@ -40,86 +56,82 @@ void PlotXYChartWidget::paintEvent(QPaintEvent*)
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
   painter.fillRect(rect(), palette().color(QPalette::Base));
+  const QColor text = palette().color(QPalette::Text);
+  const QColor grid = palette().color(QPalette::Mid);
 
-  QRectF full(0, 0, width(), height());
-  if (m_quantity == Quantity::AMag)
-    paintSubplot(painter, full, m_aMag, m_aTitle, QColor(0x4E, 0xC9, 0xB0));
-  else
-    paintSubplot(painter, full, m_bMag, m_bTitle, QColor(0x00, 0x7A, 0xCC));
-}
+  QFont font = painter.font();
+  const QFontMetrics fm(font);
+  const qreal left = 64 + fm.height(), right = 14, top = 12, bottom = 28 + fm.height();
+  const QRectF area(left, top, width() - left - right, height() - top - bottom);
+  painter.setPen(grid);
+  painter.drawRect(area);
 
-void PlotXYChartWidget::paintSubplot(QPainter& painter, const QRectF& rect, const QVector<double>& y, const QString& title, const QColor& color) const
-{
+  // Axis titles: what the curve is, and what it is plotted against.
+  painter.setPen(text);
+  painter.drawText(QRectF(area.left(), height() - fm.height() - 4, area.width(), fm.height()),
+      Qt::AlignHCenter | Qt::AlignVCenter, m_xTitle);
   painter.save();
-
-  QColor textColor = palette().color(QPalette::Text);
-  QColor gridColor = palette().color(QPalette::Mid);
-
-  QFont titleFont = painter.font();
-  titleFont.setBold(true);
-  painter.setFont(titleFont);
-  painter.setPen(textColor);
-  painter.drawText(QRectF(rect.left(), rect.top(), rect.width(), 18), Qt::AlignLeft | Qt::AlignVCenter, title);
-
-  // Reserve room around the actual plot area for axis tick labels.
-  const qreal leftMargin = 56, rightMargin = 12, topMargin = 22, bottomMargin = 22;
-  QRectF plotArea(rect.left() + leftMargin, rect.top() + topMargin,
-      rect.width() - leftMargin - rightMargin, rect.height() - topMargin - bottomMargin);
-
-  painter.setPen(gridColor);
-  painter.drawRect(plotArea);
-
-  if (m_arcLength.size() < 2 || y.size() != m_arcLength.size()) {
-    painter.restore();
-    return;
-  }
-
-  double xMin = m_arcLength.first();
-  double xMax = m_arcLength.last();
-  double yMin = *std::min_element(y.begin(), y.end());
-  double yMax = *std::max_element(y.begin(), y.end());
-  if (yMax <= yMin)
-    yMax = yMin + 1.0; // degenerate (flat) data -- avoid a zero-range mapping
-  double xRange = (xMax > xMin) ? (xMax - xMin) : 1.0;
-  double yRange = yMax - yMin;
-
-  auto toPixel = [&](double xv, double yv) {
-    double px = plotArea.left() + (xv - xMin) / xRange * plotArea.width();
-    double py = plotArea.bottom() - (yv - yMin) / yRange * plotArea.height();
-    return QPointF(px, py);
-  };
-
-  QFont tickFont = painter.font();
-  tickFont.setBold(false);
-  tickFont.setPointSizeF(tickFont.pointSizeF() * 0.85);
-  painter.setFont(tickFont);
-
-  // Y-axis: min/mid/max gridlines + tick labels.
-  for (int i = 0; i <= 2; i++) {
-    double v = yMin + yRange * i / 2.0;
-    QPointF p = toPixel(xMin, v);
-    painter.setPen(QPen(gridColor, 1, Qt::DotLine));
-    painter.drawLine(QPointF(plotArea.left(), p.y()), QPointF(plotArea.right(), p.y()));
-    painter.setPen(textColor);
-    painter.drawText(QRectF(rect.left(), p.y() - 8, leftMargin - 6, 16), Qt::AlignRight | Qt::AlignVCenter, QString::number(v, 'g', 3));
-  }
-
-  // X-axis: min/max labels at the corners.
-  painter.setPen(textColor);
-  painter.drawText(QRectF(plotArea.left(), plotArea.bottom() + 2, 80, 16), Qt::AlignLeft, QString::number(xMin, 'g', 3));
-  painter.drawText(QRectF(plotArea.right() - 80, plotArea.bottom() + 2, 80, 16), Qt::AlignRight, QString::number(xMax, 'g', 3));
-
-  // The actual curve.
-  QPainterPath path;
-  path.moveTo(toPixel(m_arcLength.first(), y.first()));
-  for (int i = 1; i < m_arcLength.size(); i++)
-    path.lineTo(toPixel(m_arcLength[i], y[i]));
-  QPen curvePen(color);
-  curvePen.setWidthF(2.0);
-  curvePen.setCosmetic(true);
-  painter.setPen(curvePen);
-  painter.setClipRect(plotArea);
-  painter.drawPath(path);
-
+  painter.translate(fm.height() / 2. + 4, area.center().y());
+  painter.rotate(-90);
+  painter.drawText(QRectF(-area.height() / 2, -fm.height() / 2., area.height(), fm.height()),
+      Qt::AlignCenter, yTitle());
   painter.restore();
+
+  double yMin = 0, yMax = 0;
+  bool any = false;
+  for (double v : m_y) {
+    if (std::isnan(v))
+      continue;
+    yMin = any ? std::min(yMin, v) : v;
+    yMax = any ? std::max(yMax, v) : v;
+    any = true;
+  }
+  if (m_x.size() < 2 || m_y.size() != m_x.size() || !any)
+    return;
+  if (yMax - yMin <= 1e-12 * std::max(std::abs(yMax), 1e-300)) {
+    const double pad = std::abs(yMax) > 0 ? 0.05 * std::abs(yMax) : 1.;
+    yMin -= pad;
+    yMax += pad;
+  }
+  const double xMin = m_x.first(), xMax = m_x.last() > m_x.first() ? m_x.last() : m_x.first() + 1.;
+  auto px = [&](double x) { return area.left() + (x - xMin) / (xMax - xMin) * area.width(); };
+  auto py = [&](double y) { return area.bottom() - (y - yMin) / (yMax - yMin) * area.height(); };
+
+  QFont tickFont = font;
+  tickFont.setPointSizeF(font.pointSizeF() * 0.85);
+  painter.setFont(tickFont);
+  for (double t : niceTicks(yMin, yMax)) {
+    painter.setPen(QPen(grid, 1, Qt::DotLine));
+    painter.drawLine(QPointF(area.left(), py(t)), QPointF(area.right(), py(t)));
+    painter.setPen(text);
+    painter.drawText(QRectF(fm.height() + 6, py(t) - 8, area.left() - fm.height() - 10, 16), Qt::AlignRight | Qt::AlignVCenter,
+        QString::number(t, 'g', 4));
+  }
+  for (double t : niceTicks(xMin, xMax)) {
+    painter.setPen(QPen(grid, 1, Qt::DotLine));
+    painter.drawLine(QPointF(px(t), area.top()), QPointF(px(t), area.bottom()));
+    painter.setPen(text);
+    painter.drawText(QRectF(px(t) - 40, area.bottom() + 2, 80, 16), Qt::AlignHCenter | Qt::AlignTop, QString::number(t, 'g', 4));
+  }
+
+  QPainterPath path;
+  bool pen = false;
+  for (int i = 0; i < m_x.size(); i++) {
+    if (std::isnan(m_y[i])) {
+      pen = false; // the contour left the mesh: a gap, not a line to zero
+      continue;
+    }
+    const QPointF p(px(m_x[i]), py(m_y[i]));
+    if (pen)
+      path.lineTo(p);
+    else
+      path.moveTo(p);
+    pen = true;
+  }
+  QPen curve(QColor(0x00, 0x7A, 0xCC));
+  curve.setWidthF(2.0);
+  curve.setCosmetic(true);
+  painter.setClipRect(area);
+  painter.setPen(curve);
+  painter.drawPath(path);
 }

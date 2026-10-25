@@ -1,39 +1,33 @@
 #pragma once
 
-#include <QColor>
+// PlotXYChartWidget.h
+//
+// A line chart of one quantity along a contour, for Plot X-Y.
+//
+// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-10-25
+// (issue #114): generic -- any series ContourSampler produces, not just
+// |A| and |B| -- with an x-axis title in the model's length unit, a
+// y-axis title naming the quantity and its unit, "nice" 1/2/5 ticks on
+// both axes with grid lines (it had only the two end values), and gaps
+// where the contour leaves the mesh.
+
 #include <QString>
 #include <QVector>
 #include <QWidget>
 
-// Simple, dependency-free line-chart widget for the Solution Viewer's
-// "Plot X-Y along Contour" dialog -- no charting library is linked into
-// this target (see femmqt/CMakeLists.txt), so this draws its own axes/
-// gridlines/curve directly via QPainter rather than pulling in Qt Charts,
-// matching how the Density/Contour plots are already custom-painted rather
-// than using a charting widget.
-//
-// Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
-// direct user request ("select what to plot, only show one plot based on
-// the selection") -- was always two stacked subplots (|A| and |B| both at
-// once); now holds both datasets but paints only the currently selected
-// one, full-height, via setQuantity(). The two-stacked-subplots approach
-// this replaced was itself a deliberate choice (the two quantities' units
-// and typical magnitudes differ enough that sharing one y-axis would
-// flatten one curve) -- showing one full-size plot at a time keeps that
-// same benefit while giving the requested single-plot-at-a-time view.
 class PlotXYChartWidget : public QWidget {
   public:
-  enum class Quantity { AMag, BMag };
+  PlotXYChartWidget(QVector<double> x, QString xTitle, QWidget* parent = nullptr);
 
-  PlotXYChartWidget(QVector<double> arcLength, QVector<double> aMag, QVector<double> bMag, QWidget* parent = nullptr);
+  // Shows one series; NaN samples are drawn as gaps.
+  void setSeries(const QString& name, const QString& unit, QVector<double> y);
 
-  void setQuantity(Quantity q);
-  Quantity quantity() const { return m_quantity; }
+  // The tick positions a [lo, hi] axis gets: 1/2/5 x 10^n steps, about
+  // `target` of them. Public for the test.
+  static QVector<double> niceTicks(double lo, double hi, int target = 6);
 
-  // Lets the caller relabel the two curves -- e.g. "Flux" instead of "A"
-  // for an axisymmetric problem (see SolutionWindow::onPlotXYTriggered),
-  // instead of the default "|A|"/"|B|" titles.
-  void setTitles(const QString& aTitle, const QString& bTitle);
+  QString xTitle() const { return m_xTitle; }
+  QString yTitle() const;
 
   QSize sizeHint() const override { return QSize(560, 320); }
 
@@ -41,12 +35,8 @@ class PlotXYChartWidget : public QWidget {
   void paintEvent(QPaintEvent* event) override;
 
   private:
-  void paintSubplot(QPainter& painter, const QRectF& rect, const QVector<double>& y, const QString& title, const QColor& color) const;
-
-  QVector<double> m_arcLength;
-  QVector<double> m_aMag;
-  QVector<double> m_bMag;
-  Quantity m_quantity = Quantity::AMag;
-  QString m_aTitle = "|A| along contour";
-  QString m_bTitle = "|B| along contour";
+  QVector<double> m_x;
+  QVector<double> m_y;
+  QString m_xTitle;
+  QString m_name, m_unit;
 };

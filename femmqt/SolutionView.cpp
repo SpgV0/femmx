@@ -7,6 +7,7 @@
 #include "SolutionField.h"
 #include "SolutionIntegrals.h"
 #include "MagneticsIntegrals.h"
+#include "ContourSampler.h"
 #include "SolutionAdapter.h"
 #include "ProblemKind.h"
 
@@ -3304,107 +3305,56 @@ void SolutionWindow::onPlotXYTriggered()
   if (!ok)
     return;
 
-  double totalLen = 0;
-  QVector<double> segLen(m_contourPoints.size() - 1);
-  for (int i = 1; i < m_contourPoints.size(); i++) {
-    QPointF d = m_contourPoints[i] - m_contourPoints[i - 1];
-    segLen[i - 1] = std::hypot(d.x(), d.y());
-    totalLen += segLen[i - 1];
-  }
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-10-25
+  // (#114): sampled by ContourSampler, which offers what classic's
+  // GetLineValues does -- the potential, |B| with B.n and B.t, |H| with
+  // H.n and H.t, and in AC |Je| and |Js+Je|; the other physics' flux and
+  // intensity likewise -- and honours View > Smoothing. It used to offer
+  // |A| and |B| alone, element-constant: a staircase ~7% low beside a
+  // wire, whatever Smoothing said.
+  const ContourSampler::Result sampled = ContourSampler::sample(m_solution, m_problemGeometry, m_kind,
+      m_item && m_item->smoothing(), m_contourPoints, samples);
 
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
-  // user report ("I just see the numbers") -- this used to only build the
-  // tab-separated text below. Now also collects the same samples into
-  // plain QVector<double>s so PlotXYChartWidget can draw them, and the
-  // text is kept (as CSV, comma- not tab-separated, for the Export CSV
-  // button) rather than just for display.
-  // Known, documented gap: classic's real Plot X-Y quantity combo
-  // (femm/xyplotdlg.cpp's CXYPlotDlg::OnInitDialog) offers Potential
-  // (=|A|), |B|, B.n, B.t, |H|, H.n, H.t, and (AC only) J_eddy/Js+J_eddy
-  // -- 7-9 choices, not just the 2 (|A|, |B|) plotted here. B.n/B.t/H.n/
-  // H.t need a per-sample-point normal/tangent projection (using each
-  // contour segment's own local direction) that isn't built yet; adding
-  // them is a real, scoped follow-up, not attempted here as a partial
-  // version that only covers some of the missing quantities.
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-09-14
-  // (issue #93): these four were magnetics' labels for every physics,
-  // so a heat-flow contour plot offered "|A| (Wb)" and "|B| (T)" and
-  // charted temperatures in kelvin under them. They feed the combo, the
-  // chart titles, the Table tab AND the CSV export, so the wrong names
-  // left with the data.
-  const SolutionField::Quantity pot = pointPotential();
-  const SolutionField::Quantity fld = pointField();
-  // Magnetics plots |A|: for a harmonic solution the potential is
-  // complex and its magnitude is the meaningful scalar. Temperature and
-  // voltage are SIGNED -- a coax at -50 V, or a model in Celsius below
-  // zero, would be plotted positive and look fine -- so those are shown
-  // as themselves, and the label says so by carrying no bars.
-  const bool potentialIsMagnitude = isMagnetics();
-  const QString qtyALabel = potentialIsMagnitude
-      ? QStringLiteral("|%1|").arg(pot.symbol)
-      : pot.symbol;
-  const QString qtyBLabel = QStringLiteral("|%1|").arg(fld.symbol);
-  const QString qtyAUnit = pot.unit;
-  const QString qtyBUnit = fld.unit;
-
-  QVector<double> arcLen, xs, ys, aMags, bMags;
-  QString csv = QString("arc length,x,y,%1,%2\n").arg(qtyALabel, qtyBLabel);
-  for (int s = 0; s <= samples; s++) {
-    double target = totalLen * s / samples;
-    double acc = 0;
-    QPointF pt = m_contourPoints.last();
-    for (int i = 0; i < segLen.size(); i++) {
-      if (target <= acc + segLen[i] || i == segLen.size() - 1) {
-        double t = segLen[i] > 0 ? (target - acc) / segLen[i] : 0;
-        pt = m_contourPoints[i] + qBound(0.0, t, 1.0) * (m_contourPoints[i + 1] - m_contourPoints[i]);
-        break;
-      }
-      acc += segLen[i];
-    }
-    int elem = findContainingElement(pt);
-    double aMag = 0, bMag = 0;
-    if (elem >= 0) {
-      std::complex<double> A = interpolateA(pt, elem);
-      aMag = potentialIsMagnitude ? std::abs(A) : A.real();
-      const MeshSolutionElement& e = m_solution.elements[elem];
-      bMag = std::hypot(std::hypot(e.B1re, e.B1im), std::hypot(e.B2re, e.B2im));
-    }
-    arcLen.push_back(target);
-    xs.push_back(pt.x());
-    ys.push_back(pt.y());
-    aMags.push_back(aMag);
-    bMags.push_back(bMag);
-    csv += QString("%1,%2,%3,%4,%5\n").arg(target, 0, 'g', 6).arg(pt.x(), 0, 'g', 6).arg(pt.y(), 0, 'g', 6).arg(aMag, 0, 'g', 6).arg(bMag, 0, 'g', 6);
+  QString csv = QStringLiteral("arc length (%1),x,y").arg(sampled.lengthUnit);
+  for (const ContourSampler::Series& ser : sampled.series)
+    csv += QStringLiteral(",%1 (%2)").arg(ser.label, ser.unit);
+  csv += '\n';
+  QString tableText = csv;
+  tableText.replace(',', '\t');
+  for (int i = 0; i < sampled.arc.size(); i++) {
+    QString row = QStringLiteral("%1,%2,%3").arg(sampled.arc[i], 0, 'g', 6).arg(sampled.x[i], 0, 'g', 6).arg(sampled.y[i], 0, 'g', 6);
+    for (const ContourSampler::Series& ser : sampled.series)
+      row += ',' + (std::isnan(ser.values[i]) ? QString() : QString::number(ser.values[i], 'g', 6));
+    csv += row + '\n';
+    tableText += QString(row).replace(',', '\t') + '\n';
   }
 
   QDialog dlg(this);
   dlg.setWindowTitle("Plot X-Y along Contour");
-  dlg.resize(600, 500);
+  dlg.resize(640, 520);
   auto* layout = new QVBoxLayout(&dlg);
-
   auto* tabs = new QTabWidget(&dlg);
 
-  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-26: per
-  // direct user request ("select what to plot, only show one plot based
-  // on the selection") -- was always both |A| and |B| stacked; a combo
-  // box now picks which one PlotXYChartWidget actually draws.
   auto* chartTab = new QWidget(tabs);
   auto* chartLayout = new QVBoxLayout(chartTab);
   auto* quantityCombo = new QComboBox(chartTab);
-  quantityCombo->addItem(QString("%1 (%2)").arg(qtyALabel, qtyAUnit));
-  quantityCombo->addItem(QString("%1 (%2)").arg(qtyBLabel, qtyBUnit));
+  quantityCombo->setObjectName("plotXYQuantity");
+  for (const ContourSampler::Series& ser : sampled.series)
+    quantityCombo->addItem(QStringLiteral("%1 (%2)").arg(ser.label, ser.unit));
   chartLayout->addWidget(quantityCombo);
-  auto* chart = new PlotXYChartWidget(arcLen, aMags, bMags, chartTab);
-  chart->setTitles(QString("%1 along contour").arg(qtyALabel), QString("%1 along contour").arg(qtyBLabel));
+  auto* chart = new PlotXYChartWidget(sampled.arc, QStringLiteral("Arc length (%1)").arg(sampled.lengthUnit), chartTab);
+  chart->setObjectName("plotXYChart");
   chartLayout->addWidget(chart);
-  connect(quantityCombo, &QComboBox::currentIndexChanged, chart, [chart](int index) {
-    chart->setQuantity(index == 0 ? PlotXYChartWidget::Quantity::AMag : PlotXYChartWidget::Quantity::BMag);
-  });
+  auto show = [chart, sampled](int index) {
+    if (index >= 0 && index < sampled.series.size())
+      chart->setSeries(sampled.series[index].label, sampled.series[index].unit, sampled.series[index].values);
+  };
+  connect(quantityCombo, &QComboBox::currentIndexChanged, chart, show);
+  // |B| (or the flux) first, as before: index 1 in every physics' list.
+  quantityCombo->setCurrentIndex(std::min<int>(1, sampled.series.size() - 1));
+  show(quantityCombo->currentIndex());
   tabs->addTab(chartTab, "Chart");
 
-  QString tableText = QString("arc length\tx\ty\t%1\t%2\n").arg(qtyALabel, qtyBLabel);
-  for (int i = 0; i < arcLen.size(); i++)
-    tableText += QString("%1\t%2\t%3\t%4\t%5\n").arg(arcLen[i], 0, 'g', 6).arg(xs[i], 0, 'g', 6).arg(ys[i], 0, 'g', 6).arg(aMags[i], 0, 'g', 6).arg(bMags[i], 0, 'g', 6);
   auto* table = new QPlainTextEdit(tableText, tabs);
   table->setReadOnly(true);
   table->setLineWrapMode(QPlainTextEdit::NoWrap);

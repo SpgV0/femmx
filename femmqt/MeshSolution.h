@@ -62,9 +62,10 @@ struct MeshSolutionElement {
   // (#94).
   double jRe = 0, jIm = 0;
 
-  // Field INTENSITY -- the potential's gradient, per metre: -grad V for
-  // electrostatics and current flow (|E|, V/m), grad T for heat flow
-  // (|G|, K/m). Filled by SolutionAdapter for those three, where B1/B2
+  // The potential's GRADIENT, per metre: grad V for electrostatics and
+  // current flow, grad T for heat flow. The intensity classic plots is
+  // its negative (E = -grad V, G = -grad T); only its magnitude reaches
+  // the density plot (|E|, V/m; |G|, K/m). Filled by SolutionAdapter for those three, where B1/B2
   // already carry the flux (D, F, J); unused for magnetics (#107).
   double g1re = 0, g1im = 0, g2re = 0, g2im = 0;
 

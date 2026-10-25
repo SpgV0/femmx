@@ -50,6 +50,7 @@ class MeshSolutionItem : public QGraphicsItem {
   enum class PlotMode { Density, Contour };
   void setPlotMode(PlotMode mode);
   void setSmoothing(bool smooth);
+  bool smoothing() const { return m_smooth; }
   void setShowMesh(bool show);
   void setShowPoints(bool show);
   // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-07-21: per
