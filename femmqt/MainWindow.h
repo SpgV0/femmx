@@ -111,6 +111,7 @@ class MainWindow : public QMainWindow {
   void onPanDown();
   void onSetGridTriggered();
   void onUndoTriggered();
+  void onRedoTriggered();
   void onMoveSelectedTriggered();
   void onCopySelectedTriggered();
   void onScaleSelectedTriggered();
@@ -172,6 +173,8 @@ class MainWindow : public QMainWindow {
   private:
   bool saveAs(const QString& path);
   bool confirmDiscardUnsavedChanges();
+  bool saveOrDiscard(const QString& title, const QString& question);
+  void restoreSnapshot(const FemmProblem& snapshot);
   void updateTitle();
   bool hasAppliedPeriodicBoundary() const;
   void markEdited();
@@ -250,6 +253,7 @@ class MainWindow : public QMainWindow {
   // not requested, and classic FEMM doesn't have one either.
   static constexpr int kMaxUndoSteps = 20;
   QList<FemmProblem> m_undoStack;
+  QList<FemmProblem> m_redoStack; // #109
 
   QAction* m_selectToolAction = nullptr;
   QAction* m_addNodeToolAction = nullptr;

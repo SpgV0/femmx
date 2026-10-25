@@ -267,6 +267,12 @@ MainWindow::MainWindow(QWidget* parent)
   // Matches femm.rc's IDR_FEMMETYPE Edit menu.
   QMenu* editMenu = menuBar()->addMenu("&Edit");
   editMenu->addAction("&Undo", this, &MainWindow::onUndoTriggered, QKeySequence::Undo);
+  // QKeySequence::Redo is Ctrl+Y on Windows; Ctrl+Shift+Z is the other
+  // convention people bring, so both (#109).
+  {
+    QAction* redo = editMenu->addAction("&Redo", this, &MainWindow::onRedoTriggered);
+    redo->setShortcuts({ QKeySequence(QKeySequence::Redo), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z) });
+  }
   editMenu->addAction("&Open Selected", this, &MainWindow::onOpenSelectedTriggered);
   editMenu->addAction("&Delete", this, &MainWindow::onDeleteSelectedTriggered, QKeySequence::Delete);
   editMenu->addSeparator();
@@ -656,6 +662,7 @@ MainWindow::MainWindow(QWidget* parent)
   editToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   editToolBar->setIconSize(QSize(20, 20));
   addThemedAction(editToolBar, ":/icons/undo.svg", "Undo", "Undo the last operation", &MainWindow::onUndoTriggered);
+  addThemedAction(editToolBar, ":/icons/redo.svg", "Redo", "Redo what Undo took back (Ctrl+Y)", &MainWindow::onRedoTriggered);
   addThemedAction(editToolBar, ":/icons/open_selected.svg", "Open Selected", "Open the properties dialog for the currently selected entity", &MainWindow::onOpenSelectedTriggered);
   addThemedAction(editToolBar, ":/icons/delete.svg", "Delete", "Delete the selected objects", &MainWindow::onDeleteSelectedTriggered);
   // Matches femm.rc's IDR_FEMMETYPE toolbar's ID_FD_SELECTCIRC, right next
@@ -1295,26 +1302,9 @@ void MainWindow::onSwitchToClassicTriggered()
   // handoff between two separate processes) -- same "must be saved"
   // requirement as onSolveTriggered, reusing the same confirm-or-save
   // flow the normal close path already uses.
-  if (m_dirty) {
-    // Cancel is the headless answer: with nobody to ask, refusing to
-    // switch loses nothing, while Discard would throw away the user's
-    // edits on their behalf (issue #85).
-    auto result = Notify::question(this, "Switch GUI",
-        "Save changes before switching to the classic GUI?",
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
-        QMessageBox::Save, QMessageBox::Cancel);
-    if (result == QMessageBox::Cancel)
-      return;
-    if (result == QMessageBox::Save) {
-      if (m_currentPath.isEmpty()) {
-        onSaveAsTriggered();
-        if (m_currentPath.isEmpty() || m_dirty)
-          return; // save dialog was cancelled, or failed
-      } else if (!saveAs(m_currentPath)) {
-        return;
-      }
-    }
-  }
+  if (!saveOrDiscard(QStringLiteral("Switch GUI"),
+          QStringLiteral("Save changes before switching to the classic GUI?")))
+    return;
 
   GuiSwitch::writePreferredGui(GuiSwitch::PreferredGui::Classic);
   if (!GuiSwitch::launchClassicGui(m_currentPath)) {
@@ -2373,6 +2363,9 @@ void MainWindow::snapshotForUndo()
   m_undoStack.push_back(m_problem);
   if (m_undoStack.size() > kMaxUndoSteps)
     m_undoStack.pop_front();
+  // A new edit starts a new future: what was undone can no longer be
+  // redone on top of it (#109).
+  m_redoStack.clear();
 }
 
 void MainWindow::resetDocumentState()
@@ -2380,9 +2373,20 @@ void MainWindow::resetDocumentState()
   // The undo stack holds whole FemmProblem snapshots, so a snapshot from
   // the previous document restores THAT document's geometry under this
   // one's path -- and Save would then write it over this file (#95).
-m_undoStack.clear();
-m_isDemoCopy = false;
-m_demoTitle.clear();
+  // Redo, the same (#109).
+  m_undoStack.clear();
+  m_redoStack.clear();
+  m_isDemoCopy = false;
+  m_demoTitle.clear();
+}
+
+void MainWindow::restoreSnapshot(const FemmProblem& snapshot)
+{
+  m_problem = snapshot;
+  // The colours describe the sketch, so they come back with it (#102).
+  m_scene->setSketchStatus(ConstraintSolver::classify(m_problem));
+  m_scene->rebuild();
+  markEdited();
 }
 
 void MainWindow::onUndoTriggered()
@@ -2391,12 +2395,25 @@ void MainWindow::onUndoTriggered()
     statusBar()->showMessage("Nothing to undo");
     return;
   }
-  m_problem = m_undoStack.takeLast();
-  // The colours describe the sketch, so they come back with it (#102).
-  m_scene->setSketchStatus(ConstraintSolver::classify(m_problem));
-  m_scene->rebuild();
-  markEdited();
+  m_redoStack.push_back(m_problem);
+  restoreSnapshot(m_undoStack.takeLast());
   statusBar()->showMessage(QString("Undone (%1 more step%2 available)").arg(m_undoStack.size()).arg(m_undoStack.size() == 1 ? "" : "s"));
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-10-25 (#109).
+void MainWindow::onRedoTriggered()
+{
+  if (m_redoStack.isEmpty()) {
+    statusBar()->showMessage("Nothing to redo");
+    return;
+  }
+  // Pushed directly, not through snapshotForUndo(), which would clear
+  // the very stack this is walking.
+  m_undoStack.push_back(m_problem);
+  if (m_undoStack.size() > kMaxUndoSteps)
+    m_undoStack.pop_front();
+  restoreSnapshot(m_redoStack.takeLast());
+  statusBar()->showMessage(QString("Redone (%1 more step%2 available)").arg(m_redoStack.size()).arg(m_redoStack.size() == 1 ? "" : "s"));
 }
 
 void MainWindow::onMoveSelectedTriggered()
@@ -3133,13 +3150,33 @@ void MainWindow::refreshToolbarIcons()
 
 bool MainWindow::confirmDiscardUnsavedChanges()
 {
+  return saveOrDiscard(QStringLiteral("Unsaved Changes"),
+      QStringLiteral("The current problem has unsaved changes. Save them first?"));
+}
+
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-10-25 (#109).
+// Save / Discard / Cancel -- every place that is about to drop the open
+// document. Close, New, Open and Recent Files used to offer only Discard
+// or Cancel, so keeping your work meant cancelling, saving and starting
+// over; Switch GUI already asked properly and now shares this. True when
+// it is safe to go ahead.
+bool MainWindow::saveOrDiscard(const QString& title, const QString& question)
+{
   if (!m_dirty)
     return true;
-  auto result = Notify::question(this, "Unsaved Changes",
-      "The current problem has unsaved changes. Discard them?",
-      QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel,
-      QMessageBox::Cancel);
-  return result == QMessageBox::Discard;
+  // Cancel is the headless answer: refusing loses nothing, while Discard
+  // would throw the edits away on the user's behalf (#85).
+  const auto result = Notify::question(this, title, question,
+      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+      QMessageBox::Save, QMessageBox::Cancel);
+  if (result == QMessageBox::Discard)
+    return true;
+  if (result != QMessageBox::Save)
+    return false;
+  // The menu's own Save: it asks where for an untitled document or a
+  // demo's working copy, and saves in place otherwise.
+  onSaveTriggered();
+  return !m_dirty; // cancelled or failed: stay, keep the edits
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

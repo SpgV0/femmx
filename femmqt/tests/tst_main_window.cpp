@@ -16,7 +16,9 @@
 #include <QtTest>
 
 #include <QCheckBox>
+#include <QAbstractButton>
 #include <QComboBox>
+#include <QMessageBox>
 #include <QLabel>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
@@ -105,6 +107,9 @@ class TestMainWindow : public QObject
   void fixFromTheMenuHoldsTheSelectedNodesInOneUndoStep();
   // #108
   void areaPropertiesShowsTheForceOnAWire();
+  // #109
+  void redoBringsBackWhatUndoTookBack();
+  void theUnsavedChangesPromptCanSave();
 };
 
 void TestMainWindow::initTestCase()
@@ -659,6 +664,82 @@ void TestMainWindow::areaPropertiesShowsTheForceOnAWire()
   QVERIFY2(texts[1].contains("x-component: 0.0246"), qPrintable(texts[1]));
   QVERIFY2(texts[2].contains("x-component: 0.0246"), qPrintable(texts[2]));
   QVERIFY2(texts[3].endsWith("Joules") && !texts[3].contains("Not"), qPrintable(texts[3]));
+}
+
+void TestMainWindow::redoBringsBackWhatUndoTookBack()
+{
+  MainWindow w;
+  QVERIFY(w.openFile(copyOf("magnetics/straight_wire.fem")));
+  auto* scene = w.findChild<GeometryScene*>();
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  const int n = p.nodes.size();
+  emit scene->aboutToEdit();
+  p.nodes.removeLast();
+
+  QAction* undo = actionNamed(w, QStringLiteral("&Undo"));
+  QAction* redo = actionNamed(w, QStringLiteral("&Redo"));
+  QVERIFY2(redo, "Edit > Redo is missing");
+  QVERIFY(redo->shortcuts().contains(QKeySequence(Qt::CTRL | Qt::Key_Y)));
+  QVERIFY(redo->shortcuts().contains(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z)));
+
+  undo->trigger();
+  QCOMPARE(w.problem().nodes.size(), n);
+  redo->trigger();
+  QCOMPARE(w.problem().nodes.size(), n - 1);
+  undo->trigger();
+  QCOMPARE(w.problem().nodes.size(), n);
+
+  // A new edit after an undo starts a new future.
+  emit scene->aboutToEdit();
+  const_cast<FemmProblem&>(w.problem()).nodes.last().x += 1;
+  redo->trigger();
+  QCOMPARE(w.problem().nodes.size(), n);
+
+  // And opening another document forgets it too (#95's rule, for redo).
+  undo->trigger();
+  QVERIFY(w.openFile(copyOf("magnetics/coax_cable.fem")));
+  const int coax = w.problem().nodes.size();
+  redo->trigger();
+  QCOMPARE(w.problem().nodes.size(), coax);
+}
+
+void TestMainWindow::theUnsavedChangesPromptCanSave()
+{
+  // Close with unsaved edits: the prompt used to offer only Discard or
+  // Cancel. Choosing Save must write the file and then let the window go.
+  const QString path = copyOf("magnetics/straight_wire.fem");
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  auto* scene = w.findChild<GeometryScene*>();
+  emit scene->aboutToEdit();
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  p.nodes.last().x += 0.5;
+  const double moved = p.nodes.last().x;
+  emit scene->problemEdited(); // marks the document dirty
+  QVERIFY(w.windowTitle().contains('*'));
+
+  Notify::setHeadless(false); // a real dialog, answered below
+  QStringList buttons;
+  QTimer::singleShot(0, [&buttons]() {
+    auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+    if (!box)
+      return;
+    for (QAbstractButton* b : box->buttons())
+      buttons << b->text();
+    if (QAbstractButton* save = box->button(QMessageBox::Save))
+      save->click();
+    else
+      box->reject(); // no Save to press: the defect itself
+  });
+  const bool closed = w.close();
+  Notify::setHeadless(true);
+
+  QVERIFY2(buttons.size() == 3, qPrintable(buttons.join(", ")));
+  QVERIFY(closed);
+  FemmProblem back;
+  QString err;
+  QVERIFY2(ProblemFileIO::readAs(path, FemmProblemKind::Magnetics, back, err), qPrintable(err));
+  QCOMPARE(back.nodes.last().x, moved);
 }
 
 QTEST_MAIN(TestMainWindow)
