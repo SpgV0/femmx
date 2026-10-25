@@ -27,6 +27,7 @@
 #include "ConductorAnalysis.h"
 #include "SolutionAdapter.h"
 #include "SolutionIntegrals.h"
+#include "AnsFileIO.h"
 
 #include <cmath>
 
@@ -99,6 +100,11 @@ class TestSolutionIntegrals : public QObject
   void aConductorReportsTheFluxLeavingItsSurface();
   void anUntaggedConductorIsAbsentNotZero();
   void conductorQuantitiesAreNamedPerPhysicsAndAbsentForMagnetics();
+
+  // #94: Area Properties' Total current, summed from MA/m^2.
+  void totalCurrentIsInAmperesNotMegaAmperes();
+  void theBlockSumsRevolveAnAxisymmetricBlockAboutTheAxis();
+  void aSeriesCoilBlockCarriesTurnsTimesTheCircuitCurrent();
 };
 
 // ---------------------------------------------------------------------------
@@ -563,6 +569,78 @@ void TestSolutionIntegrals::conductorQuantitiesAreNamedPerPhysicsAndAbsentForMag
   QVERIFY2(ConductorAnalysis::fluxQuantity(FemmProblemKind::Magnetics).name.isEmpty(),
       "magnetics was given a conductor quantity");
   QVERIFY(ConductorAnalysis::potentialQuantity(FemmProblemKind::Magnetics).name.isEmpty());
+}
+
+// A 1 mm x 1 mm square in millimetres, as two elements of label 0,
+// carrying a uniform 2 MA/m^2. Its area is 1e-6 m^2, so the current
+// through it is exactly 2 A -- and 2e-6 if the unit is dropped.
+static MeshSolution uniformCurrentSquare(double jMegaAmpsPerM2, double x0 = 0)
+{
+  MeshSolution s;
+  MeshSolutionNode n;
+  n.x = x0;     n.y = 0; s.nodes << n;
+  n.x = x0 + 1; n.y = 0; s.nodes << n;
+  n.x = x0 + 1; n.y = 1; s.nodes << n;
+  n.x = x0;     n.y = 1; s.nodes << n;
+  MeshSolutionElement e;
+  e.lbl = 0;
+  e.jRe = jMegaAmpsPerM2;
+  e.B1re = 0.5;
+  e.p0 = 0; e.p1 = 1; e.p2 = 2; s.elements << e;
+  e.p0 = 0; e.p1 = 2; e.p2 = 3; s.elements << e;
+  return s;
+}
+
+void TestSolutionIntegrals::totalCurrentIsInAmperesNotMegaAmperes()
+{
+  const MeshSolution s = uniformCurrentSquare(2.0);
+  const auto sums = SolutionIntegrals::magneticsBlockSums(s, { 0 }, 1e-3, 0.01, false);
+  QCOMPARE(sums.elementCount, 2);
+  QVERIFY2(close(sums.area, 1e-6), qPrintable(QString::number(sums.area)));
+  QVERIFY2(close(sums.totalCurrent.real(), 2.0),
+      qPrintable(QStringLiteral("total current %1 A, expected 2 A").arg(sums.totalCurrent.real())));
+  QCOMPARE(sums.totalCurrent.imag(), 0.0);
+  // Planar: volume is area times depth, and the B integral weights by it.
+  QVERIFY(close(sums.volume, 1e-8));
+  QVERIFY(close(sums.intB1.real(), 0.5e-8));
+
+  // A label outside the selection contributes nothing.
+  const auto none = SolutionIntegrals::magneticsBlockSums(s, { 7 }, 1e-3, 0.01, false);
+  QCOMPARE(none.elementCount, 0);
+  QCOMPARE(none.totalCurrent.real(), 0.0);
+}
+
+void TestSolutionIntegrals::theBlockSumsRevolveAnAxisymmetricBlockAboutTheAxis()
+{
+  // The same square at r = 10..11 mm. Each triangle is revolved at its
+  // own centroid radius; the two centroids are 10 + 2/3 and 10 + 1/3 mm,
+  // so the total volume is 2*pi * 0.5e-6 * (10.6667 + 10.3333) mm.
+  const MeshSolution s = uniformCurrentSquare(2.0, 10.0);
+  const auto sums = SolutionIntegrals::magneticsBlockSums(s, { 0 }, 1e-3, 123.0, true);
+  const double expected = 2.0 * M_PI * 0.5e-6 * (21.0e-3);
+  QVERIFY2(close(sums.volume, expected), qPrintable(QString::number(sums.volume)));
+  // The current through a cross-section does not revolve.
+  QVERIFY(close(sums.totalCurrent.real(), 2.0));
+}
+
+void TestSolutionIntegrals::aSeriesCoilBlockCarriesTurnsTimesTheCircuitCurrent()
+{
+  // A real fkn solution: labels 0 and 1 are the two sides of the series
+  // circuit "coil", 25 A with +20 and -20 turns. Each side must carry
+  // turns x amps through its cross-section, as Circuit Props reports.
+  FemmProblem p;
+  MeshSolution s;
+  QString err;
+  QVERIFY2(AnsFileIO::readAns(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/render/render_fixture.ans"), p, s, err),
+      qPrintable(err));
+  const double lc = 1e-3; // the fixture is in millimetres
+  const auto side0 = SolutionIntegrals::magneticsBlockSums(s, { 0 }, lc, p.depth * lc, false);
+  const auto side1 = SolutionIntegrals::magneticsBlockSums(s, { 1 }, lc, p.depth * lc, false);
+  QVERIFY(side0.elementCount > 0);
+  QVERIFY2(std::abs(side0.totalCurrent.real() - 500.0) < 1e-6 * 500.0,
+      qPrintable(QStringLiteral("side 0 carries %1 A, expected 500 A").arg(side0.totalCurrent.real())));
+  QVERIFY2(std::abs(side1.totalCurrent.real() + 500.0) < 1e-6 * 500.0,
+      qPrintable(QStringLiteral("side 1 carries %1 A, expected -500 A").arg(side1.totalCurrent.real())));
 }
 
 QTEST_GUILESS_MAIN(TestSolutionIntegrals)

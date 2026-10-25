@@ -32,9 +32,13 @@
 // solution determines; multiplying by the problem's Depth is the
 // caller's decision and is not done here.
 
+#include <QSet>
 #include <QString>
 #include <QVector>
 
+#include <complex>
+
+#include "MeshSolution.h"
 #include "SolutionField.h"
 #include "SolutionFileIO.h"
 
@@ -94,5 +98,25 @@ SolutionField::Quantity blockEnergyQuantity(FemmProblemKind kind);
 
 // What a line integral of this physics' field represents.
 SolutionField::Quantity lineFluxQuantity(FemmProblemKind kind);
+
+// The magnetics Area Properties sums, over the elements whose block
+// label is in `labels`, in SI units throughout. Separate from the dialog
+// so the arithmetic can be tested without a window (issue #94: the total
+// current was summed in MA and printed as amperes).
+//
+// `lengthToMeters` converts model coordinates; `depthM` is the planar
+// depth in metres and is ignored when `axisymmetric`, where each element
+// is revolved about r = 0 at its centroid radius (Pappus).
+struct MagneticsBlockSums {
+  int elementCount = 0;
+  double area = 0;                    // m^2
+  double volume = 0;                  // m^3
+  std::complex<double> totalCurrent;  // A
+  std::complex<double> intB1, intB2;  // T m^3, x/y or r/z component
+};
+
+MagneticsBlockSums magneticsBlockSums(const MeshSolution& solution,
+    const QSet<int>& labels, double lengthToMeters, double depthM,
+    bool axisymmetric);
 
 } // namespace SolutionIntegrals

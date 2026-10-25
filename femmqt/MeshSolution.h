@@ -54,12 +54,10 @@ struct MeshSolutionElement {
   // averaged nodal A (femm/FemmviewDoc.cpp's GetJA: Javg -= I*omega*sigma*
   // Aavg), which isn't available from a single MeshSolutionElement at
   // paint time. MA/m^2, matching JsrcRe/Im's units and femm.rc's own
-  // "|Je|, MA/m^2" label. Does NOT include the circuit-current
-  // correction GetJA also applies for circuit-driven blocks (needs
-  // either a solved per-block-label voltage drop for voltage-specified
-  // circuits, which isn't persisted in .ans at all, or a same-circuit
-  // conductor-area aggregation for current-specified ones) -- a real,
-  // scoped follow-up, not attempted here as a partial/rushed version.
+  // "|Je|, MA/m^2" label. Includes the circuit contribution GetJA adds,
+  // from the .ans per-label circuit section (AnsFileIO::readAns). Still
+  // MA/m^2: anything that integrates it into amperes must scale by 1e6
+  // (#94).
   double jRe = 0, jIm = 0;
 
   // Modified by Claude (Anthropic), noreply@anthropic.com: matches femm/

@@ -5,6 +5,7 @@
 #include "WindowTitle.h"
 #include "SolutionFileIO.h"
 #include "SolutionField.h"
+#include "SolutionIntegrals.h"
 #include "SolutionAdapter.h"
 #include "ProblemKind.h"
 
@@ -2990,35 +2991,13 @@ void SolutionWindow::showAreaIntegral()
   double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
   double depthM = m_problemGeometry.depth * lc;
 
-  double totalAreaM2 = 0;
-  double volumeM3 = 0;
-  int count = 0;
-  std::complex<double> totalCurrent(0, 0);
-  std::complex<double> intB1(0, 0), intB2(0, 0); // Tesla*meter^3, x/y or r/z component
-
-  for (const MeshSolutionElement& e : m_solution.elements) {
-    if (!labels.contains(e.lbl))
-      continue;
-    if (e.p0 < 0 || e.p0 >= m_solution.nodes.size() || e.p1 < 0 || e.p1 >= m_solution.nodes.size() || e.p2 < 0 || e.p2 >= m_solution.nodes.size())
-      continue;
-    const MeshSolutionNode& n0 = m_solution.nodes[e.p0];
-    const MeshSolutionNode& n1 = m_solution.nodes[e.p1];
-    const MeshSolutionNode& n2 = m_solution.nodes[e.p2];
-    double areaM2 = triangleArea(QPointF(n0.x, n0.y), QPointF(n1.x, n1.y), QPointF(n2.x, n2.y)) * lc * lc;
-    totalAreaM2 += areaM2;
-    count++;
-
-    totalCurrent += areaM2 * std::complex<double>(e.jRe, e.jIm);
-
-    double weight = depthM;
-    if (m_axisymmetric) {
-      double rCtrM = (n0.x + n1.x + n2.x) / 3.0 * lc;
-      weight = 2.0 * M_PI * rCtrM;
-    }
-    intB1 += (areaM2 * weight) * std::complex<double>(e.B1re, e.B1im);
-    intB2 += (areaM2 * weight) * std::complex<double>(e.B2re, e.B2im);
-    volumeM3 += areaM2 * weight;
-  }
+  const SolutionIntegrals::MagneticsBlockSums sums =
+      SolutionIntegrals::magneticsBlockSums(m_solution, labels, lc, depthM, m_axisymmetric);
+  const double totalAreaM2 = sums.area;
+  const double volumeM3 = sums.volume;
+  const int count = sums.elementCount;
+  const std::complex<double> totalCurrent = sums.totalCurrent;
+  const std::complex<double> intB1 = sums.intB1, intB2 = sums.intB2;
 
   QDialog dlg(this);
   dlg.setWindowTitle("Area Properties");

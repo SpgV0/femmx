@@ -255,3 +255,40 @@ SolutionField::Quantity SolutionIntegrals::lineFluxQuantity(FemmProblemKind kind
   }
   return {};
 }
+
+SolutionIntegrals::MagneticsBlockSums SolutionIntegrals::magneticsBlockSums(
+    const MeshSolution& solution, const QSet<int>& labels,
+    double lengthToMeters, double depthM, bool axisymmetric)
+{
+  // MeshSolutionElement::jRe/jIm are in MA/m^2, the unit every readout
+  // labels them in. Area times that is MA, not A (#94).
+  constexpr double kMegaAmpsToAmps = 1.0e6;
+
+  MagneticsBlockSums s;
+  const int nodeCount = solution.nodes.size();
+  const double lc = lengthToMeters;
+  for (const MeshSolutionElement& e : solution.elements) {
+    if (!labels.contains(e.lbl))
+      continue;
+    if (e.p0 < 0 || e.p0 >= nodeCount || e.p1 < 0 || e.p1 >= nodeCount || e.p2 < 0 || e.p2 >= nodeCount)
+      continue;
+    const MeshSolutionNode& n0 = solution.nodes[e.p0];
+    const MeshSolutionNode& n1 = solution.nodes[e.p1];
+    const MeshSolutionNode& n2 = solution.nodes[e.p2];
+    const double areaM2 = 0.5 * std::abs((n1.x - n0.x) * (n2.y - n0.y) - (n2.x - n0.x) * (n1.y - n0.y)) * lc * lc;
+    s.area += areaM2;
+    s.elementCount++;
+
+    s.totalCurrent += areaM2 * kMegaAmpsToAmps * std::complex<double>(e.jRe, e.jIm);
+
+    double weight = depthM;
+    if (axisymmetric) {
+      const double rCtrM = (n0.x + n1.x + n2.x) / 3.0 * lc;
+      weight = 2.0 * M_PI * rCtrM;
+    }
+    s.intB1 += (areaM2 * weight) * std::complex<double>(e.B1re, e.B1im);
+    s.intB2 += (areaM2 * weight) * std::complex<double>(e.B2re, e.B2im);
+    s.volume += areaM2 * weight;
+  }
+  return s;
+}
