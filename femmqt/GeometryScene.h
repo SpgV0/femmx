@@ -471,6 +471,9 @@ class GeometryScene : public QGraphicsScene {
   // for undo only if it is applied. False, with sketchEditRefused emitted,
   // if it was refused (#103).
   bool applyNewDimension(const FemmDimension& dim);
+  void commitRectangle(QPointF a, QPointF b);
+  void commitCircle(QPointF center, QPointF edge);
+  void cancelDrawPreview();
   // Modified by Claude (Anthropic), noreply@anthropic.com: shared by
   // AddDimensionDistance/AddDimensionRadius's own handleToolClick cases
   // AND the new SmartDimension tool -- prompts for the value
@@ -661,6 +664,9 @@ class GeometryScene : public QGraphicsScene {
   // just committing real geometry into m_problem on release instead of
   // zooming/selecting.
   QGraphicsRectItem* m_drawRectItem = nullptr;
+  // Draw Rectangle/Circle after a click without a drag: the first point
+  // is down and the preview follows the pointer to the second (#111).
+  bool m_drawAwaitingSecondPoint = false;
   QPointF m_drawRectStartPos;
 
   QGraphicsEllipseItem* m_drawCircleItem = nullptr;

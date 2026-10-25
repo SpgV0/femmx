@@ -39,6 +39,7 @@
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QKeyEvent>
 #include <QSignalSpy>
 #include <QPen>
 #include <QSet>
@@ -176,6 +177,14 @@ private slots:
   // #99
   void aBlockLabelOnANodeIsDrawnAndPickedAboveIt();
   void placingABlockLabelOnANodeSaysSo();
+
+  // #111
+  void aRectangleCanBeDrawnWithTwoClicks();
+  void aCircleCanBeDrawnWithTwoClicks();
+  void aDraggedRectangleStillWorks();
+  void escapeCancelsAPendingCorner();
+  void theDrawToolsSurviveARebuild();
+  void theDragToolsSurviveARebuild();
 };
 
 // ---------------------------------------------------------------------------
@@ -1331,6 +1340,151 @@ void TestSketchUi::placingABlockLabelOnANodeSaysSo()
   hoverThenClick(h.scene, QPointF(50, 40)); // clear of everything: quiet
   QCOMPARE(p.blockLabels.size(), 3);
   QCOMPARE(messages.size(), 2);
+}
+
+namespace {
+
+void click(GeometryScene& scene, QPointF at)
+{
+  sendMouse(scene, QEvent::GraphicsSceneMousePress, at);
+  sendMouse(scene, QEvent::GraphicsSceneMouseRelease, at, Qt::NoButton);
+}
+
+bool hasNodeAt(const FemmProblem& p, double x, double y)
+{
+  for (const FemmNode& n : p.nodes)
+    if (std::abs(n.x - x) < 1e-9 && std::abs(n.y - y) < 1e-9)
+      return true;
+  return false;
+}
+
+} // namespace
+
+void TestSketchUi::aRectangleCanBeDrawnWithTwoClicks()
+{
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  QSignalSpy hint(&h.scene, &GeometryScene::toolMessage);
+
+  click(h.scene, QPointF(0, 0));
+  QCOMPARE(p.nodes.size(), 0); // one corner is not a rectangle yet
+  QVERIFY2(!hint.isEmpty(), "the first click said nothing about the second");
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(20, 10), Qt::NoButton);
+  click(h.scene, QPointF(20, 10));
+
+  QVERIFY2(p.nodes.size() == 4, "click, click drew nothing -- it used to need a drag");
+  QCOMPARE(p.segments.size(), 4);
+  QVERIFY(hasNodeAt(p, 0, 0) && hasNodeAt(p, 20, 0) && hasNodeAt(p, 20, 10) && hasNodeAt(p, 0, 10));
+
+  // and the tool is ready for the next one, starting from scratch
+  click(h.scene, QPointF(50, 50));
+  QCOMPARE(p.nodes.size(), 4);
+}
+
+void TestSketchUi::aCircleCanBeDrawnWithTwoClicks()
+{
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::DrawCircle);
+  click(h.scene, QPointF(5, 5));
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(15, 5), Qt::NoButton);
+  click(h.scene, QPointF(15, 5));
+  QCOMPARE(p.nodes.size(), 2);
+  QCOMPARE(p.arcSegments.size(), 2);
+  QVERIFY(hasNodeAt(p, 15, 5) && hasNodeAt(p, -5, 5));
+}
+
+void TestSketchUi::aDraggedRectangleStillWorks()
+{
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  sendMouse(h.scene, QEvent::GraphicsSceneMousePress, QPointF(0, 0));
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(8, 6));
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseRelease, QPointF(8, 6), Qt::NoButton);
+  QCOMPARE(p.nodes.size(), 4);
+  QVERIFY(hasNodeAt(p, 8, 6));
+}
+
+void TestSketchUi::escapeCancelsAPendingCorner()
+{
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  click(h.scene, QPointF(0, 0));
+  QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+  QApplication::sendEvent(&h.scene, &esc);
+  click(h.scene, QPointF(20, 10)); // a fresh first corner, not the second
+  QCOMPARE(p.nodes.size(), 0);
+  click(h.scene, QPointF(30, 30));
+  QCOMPARE(p.nodes.size(), 4);
+  QVERIFY(hasNodeAt(p, 20, 10) && hasNodeAt(p, 30, 30));
+}
+
+void TestSketchUi::theDrawToolsSurviveARebuild()
+{
+  // rebuild() -- Undo, Open, a solve -- deleted the kept preview items
+  // and left the pointers to them: the next rectangle wrote to freed
+  // memory. Draw, rebuild, draw, for each of the three drag tools.
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  click(h.scene, QPointF(0, 0));
+  click(h.scene, QPointF(10, 10));
+  h.scene.rebuild();
+  click(h.scene, QPointF(20, 20));
+  click(h.scene, QPointF(30, 30));
+  QCOMPARE(p.nodes.size(), 8);
+
+  h.scene.setToolMode(GeometryToolMode::DrawCircle);
+  click(h.scene, QPointF(50, 0));
+  click(h.scene, QPointF(55, 0));
+  h.scene.rebuild();
+  click(h.scene, QPointF(70, 0));
+  click(h.scene, QPointF(75, 0));
+  QCOMPARE(p.arcSegments.size(), 4);
+
+  // a rebuild between the two clicks forgets the first one cleanly
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  click(h.scene, QPointF(100, 100));
+  h.scene.rebuild();
+  click(h.scene, QPointF(120, 120));
+  QCOMPARE(p.nodes.size(), 12);
+}
+
+void TestSketchUi::theDragToolsSurviveARebuild()
+{
+  // The use-after-free alone, with drags only -- the pre-#111 gesture.
+  FemmProblem p;
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  auto drag = [&](QPointF a, QPointF b) {
+    sendMouse(h.scene, QEvent::GraphicsSceneMousePress, a);
+    sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, b);
+    sendMouse(h.scene, QEvent::GraphicsSceneMouseRelease, b, Qt::NoButton);
+  };
+  h.scene.setToolMode(GeometryToolMode::DrawRectangle);
+  drag(QPointF(0, 0), QPointF(10, 10));
+  h.scene.rebuild(); // what Undo does
+  drag(QPointF(20, 20), QPointF(30, 30));
+  QCOMPARE(p.nodes.size(), 8);
+  h.scene.setToolMode(GeometryToolMode::SelectCircle);
+  drag(QPointF(0, 0), QPointF(5, 0));
+  h.scene.rebuild();
+  h.scene.setToolMode(GeometryToolMode::SelectCircle);
+  drag(QPointF(0, 0), QPointF(5, 0)); // no crash is the assertion
 }
 
 QTEST_MAIN(TestSketchUi)

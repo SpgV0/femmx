@@ -492,7 +492,11 @@ MainWindow::MainWindow(QWidget* parent)
   // precedent below; none of these collide with an existing binding.
   m_addRectangleToolAction->setShortcut(QKeySequence(Qt::Key_R));
   toolGroup->addAction(m_addRectangleToolAction);
-  connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawRectangle); });
+  connect(m_addRectangleToolAction, &QAction::triggered, this, [this]() {
+    m_scene->setToolMode(GeometryToolMode::DrawRectangle);
+    // Say how, the moment the tool is armed: drag or two clicks (#111).
+    statusBar()->showMessage("Rectangle: drag from one corner to the opposite corner, or click both corners. Esc cancels.");
+  });
 
   m_addCircleToolAction = addThemedToolAction(toolBar, ":/icons/add_circle.svg", "Draw Circle");
   m_addCircleToolAction->setToolTip("Draw Circle -- drag from the center out to the perimeter");
@@ -504,7 +508,10 @@ MainWindow::MainWindow(QWidget* parent)
   // precedent below; none of these collide with an existing binding.
   m_addCircleToolAction->setShortcut(QKeySequence(Qt::Key_C));
   toolGroup->addAction(m_addCircleToolAction);
-  connect(m_addCircleToolAction, &QAction::triggered, this, [this]() { m_scene->setToolMode(GeometryToolMode::DrawCircle); });
+  connect(m_addCircleToolAction, &QAction::triggered, this, [this]() {
+    m_scene->setToolMode(GeometryToolMode::DrawCircle);
+    statusBar()->showMessage("Circle: drag from the centre to the perimeter, or click the centre then the perimeter. Esc cancels.");
+  });
 
   // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12
   // (issue #29). These three MODIFY existing geometry, which is the

@@ -1213,6 +1213,15 @@ void GeometryScene::rebuild()
   // would otherwise leave these two pointers dangling after clear().
   m_smartDimPreviewItem = nullptr;
   m_smartDimPreviewText = nullptr;
+  // The same for the drag previews (#111). They are created once and kept,
+  // hidden, between uses -- so clear() deleted them while these still
+  // pointed at them, and the next Draw Rectangle, Draw Circle or Select
+  // by Circle after ANY rebuild (Undo, Open, a rectangle that split
+  // crossing lines, a constraint solve) wrote to freed memory.
+  m_drawRectItem = nullptr;
+  m_drawCircleItem = nullptr;
+  m_selectCircleItem = nullptr;
+  m_drawAwaitingSecondPoint = false;
   m_smartDimAwaitingPlacement = false;
   m_smartDimTwoPointMode = false;
   m_smartDimAngleEligible = false;
@@ -1342,6 +1351,16 @@ void GeometryScene::setToolMode(GeometryToolMode mode)
   m_pendingDimensionNodes.clear();
   m_pendingDimensionArc = -1;
   cancelSmartDimensionPreview();
+  cancelDrawPreview();
+}
+
+void GeometryScene::cancelDrawPreview()
+{
+  m_drawAwaitingSecondPoint = false;
+  if (m_drawRectItem)
+    m_drawRectItem->setVisible(false);
+  if (m_drawCircleItem)
+    m_drawCircleItem->setVisible(false);
 }
 
 // Modified by Claude (Anthropic), noreply@anthropic.com: DOF/sketch-
@@ -2137,6 +2156,15 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     return;
   }
   if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawRectangle) {
+    // The second click of click-click (#111): the preview has been
+    // following the pointer since the first; this corner finishes it.
+    if (m_drawAwaitingSecondPoint && m_drawRectItem && m_drawRectItem->isVisible()) {
+      m_drawAwaitingSecondPoint = false;
+      m_drawRectItem->setVisible(false);
+      commitRectangle(m_drawRectStartPos, snapPoint(event->scenePos()));
+      event->accept();
+      return;
+    }
     m_drawRectStartPos = snapPoint(event->scenePos());
     if (!m_drawRectItem) {
       m_drawRectItem = new QGraphicsRectItem();
@@ -2152,6 +2180,13 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     return;
   }
   if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::DrawCircle) {
+    if (m_drawAwaitingSecondPoint && m_drawCircleItem && m_drawCircleItem->isVisible()) {
+      m_drawAwaitingSecondPoint = false;
+      m_drawCircleItem->setVisible(false);
+      commitCircle(m_drawCircleStartPos, snapPoint(event->scenePos()));
+      event->accept();
+      return;
+    }
     m_drawCircleStartPos = snapPoint(event->scenePos());
     if (!m_drawCircleItem) {
       m_drawCircleItem = new QGraphicsEllipseItem();
@@ -2273,56 +2308,82 @@ void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
     return;
   }
   if (m_toolMode == GeometryToolMode::DrawRectangle && m_drawRectItem && m_drawRectItem->isVisible()) {
-    QRectF r = QRectF(m_drawRectStartPos, snapPoint(event->scenePos())).normalized();
-    m_drawRectItem->setVisible(false);
-    if (r.width() > 1e-9 && r.height() > 1e-9) {
-      // Persistent tool (see the enum's own comment) -- stays active for
-      // the next rectangle, unlike ZoomWindow/SelectCircle above.
-      emit aboutToEdit();
-      int n0 = FemmProblemEdit::addNode(*m_problem, r.left(), r.top());
-      int n1 = FemmProblemEdit::addNode(*m_problem, r.right(), r.top());
-      int n2 = FemmProblemEdit::addNode(*m_problem, r.right(), r.bottom());
-      int n3 = FemmProblemEdit::addNode(*m_problem, r.left(), r.bottom());
-      addNodeItem(n0);
-      addNodeItem(n1);
-      addNodeItem(n2);
-      addNodeItem(n3);
-      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n0, n1));
-      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n1, n2));
-      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n2, n3));
-      addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n3, n0));
-      // Same as the Add Segment tool: a rectangle dropped over existing
-      // geometry crosses it, and those crossings need nodes too.
-      if (FemmProblemEdit::splitIntersectingSegments(*m_problem) > 0)
-        rebuild();
-      emit problemEdited();
+    const QPointF end = snapPoint(event->scenePos());
+    const QRectF r = QRectF(m_drawRectStartPos, end).normalized();
+    if (r.width() <= 1e-9 && r.height() <= 1e-9 && !m_drawAwaitingSecondPoint) {
+      // A click, not a drag: the first corner of click-click. It used to
+      // do nothing at all, with no hint that a drag was wanted (#111).
+      m_drawAwaitingSecondPoint = true;
+      emit toolMessage(tr("Rectangle: click the opposite corner. Esc cancels."));
+      event->accept();
+      return;
     }
+    m_drawRectItem->setVisible(false);
+    m_drawAwaitingSecondPoint = false;
+    commitRectangle(m_drawRectStartPos, end);
     event->accept();
     return;
   }
   if (m_toolMode == GeometryToolMode::DrawCircle && m_drawCircleItem && m_drawCircleItem->isVisible()) {
-    QPointF center = m_drawCircleStartPos;
-    double r = QLineF(center, snapPoint(event->scenePos())).length();
-    m_drawCircleItem->setVisible(false);
-    if (r > 1e-9) {
-      // Persistent tool, same as DrawRectangle above.
-      emit aboutToEdit();
-      int n0 = FemmProblemEdit::addNode(*m_problem, center.x() + r, center.y());
-      int n1 = FemmProblemEdit::addNode(*m_problem, center.x() - r, center.y());
-      addNodeItem(n0);
-      addNodeItem(n1);
-      // Two 180-degree arcs, reusing whatever mesh density Add Arc last
-      // used (or its own default) -- see the enum's own comment for why
-      // this exact node/arc layout matches the codebase's established
-      // "full circle" convention.
-      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n0, n1, 180.0, m_lastArcMaxSegDeg));
-      addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n1, n0, 180.0, m_lastArcMaxSegDeg));
-      emit problemEdited();
+    const QPointF end = snapPoint(event->scenePos());
+    if (QLineF(m_drawCircleStartPos, end).length() <= 1e-9 && !m_drawAwaitingSecondPoint) {
+      m_drawAwaitingSecondPoint = true;
+      emit toolMessage(tr("Circle: click a point on the perimeter. Esc cancels."));
+      event->accept();
+      return;
     }
+    m_drawCircleItem->setVisible(false);
+    m_drawAwaitingSecondPoint = false;
+    commitCircle(m_drawCircleStartPos, end);
     event->accept();
     return;
   }
   QGraphicsScene::mouseReleaseEvent(event);
+}
+
+// The rectangle between two opposite corners -- by drag or by two
+// clicks (#111). Persistent tool: stays active for the next one.
+void GeometryScene::commitRectangle(QPointF a, QPointF b)
+{
+  const QRectF r = QRectF(a, b).normalized();
+  if (r.width() <= 1e-9 || r.height() <= 1e-9)
+    return;
+  emit aboutToEdit();
+  int n0 = FemmProblemEdit::addNode(*m_problem, r.left(), r.top());
+  int n1 = FemmProblemEdit::addNode(*m_problem, r.right(), r.top());
+  int n2 = FemmProblemEdit::addNode(*m_problem, r.right(), r.bottom());
+  int n3 = FemmProblemEdit::addNode(*m_problem, r.left(), r.bottom());
+  addNodeItem(n0);
+  addNodeItem(n1);
+  addNodeItem(n2);
+  addNodeItem(n3);
+  addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n0, n1));
+  addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n1, n2));
+  addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n2, n3));
+  addSegmentItem(FemmProblemEdit::addSegment(*m_problem, n3, n0));
+  // Same as the Add Segment tool: a rectangle dropped over existing
+  // geometry crosses it, and those crossings need nodes too.
+  if (FemmProblemEdit::splitIntersectingSegments(*m_problem) > 0)
+    rebuild();
+  emit problemEdited();
+}
+
+// The circle about `center` through `edge`, as two 180-degree arcs
+// reusing whatever mesh density Add Arc last used (or its own default)
+// -- the codebase's established "full circle" layout.
+void GeometryScene::commitCircle(QPointF center, QPointF edge)
+{
+  const double r = QLineF(center, edge).length();
+  if (r <= 1e-9)
+    return;
+  emit aboutToEdit();
+  int n0 = FemmProblemEdit::addNode(*m_problem, center.x() + r, center.y());
+  int n1 = FemmProblemEdit::addNode(*m_problem, center.x() - r, center.y());
+  addNodeItem(n0);
+  addNodeItem(n1);
+  addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n0, n1, 180.0, m_lastArcMaxSegDeg));
+  addArcItem(FemmProblemEdit::addArcSegment(*m_problem, n1, n0, 180.0, m_lastArcMaxSegDeg));
+  emit problemEdited();
 }
 
 void GeometryScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event)
@@ -2845,6 +2906,11 @@ void GeometryScene::keyPressEvent(QKeyEvent* event)
   // the preview, Section 26).
   if (event->key() == Qt::Key_Escape && m_smartDimAwaitingPlacement) {
     cancelSmartDimensionPreview();
+    event->accept();
+    return;
+  }
+  if (event->key() == Qt::Key_Escape && m_drawAwaitingSecondPoint) {
+    cancelDrawPreview();
     event->accept();
     return;
   }
