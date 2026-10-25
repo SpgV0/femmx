@@ -1,5 +1,7 @@
 #include "BoundaryPropDialog.h"
 
+#include <QLabel>
+
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleValidator>
@@ -50,6 +52,12 @@ BoundaryPropDialog::BoundaryPropDialog(FemmBoundaryProp& prop, QWidget* parent)
   m_a1 = makeField(fixedPage, fixedForm, "A1:", prop.A1);
   m_a2 = makeField(fixedPage, fixedForm, "A2:", prop.A2);
   m_phi = makeField(fixedPage, fixedForm, "Phi (deg):", prop.phi);
+  // What the four numbers mean (#119): they had no hint at all.
+  auto* formula = new QLabel(QStringLiteral("A = (A0 + A1*x + A2*y) * e^(j*Phi)\n"
+                                            "x, y in the model's length unit; r, z when axisymmetric."), fixedPage);
+  formula->setObjectName("fixedAFormula");
+  formula->setWordWrap(true);
+  fixedForm->addRow(formula);
   m_stack->addWidget(fixedPage);
 
   auto* ssdPage = new QWidget(this);

@@ -62,6 +62,10 @@ void PropertyListDialog::onAdd()
   m_cb.addNew();
   refreshList();
   m_list->setCurrentRow(m_list->count() - 1);
+  // A new entry is only a placeholder name until it is filled in, so the
+  // editor opens straight away -- it used to need a separate Edit click
+  // (#119).
+  onEdit();
 }
 
 void PropertyListDialog::onEdit()

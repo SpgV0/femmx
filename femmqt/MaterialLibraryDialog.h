@@ -4,6 +4,8 @@
 
 #include <QDialog>
 
+class QLabel;
+class QLineEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 struct FemmProblem;
@@ -21,11 +23,16 @@ class MaterialLibraryDialog : public QDialog {
 
   private slots:
   void onAddToProblem();
+  void applyFilter(const QString& text);
+  void onCurrentChanged();
 
   private:
   void populateTree(QTreeWidgetItem* parentItem, const MaterialLibraryNode& node);
 
   FemmProblem& m_problem;
   QTreeWidget* m_tree = nullptr;
+  QLineEdit* m_search = nullptr;
+  QLabel* m_details = nullptr;
+  QLabel* m_status = nullptr;
   MaterialLibraryNode m_root;
 };

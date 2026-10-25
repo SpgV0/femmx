@@ -18,6 +18,8 @@
 #include <QCheckBox>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QTreeWidget>
+#include <functional>
 #include <QListWidget>
 #include <QDockWidget>
 #include <QMenuBar>
@@ -47,6 +49,9 @@
 #include "ProblemFileIO.h"
 #include "SketchFileIO.h"
 #include "BlockLabelPropDialog.h"
+#include "BoundaryPropDialog.h"
+#include "MaterialLibraryDialog.h"
+#include "PropertyListDialog.h"
 #include "SolutionView.h"
 #include "DemoLibrary.h"
 #include "FileDialogDirs.h"
@@ -138,6 +143,9 @@ class TestMainWindow : public QObject
   void anAreaSelectionLetsThePlotShowThrough();
   // #116
   void theConstraintListShowsDimensions();
+  // #119
+  void theMaterialLibraryCanBeSearchedAndAddsWithoutAPopup();
+  void addNewOpensTheEditorAndFixedAShowsItsFormula();
 };
 
 void TestMainWindow::initTestCase()
@@ -1064,6 +1072,86 @@ void TestMainWindow::theConstraintListShowsDimensions()
   QCOMPARE(rows.size(), 3); // one Horizontal, two distances
   const QString all = rows.join(QStringLiteral(" | "));
   QVERIFY2(all.contains("Distance 70") && all.contains("Distance 30"), qPrintable(all));
+}
+
+void TestMainWindow::theMaterialLibraryCanBeSearchedAndAddsWithoutAPopup()
+{
+  // The dialog reads matlib.dat from beside the executable.
+  const QString lib = QCoreApplication::applicationDirPath() + "/matlib.dat";
+  const bool had = QFile::exists(lib);
+  if (!had)
+    QVERIFY(QFile::copy(QStringLiteral(FEMMQT_SOURCE_DIR "/../bin/matlib.dat"), lib));
+  struct Cleanup {
+    QString path;
+    bool keep;
+    ~Cleanup() { if (!keep) QFile::remove(path); }
+  } cleanup { lib, had };
+
+  FemmProblem p;
+  MaterialLibraryDialog dlg(p);
+  auto* search = dlg.findChild<QLineEdit*>("materialSearch");
+  auto* tree = dlg.findChild<QTreeWidget*>();
+  QVERIFY(search && tree);
+  search->setText("copper");
+  // Every visible leaf now matches.
+  int visibleLeaves = 0;
+  QTreeWidgetItem* copper = nullptr;
+  std::function<void(QTreeWidgetItem*)> walk = [&](QTreeWidgetItem* it) {
+    if (it->isHidden())
+      return;
+    if (it->childCount() == 0) {
+      visibleLeaves++;
+      QVERIFY2(it->text(0).contains("copper", Qt::CaseInsensitive), qPrintable(it->text(0)));
+      if (!copper)
+        copper = it;
+    }
+    for (int i = 0; i < it->childCount(); i++)
+      walk(it->child(i));
+  };
+  for (int i = 0; i < tree->topLevelItemCount(); i++)
+    walk(tree->topLevelItem(i));
+  QVERIFY2(visibleLeaves > 0 && copper, "searching for copper found nothing");
+
+  tree->setCurrentItem(copper);
+  QVERIFY2(dlg.findChild<QLabel*>("materialDetails")->text().contains("MS/m"), "no property preview");
+
+  bool sawModal = false;
+  QTimer guard;
+  connect(&guard, &QTimer::timeout, [&sawModal]() {
+    if (auto* m = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+      sawModal = true;
+      m->accept();
+    }
+  });
+  guard.start(0);
+  QVERIFY(QMetaObject::invokeMethod(&dlg, "onAddToProblem"));
+  guard.stop();
+  QVERIFY2(!sawModal, "adding a material popped a modal box");
+  QCOMPARE(p.materialProps.size(), 1);
+  QVERIFY(dlg.findChild<QLabel*>("materialStatus")->text().contains("Added"));
+}
+
+void TestMainWindow::addNewOpensTheEditorAndFixedAShowsItsFormula()
+{
+  int edited = -1;
+  int count = 0;
+  PropertyListDialog::Callbacks cb;
+  cb.count = [&]() { return count; };
+  cb.nameAt = [](int i) { return QStringLiteral("item %1").arg(i); };
+  cb.addNew = [&]() { count++; };
+  cb.editAt = [&](int i) { edited = i; };
+  cb.remove = [](int) {};
+  cb.referenceCount = [](int) { return 0; };
+  PropertyListDialog list("Boundaries", "boundary", cb);
+  for (QPushButton* b : list.findChildren<QPushButton*>())
+    if (b->text() == "Add New")
+      b->click();
+  QCOMPARE(edited, 0); // the editor opened on the new entry, unasked
+
+  FemmBoundaryProp prop;
+  BoundaryPropDialog bd(prop);
+  auto* formula = bd.findChild<QLabel*>("fixedAFormula");
+  QVERIFY2(formula && formula->text().contains("A0 + A1*x + A2*y"), "the fixed-A fields carry no formula");
 }
 
 QTEST_MAIN(TestMainWindow)
