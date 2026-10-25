@@ -592,6 +592,9 @@ private slots:
   void solveIsDeterministic();
   void angleLinesWrapsModulo180();
   void sketchLayerNeverReachesTheSavedFile();
+
+  // #102
+  void classifyReportsWithoutMovingAnything();
 };
 
 // ---------------------------------------------------------------------------
@@ -919,6 +922,41 @@ void TestConstraintSolver::sketchLayerNeverReachesTheSavedFile()
   QVERIFY(reloaded.constraints.isEmpty());
   QVERIFY(reloaded.dimensions.isEmpty());
   QCOMPARE((int)reloaded.segments.size(), 1);
+}
+
+void TestConstraintSolver::classifyReportsWithoutMovingAnything()
+{
+  // A square with a horizontal constraint that holds and a distance
+  // that does not: classify must say "not satisfied" and leave every
+  // coordinate exactly where it was, bit for bit.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmConstraint h;
+  h.type = ConstraintType::Horizontal;
+  h.refA = 0;
+  p.constraints << h;
+  const FemmProblem before = p;
+
+  ConstraintSolver::SolveResult ok = ConstraintSolver::classify(p);
+  QVERIFY(ok.converged);
+  QCOMPARE(ok.iterations, 0);
+  QVERIFY(ok.nodeStatus.value(0) != ConstraintSolver::SketchStatus::Conflicting);
+
+  FemmDimension d;
+  d.type = DimensionType::Distance;
+  d.refA = 0;
+  d.refB = 1;
+  d.value = 25;
+  p.dimensions << d;
+  ConstraintSolver::SolveResult unmet = ConstraintSolver::classify(p);
+  QVERIFY(!unmet.converged);
+  QCOMPARE(unmet.nodeStatus.value(1), ConstraintSolver::SketchStatus::Conflicting);
+  for (int i = 0; i < p.nodes.size(); i++) {
+    QCOMPARE(p.nodes[i].x, before.nodes[i].x);
+    QCOMPARE(p.nodes[i].y, before.nodes[i].y);
+  }
 }
 
 QTEST_GUILESS_MAIN(TestConstraintSolver)

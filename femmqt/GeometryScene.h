@@ -308,6 +308,7 @@ class GeometryScene : public QGraphicsScene {
   // after undo, file open, etc.) without the caller needing to re-apply
   // it every time.
   void setConstraintStatus(const QHash<int, ConstraintSolver::SketchStatus>& nodeStatus);
+  const QHash<int, ConstraintSolver::SketchStatus>& constraintStatus() const { return m_constraintNodeStatus; }
 
   // Modified by Claude (Anthropic), noreply@anthropic.com: selects
   // constraint `index`'s on-canvas glyph (clearing any prior selection

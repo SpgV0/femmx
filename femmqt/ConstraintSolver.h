@@ -45,6 +45,13 @@ struct SolveResult {
 // failed" behavior, rather than leaving a half-adjusted mess.
 SolveResult solve(FemmProblem& p);
 
+// The same per-node classification solve() reports, for the geometry as
+// it stands -- nothing moves, and `converged` says whether every
+// constraint and dimension is already satisfied. For the places that
+// replace the sketch without editing it (Undo, Open), which used to show
+// whatever colours the previous state had left, or none (#102).
+SolveResult classify(const FemmProblem& p);
+
 // Modified by Claude (Anthropic), noreply@anthropic.com: exposed for
 // GeometryScene's constraint glyphs -- per direct user request ("symbols
 // indicating constraints than I can click and remove"). Returns the node

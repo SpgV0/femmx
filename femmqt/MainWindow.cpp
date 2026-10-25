@@ -903,6 +903,7 @@ void MainWindow::newDocument(FemmProblemKind kind)
   m_problem.kind = kind;
   m_currentPath.clear();
   resetDocumentState();
+  m_scene->setConstraintStatus({});
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
   m_view->resetZoomTransform();
@@ -1053,6 +1054,10 @@ bool MainWindow::openFile(const QString& path)
   // through this function, and a stale flag would make Save prompt for
   // a document that has a perfectly good path of its own (#91).
   resetDocumentState();
+  // A reopened sketch is classified as it stands -- not solved, which
+  // would move it and mark it dirty, and not left uncoloured, which drew
+  // every constrained node as conflicting (#102).
+  m_scene->setConstraintStatus(ConstraintSolver::classify(m_problem).nodeStatus);
   m_scene->setProblem(&m_problem);
   QRectF problemBounds = m_scene->computeProblemBounds();
   m_view->fitInViewSafe(problemBounds);
@@ -2125,7 +2130,13 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
   case FemmItemKind::Dimension: {
     if (indices.isEmpty() || indices.first() < 0 || indices.first() >= m_problem.dimensions.size())
       break;
-    FemmDimension& dim = m_problem.dimensions[indices.first()];
+    // A COPY, not a reference: snapshotForUndo() below copies m_problem,
+    // and that copy SHARES the dimensions buffer until someone detaches
+    // it. Writing the new value through a reference taken before the
+    // snapshot did not detach, so the snapshot got the new value too and
+    // Undo brought the geometry back but left the value -- with a
+    // Solve Constraints away from re-breaking the sketch (#102).
+    const FemmDimension dim = m_problem.dimensions[indices.first()];
     // Modified by Claude (Anthropic), noreply@anthropic.com: was a 2-way
     // ternary chain that silently fell through to the Angle label/bounds
     // for HorizontalDistance/VerticalDistance (added alongside the Smart
@@ -2160,7 +2171,7 @@ void MainWindow::openEntityProperties(FemmItemKind kind, const QVector<int>& ind
     double newValue = QInputDialog::getDouble(this, "Edit Dimension", label, dim.value, minVal, maxVal, 6, &ok);
     if (ok && newValue != dim.value) {
       snapshotForUndo();
-      dim.value = newValue;
+      m_problem.dimensions[indices.first()].value = newValue;
       ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
       m_scene->setConstraintStatus(result.nodeStatus);
       accepted = true;
@@ -2363,6 +2374,8 @@ void MainWindow::onUndoTriggered()
     return;
   }
   m_problem = m_undoStack.takeLast();
+  // The colours describe the sketch, so they come back with it (#102).
+  m_scene->setConstraintStatus(ConstraintSolver::classify(m_problem).nodeStatus);
   m_scene->rebuild();
   markEdited();
   statusBar()->showMessage(QString("Undone (%1 more step%2 available)").arg(m_undoStack.size()).arg(m_undoStack.size() == 1 ? "" : "s"));
@@ -2660,11 +2673,22 @@ void MainWindow::onSolveConstraintsTriggered()
     statusBar()->showMessage("No constraints or dimensions to solve.", 4000);
     return;
   }
-  snapshotForUndo();
-  ConstraintSolver::SolveResult result = ConstraintSolver::solve(m_problem);
+  // Solved on a copy first: a sketch that is already satisfied comes
+  // back from the solver unmoved, and that is not an edit -- it used to
+  // cost an undo step and mark the document dirty all the same (#102).
+  FemmProblem solved = m_problem;
+  ConstraintSolver::SolveResult result = ConstraintSolver::solve(solved);
+  bool moved = false;
+  for (int i = 0; i < solved.nodes.size() && !moved; i++)
+    moved = solved.nodes[i].x != m_problem.nodes[i].x || solved.nodes[i].y != m_problem.nodes[i].y;
+  if (moved) {
+    snapshotForUndo();
+    m_problem.nodes = solved.nodes;
+  }
   m_scene->setConstraintStatus(result.nodeStatus);
   m_scene->rebuild();
-  markEdited();
+  if (moved)
+    markEdited();
   statusBar()->showMessage(result.converged
           ? QString("Solved in %1 iteration(s), residual %2.").arg(result.iterations).arg(result.finalResidualNorm, 0, 'g', 3)
           : "Could not fully solve -- check for a conflict (shown in red).",

@@ -452,6 +452,8 @@ if(TARGET Qt6::Test)
   # must go when it is replaced (#95). Widgets, so it needs a QPA platform.
   qt_add_executable(femmqt_main_window_tests
     tests/tst_main_window.cpp
+    # The window builds its toolbars from it; see femmqt_icon_tests.
+    icons.qrc
   )
   # Every test target, named once. These used to be two hand-kept
   # lists and they drifted: the Qt-deployment loop below still named

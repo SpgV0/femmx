@@ -513,7 +513,27 @@ void anchorPoint(const FemmProblem& p, const FemmConstraint& c, double& x, doubl
   y /= nodes.size();
 }
 
+namespace {
+SolveResult solveImpl(FemmProblem& p, int maxIterations);
+}
+
 SolveResult solve(FemmProblem& p)
+{
+  return solveImpl(p, 100);
+}
+
+SolveResult classify(const FemmProblem& p)
+{
+  // Zero iterations: the LM loop never runs, so nothing moves -- the
+  // copy is only because the residual evaluation writes perturbed
+  // coordinates while building the Jacobian (and restores them).
+  FemmProblem copy = p;
+  return solveImpl(copy, 0);
+}
+
+namespace {
+
+SolveResult solveImpl(FemmProblem& p, int maxIterations)
 {
   SolveResult result;
   if (p.constraints.isEmpty() && p.dimensions.isEmpty()) {
@@ -624,7 +644,7 @@ SolveResult solve(FemmProblem& p)
   };
 
   // ---- 4. Levenberg-Marquardt --------------------------------------------
-  constexpr int kMaxIterations = 100;
+  const int kMaxIterations = maxIterations;
   constexpr int kMaxInnerIterations = 30;
   constexpr double kConvergedMaxAbsResidual = 1e-8;
   constexpr double kMaxLambda = 1e12;
@@ -789,5 +809,7 @@ SolveResult solve(FemmProblem& p)
 
   return result;
 }
+
+} // namespace
 
 } // namespace ConstraintSolver

@@ -17,6 +17,11 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsSimpleTextItem>
+#include <QGraphicsView>
+#include <QInputDialog>
+#include <QTimer>
 #include <QLineEdit>
 #include <QGraphicsScene>
 #include <QPainter>
@@ -25,6 +30,10 @@
 
 #include "AnsFileIO.h"
 #include "AppTheme.h"
+#include "ConstraintSolver.h"
+#include "FemmProblemEdit.h"
+#include "ProblemFileIO.h"
+#include "SketchFileIO.h"
 #include "BlockLabelPropDialog.h"
 #include "SolutionView.h"
 #include "DemoLibrary.h"
@@ -83,6 +92,12 @@ class TestMainWindow : public QObject
   // #101: light theme -- unchecked checkboxes and input fields vanished.
   void anUncheckedCheckboxIsVisibleInBothThemes();
   void anInputFieldStandsOutFromThePanelInBothThemes();
+
+  // Review FQT-06/07: editing a dimension through the real window.
+  void editingAnAngleDimensionThenUndoRestoresTheValueToo();
+  void aReopenedConsistentSketchIsNotShownAsConflicting();
+  void undoRestoresTheConstraintColoursWithTheSketch();
+  void solvingAnAlreadySatisfiedSketchIsNotAnEdit();
 };
 
 void TestMainWindow::initTestCase()
@@ -321,6 +336,177 @@ void TestMainWindow::anInputFieldStandsOutFromThePanelInBothThemes()
                        .arg(dark ? "dark" : "light").arg(frame)));
   }
   AppTheme::setDark(false);
+}
+
+namespace {
+
+// The review's trapezoid, with the angle dimension Smart Dimension makes
+// when you click the left side and then the bottom: vertex 0, rays to 3
+// and 1, so it measures -75.96 degrees as stored today.
+void trapezoidWithAngle(FemmProblem& p, double storedValue)
+{
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 70, 0);
+  FemmProblemEdit::addNode(p, 60, 40);
+  FemmProblemEdit::addNode(p, 10, 40);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmProblemEdit::addSegment(p, 2, 3);
+  FemmProblemEdit::addSegment(p, 3, 0);
+  FemmDimension d;
+  d.type = DimensionType::Angle;
+  d.refA = 0;
+  d.refB = 3;
+  d.refC = 1;
+  d.value = storedValue;
+  d.labelOffsetX = 1;
+  d.labelOffsetY = 1;
+  p.dimensions << d;
+}
+
+// Answers the next modal QInputDialog with `value`.
+void answerNextInputDialog(double value)
+{
+  QTimer::singleShot(0, [value]() {
+    auto* dlg = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+    if (!dlg)
+      return;
+    dlg->setDoubleValue(value);
+    dlg->accept();
+  });
+}
+
+QPointF dimensionPos(GeometryScene& scene)
+{
+  // The label text: solid under its whole rect, unlike the thin arc.
+  for (QGraphicsItem* item : scene.items()) {
+    if (item->type() == QGraphicsSimpleTextItem::Type && item->data(0).isValid()
+        && item->data(0).toInt() == static_cast<int>(FemmItemKind::Dimension)) {
+      // The text ignores the view transform, so its scene rect is not
+      // where it is drawn; go through the view the way a click does.
+      QGraphicsView* view = scene.views().first();
+      const QRectF device = item->deviceTransform(view->viewportTransform()).mapRect(item->boundingRect());
+      return view->mapToScene(device.center().toPoint());
+    }
+  }
+  return QPointF(qQNaN(), qQNaN());
+}
+
+} // namespace
+
+void TestMainWindow::editingAnAngleDimensionThenUndoRestoresTheValueToo()
+{
+  MainWindow w;
+  w.newDocument(FemmProblemKind::Magnetics);
+  auto& p = const_cast<FemmProblem&>(w.problem());
+  trapezoidWithAngle(p, -75.963756532073536);
+  auto* scene = w.findChild<GeometryScene*>();
+  scene->rebuild();
+  w.resize(800, 600);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+
+  const QPointF at = dimensionPos(*scene);
+  QVERIFY(!qIsNaN(at.x()));
+  const QPointF before3(p.nodes[3].x, p.nodes[3].y);
+
+  answerNextInputDialog(80);
+  QGraphicsSceneMouseEvent dbl(QEvent::GraphicsSceneMouseDoubleClick);
+  dbl.setScenePos(at);
+  dbl.setButton(Qt::LeftButton);
+  dbl.setButtons(Qt::LeftButton);
+  QApplication::sendEvent(scene, &dbl);
+  QVERIFY2(std::abs(std::abs(p.dimensions[0].value) - 80) < 1e-9,
+      qPrintable(QStringLiteral("the edit did not take: value %1").arg(p.dimensions[0].value)));
+
+  QAction* undo = actionNamed(w, QStringLiteral("&Undo"));
+  undo->trigger();
+  QVERIFY2(std::abs(p.dimensions[0].value + 75.963756532073536) < 1e-6 || std::abs(p.dimensions[0].value - 75.963756532073536) < 1e-6,
+      qPrintable(QStringLiteral("Undo put the geometry back but left the value at %1").arg(p.dimensions[0].value)));
+  QCOMPARE(QPointF(p.nodes[3].x, p.nodes[3].y), before3);
+}
+
+namespace {
+
+// Two consistent distance dimensions and a horizontal constraint on an
+// open L, saved with its sketch sidecar the way Save writes it.
+QString writeConsistentSketch(const QString& dir)
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 70, 0);
+  FemmProblemEdit::addNode(p, 70, 30);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addSegment(p, 1, 2);
+  FemmConstraint h;
+  h.type = ConstraintType::Horizontal;
+  h.refA = 0;
+  p.constraints << h;
+  FemmDimension a;
+  a.type = DimensionType::Distance;
+  a.refA = 0;
+  a.refB = 1;
+  a.value = 70;
+  p.dimensions << a;
+  FemmDimension b = a;
+  b.refA = 1;
+  b.refB = 2;
+  b.value = 30;
+  p.dimensions << b;
+  const QString path = dir + QStringLiteral("/consistent.fem");
+  QString err;
+  if (!ProblemFileIO::write(path, p, err) || !SketchFileIO::writeSketch(path, p, err))
+    return {};
+  return path;
+}
+
+} // namespace
+
+void TestMainWindow::aReopenedConsistentSketchIsNotShownAsConflicting()
+{
+  const QString path = writeConsistentSketch(m_dir.path());
+  QVERIFY(!path.isEmpty());
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  QCOMPARE(w.problem().dimensions.size(), 2);
+  const auto& status = w.findChild<GeometryScene*>()->constraintStatus();
+  QVERIFY2(!status.isEmpty(), "a reopened sketch had no constraint status at all");
+  for (auto it = status.begin(); it != status.end(); ++it)
+    QVERIFY2(it.value() != ConstraintSolver::SketchStatus::Conflicting,
+        qPrintable(QStringLiteral("node %1 shows as conflicting in a sketch that is satisfied").arg(it.key())));
+  QVERIFY2(!w.windowTitle().contains('*'), qPrintable(w.windowTitle()));
+}
+
+void TestMainWindow::undoRestoresTheConstraintColoursWithTheSketch()
+{
+  const QString path = writeConsistentSketch(m_dir.path());
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  auto* scene = w.findChild<GeometryScene*>();
+  const auto before = scene->constraintStatus();
+
+  // Clear All Dimensions, then Undo: the dimensions come back, and so
+  // must the colours they imply.
+  actionNamed(w, QStringLiteral("Clear All Dimensions"))->trigger();
+  QCOMPARE(w.problem().dimensions.size(), 0);
+  actionNamed(w, QStringLiteral("&Undo"))->trigger();
+  QCOMPARE(w.problem().dimensions.size(), 2);
+  QCOMPARE(scene->constraintStatus(), before);
+}
+
+void TestMainWindow::solvingAnAlreadySatisfiedSketchIsNotAnEdit()
+{
+  const QString path = writeConsistentSketch(m_dir.path());
+  MainWindow w;
+  QVERIFY(w.openFile(path));
+  actionNamed(w, QStringLiteral("&Solve Constraints"))->trigger();
+  QVERIFY2(!w.windowTitle().contains('*'),
+      qPrintable(QStringLiteral("Solve Constraints on a satisfied sketch marked it dirty: %1").arg(w.windowTitle())));
+  // and cost no undo step: Undo now has nothing to do
+  const FemmProblem before = w.problem();
+  actionNamed(w, QStringLiteral("&Undo"))->trigger();
+  QCOMPARE(w.problem().nodes.size(), before.nodes.size());
+  QVERIFY(!w.windowTitle().contains('*'));
 }
 
 QTEST_MAIN(TestMainWindow)
