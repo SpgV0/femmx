@@ -668,6 +668,9 @@ class GeometryScene : public QGraphicsScene {
   // Draw Rectangle/Circle after a click without a drag: the first point
   // is down and the preview follows the pointer to the second (#111).
   bool m_drawAwaitingSecondPoint = false;
+  // A placed dimension being dragged in Select mode (#117), or -1.
+  int m_dimDragIndex = -1;
+  bool m_dimDragMoved = false;
   QPointF m_drawRectStartPos;
 
   QGraphicsEllipseItem* m_drawCircleItem = nullptr;

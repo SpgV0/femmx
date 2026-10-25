@@ -1222,6 +1222,7 @@ void GeometryScene::rebuild()
   m_drawCircleItem = nullptr;
   m_selectCircleItem = nullptr;
   m_drawAwaitingSecondPoint = false;
+  m_dimDragIndex = -1;
   m_smartDimAwaitingPlacement = false;
   m_smartDimTwoPointMode = false;
   m_smartDimAngleEligible = false;
@@ -2204,17 +2205,19 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
   // A dimension's NUMBER is the dimension: clicking the label selects it.
   // The label is tagged as the dimension but is not itself selectable, so
   // the click used to fall through to nothing -- only the thin line could
-  // be hit (#116).
+  // be hit (#116). A press on the line or the label also starts a drag
+  // that moves the dimension (#117).
   if (m_problem && event->button() == Qt::LeftButton && m_toolMode == GeometryToolMode::Select) {
     QGraphicsItem* hit = entityAt(event->scenePos(), { FemmItemKind::Dimension });
-    if (hit && !(hit->flags() & QGraphicsItem::ItemIsSelectable)) {
-      if (QGraphicsItem* dim = m_dimensionItems.value(hit->data(IndexKey).toInt())) {
-        if (!(event->modifiers() & Qt::ControlModifier))
-          clearSelection();
-        dim->setSelected(!(event->modifiers() & Qt::ControlModifier) || !dim->isSelected());
-        event->accept();
-        return;
-      }
+    const int index = hit ? hit->data(IndexKey).toInt() : -1;
+    if (QGraphicsItem* dim = m_dimensionItems.value(index)) {
+      if (!(event->modifiers() & Qt::ControlModifier))
+        clearSelection();
+      dim->setSelected(!(event->modifiers() & Qt::ControlModifier) || !dim->isSelected());
+      m_dimDragIndex = index;
+      m_dimDragMoved = false;
+      event->accept();
+      return;
     }
   }
   if (!m_problem || event->button() != Qt::LeftButton || m_toolMode == GeometryToolMode::Select) {
@@ -2222,6 +2225,43 @@ void GeometryScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     return;
   }
   handleToolClick(event);
+}
+
+// Where a dimension's line or label goes for a pointer at `p` -- the same
+// offset Smart Dimension's preview computes, so a drag and a placement
+// put it in the same place.
+static void setDimensionOffsetFor(const FemmProblem& prob, FemmDimension& d, QPointF p)
+{
+  switch (d.type) {
+  case DimensionType::Distance:
+  case DimensionType::HorizontalDistance:
+  case DimensionType::VerticalDistance: {
+    if (d.refA < 0 || d.refB < 0 || d.refA >= prob.nodes.size() || d.refB >= prob.nodes.size())
+      return;
+    const QPointF mid((prob.nodes[d.refA].x + prob.nodes[d.refB].x) / 2., (prob.nodes[d.refA].y + prob.nodes[d.refB].y) / 2.);
+    d.labelOffsetX = p.x() - mid.x();
+    d.labelOffsetY = p.y() - mid.y();
+    return;
+  }
+  case DimensionType::Radius: {
+    if (d.refA < 0 || d.refA >= prob.arcSegments.size())
+      return;
+    std::complex<double> c;
+    double r = 0;
+    if (!FemmProblemEdit::circleFromArc(prob, prob.arcSegments[d.refA], c, r))
+      return;
+    const QPointF dir = p - QPointF(c.real(), c.imag());
+    const double len = std::hypot(dir.x(), dir.y());
+    if (len > 1e-9) {
+      d.labelOffsetX = dir.x() / len;
+      d.labelOffsetY = dir.y() / len;
+    }
+    return;
+  }
+  case DimensionType::Angle:
+  case DimensionType::AngleLines:
+    return; // drawn from the geometry alone
+  }
 }
 
 void GeometryScene::selectDimension(int index)
@@ -2233,6 +2273,20 @@ void GeometryScene::selectDimension(int index)
 
 void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
+  // Dragging a placed dimension (#117): one undo step per drag, taken
+  // when it first moves, so a plain click costs none.
+  if (m_dimDragIndex >= 0 && (event->buttons() & Qt::LeftButton) && m_problem
+      && m_dimDragIndex < m_problem->dimensions.size()) {
+    if (!m_dimDragMoved) {
+      emit aboutToEdit();
+      m_dimDragMoved = true;
+    }
+    setDimensionOffsetFor(*m_problem, m_problem->dimensions[m_dimDragIndex], event->scenePos());
+    if (QGraphicsItem* item = m_dimensionItems.value(m_dimDragIndex))
+      static_cast<DimensionItem*>(item)->updateGeometry();
+    event->accept();
+    return;
+  }
   // Select mode places nothing until a drag starts, so a hover there
   // gets the raw position and no snap marker: "Snap: Quadrant" while
   // merely pointing at an arc describes a placement that is not going
@@ -2252,7 +2306,9 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
   }
   emit snapChanged(m_lastSnap);
 
-  if (m_toolMode == GeometryToolMode::SmartDimension && m_smartDimAwaitingPlacement) {
+  if ((m_toolMode == GeometryToolMode::SmartDimension || m_toolMode == GeometryToolMode::AddDimensionDistance
+          || m_toolMode == GeometryToolMode::AddDimensionRadius)
+      && m_smartDimAwaitingPlacement) {
     // Deliberately the RAW (unsnapped) scene position -- dimension
     // placement/offset isn't grid-snapped even when geometry is, matching
     // every other dimension tool's own use of `pos` in handleToolClick.
@@ -2288,6 +2344,15 @@ void GeometryScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
 void GeometryScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 {
+  if (m_dimDragIndex >= 0) {
+    const bool moved = m_dimDragMoved;
+    m_dimDragIndex = -1;
+    m_dimDragMoved = false;
+    if (moved)
+      emit problemEdited();
+    event->accept();
+    return;
+  }
   // Modified by Claude (Anthropic), noreply@anthropic.com: re-solves once
   // per drag GESTURE (not per mouse-move frame), same "only if something
   // actually moved" gating snapshotOnceForDrag() already established --
@@ -2532,20 +2597,46 @@ void GeometryScene::handleToolClick(QGraphicsSceneMouseEvent* event)
     break;
   }
   case GeometryToolMode::AddDimensionDistance: {
+    // A placement click, as Smart Dimension has: the dimension used to
+    // drop at a fixed 15%-of-length offset, often inside the part on top
+    // of the geometry it measures (#117).
+    if (m_smartDimAwaitingPlacement) {
+      commitSmartDimensionPlacement(pos);
+      break;
+    }
     const int clickedNode = nodeAt(pos);
     if (clickedNode >= 0) {
       if (!m_pendingDimensionNodes.contains(clickedNode))
         m_pendingDimensionNodes.push_back(clickedNode);
       if (m_pendingDimensionNodes.size() == 2) {
-        addDistanceDimensionForNodes(m_pendingDimensionNodes[0], m_pendingDimensionNodes[1]);
+        m_smartDimType = DimensionType::Distance;
+        m_smartDimRefA = m_pendingDimensionNodes[0];
+        m_smartDimRefB = m_pendingDimensionNodes[1];
+        m_smartDimTwoPointMode = false; // this tool is Distance, always
+        m_smartDimAngleEligible = false;
         m_pendingDimensionNodes.clear();
+        m_smartDimAwaitingPlacement = true;
+        updateSmartDimensionPreview(pos);
+        emit toolMessage(tr("Distance: click where the dimension line goes. Esc cancels."));
       }
     }
     break;
   }
   case GeometryToolMode::AddDimensionRadius: {
-    if (QGraphicsItem* hit = entityAt(pos, { FemmItemKind::Arc }))
-      addRadiusDimensionForArc(hit->data(IndexKey).toInt());
+    // Likewise: the R-label sat on the arc's own node.
+    if (m_smartDimAwaitingPlacement) {
+      commitSmartDimensionPlacement(pos);
+      break;
+    }
+    if (QGraphicsItem* hit = entityAt(pos, { FemmItemKind::Arc })) {
+      m_smartDimType = DimensionType::Radius;
+      m_smartDimRefA = hit->data(IndexKey).toInt();
+      m_smartDimTwoPointMode = false;
+      m_smartDimAngleEligible = false;
+      m_smartDimAwaitingPlacement = true;
+      updateSmartDimensionPreview(pos);
+      emit toolMessage(tr("Radius: click where the label goes. Esc cancels."));
+    }
     break;
   }
   case GeometryToolMode::SmartDimension: {

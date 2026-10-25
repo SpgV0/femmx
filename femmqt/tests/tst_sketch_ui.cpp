@@ -40,7 +40,9 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
 #include <QGraphicsSimpleTextItem>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QSignalSpy>
 #include <QPen>
 #include <QSet>
@@ -190,6 +192,10 @@ private slots:
   // #116
   void clickingADimensionsLabelSelectsIt();
   void deletingALineAndItsLabelRemovesOneDimension();
+  // #117
+  void theDistanceToolPlacesWhereYouClick();
+  void theRadiusToolPlacesWhereYouClick();
+  void aPlacedDimensionCanBeDragged();
 };
 
 // ---------------------------------------------------------------------------
@@ -1561,6 +1567,87 @@ void TestSketchUi::deletingALineAndItsLabelRemovesOneDimension()
   h.scene.deleteSelectedItem();
   QVERIFY2(p.dimensions.size() == 1, qPrintable(QStringLiteral("%1 dimensions left, expected 1").arg(p.dimensions.size())));
   QCOMPARE(p.dimensions[0].value, 60.0); // and it is the OTHER one
+}
+
+namespace {
+
+void acceptNextInputDialog()
+{
+  QTimer::singleShot(0, []() {
+    if (auto* d = qobject_cast<QInputDialog*>(QApplication::activeModalWidget()))
+      d->accept();
+  });
+}
+
+} // namespace
+
+void TestSketchUi::theDistanceToolPlacesWhereYouClick()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::AddDimensionDistance);
+  click(h.scene, QPointF(0, 0));
+  click(h.scene, QPointF(100, 0));
+  QVERIFY2(p.dimensions.isEmpty(), "the dimension was dropped before a placement click");
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(50, -30), Qt::NoButton);
+  acceptNextInputDialog();
+  click(h.scene, QPointF(50, -30));
+  QCOMPARE(p.dimensions.size(), 1);
+  QCOMPARE(p.dimensions[0].type, DimensionType::Distance);
+  QCOMPARE(p.dimensions[0].labelOffsetX, 0.0);
+  QCOMPARE(p.dimensions[0].labelOffsetY, -30.0); // below, where clicked
+}
+
+void TestSketchUi::theRadiusToolPlacesWhereYouClick()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addNode(p, -10, 0);
+  FemmProblemEdit::addArcSegment(p, 0, 1, 180.0, 1.0);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setSnapFlags(SnapEngine::SnapNone);
+  h.scene.setToolMode(GeometryToolMode::AddDimensionRadius);
+  click(h.scene, QPointF(0, 10)); // on the arc
+  QVERIFY(p.dimensions.isEmpty());
+  acceptNextInputDialog();
+  click(h.scene, QPointF(-20, 20)); // up and to the left
+  QCOMPARE(p.dimensions.size(), 1);
+  QVERIFY(std::abs(p.dimensions[0].labelOffsetX + M_SQRT1_2) < 1e-9);
+  QVERIFY(std::abs(p.dimensions[0].labelOffsetY - M_SQRT1_2) < 1e-9);
+}
+
+void TestSketchUi::aPlacedDimensionCanBeDragged()
+{
+  FemmProblem p = twoDimensions();
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+  QSignalSpy snap(&h.scene, &GeometryScene::aboutToEdit);
+  QSignalSpy edited(&h.scene, &GeometryScene::problemEdited);
+  QGraphicsSimpleTextItem* label = dimensionLabel(h.scene, 0);
+  const QRectF device = label->deviceTransform(h.view.viewportTransform()).mapRect(label->boundingRect());
+  const QPointF at = h.view.mapToScene(device.center().toPoint());
+
+  // A plain click selects and costs no undo step.
+  sendMouse(h.scene, QEvent::GraphicsSceneMousePress, at);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseRelease, at, Qt::NoButton);
+  QCOMPARE(snap.size(), 0);
+
+  sendMouse(h.scene, QEvent::GraphicsSceneMousePress, at);
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(50, 25));
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(50, 40));
+  sendMouse(h.scene, QEvent::GraphicsSceneMouseRelease, QPointF(50, 40), Qt::NoButton);
+  QCOMPARE(snap.size(), 1);    // one undo step for the whole drag
+  QCOMPARE(edited.size(), 1);
+  QCOMPARE(p.dimensions[0].labelOffsetX, 0.0);
+  QCOMPARE(p.dimensions[0].labelOffsetY, 40.0); // above the edge now
+  QCOMPARE(p.dimensions[0].value, 100.0);       // a move, not an edit
 }
 
 QTEST_MAIN(TestSketchUi)
