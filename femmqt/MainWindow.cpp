@@ -894,10 +894,15 @@ void MainWindow::onNewTriggered()
   layout->addWidget(buttons);
   if (dlg.exec() != QDialog::Accepted)
     return;
+  newDocument(kinds[qBound(0, kindCombo->currentIndex(), 3)]);
+}
 
+void MainWindow::newDocument(FemmProblemKind kind)
+{
   m_problem = FemmProblem();
-  m_problem.kind = kinds[qBound(0, kindCombo->currentIndex(), 3)];
+  m_problem.kind = kind;
   m_currentPath.clear();
+  resetDocumentState();
   m_scene->setProblem(&m_problem);
   m_dirty = false; // after setProblem() -- see the matching comment in openFile()
   m_view->resetZoomTransform();
@@ -1047,8 +1052,7 @@ bool MainWindow::openFile(const QString& path)
   // Cleared here rather than by each caller: every ordinary open goes
   // through this function, and a stale flag would make Save prompt for
   // a document that has a perfectly good path of its own (#91).
-  m_isDemoCopy = false;
-  m_demoTitle.clear();
+  resetDocumentState();
   m_scene->setProblem(&m_problem);
   QRectF problemBounds = m_scene->computeProblemBounds();
   m_view->fitInViewSafe(problemBounds);
@@ -2330,6 +2334,16 @@ void MainWindow::snapshotForUndo()
   m_undoStack.push_back(m_problem);
   if (m_undoStack.size() > kMaxUndoSteps)
     m_undoStack.pop_front();
+}
+
+void MainWindow::resetDocumentState()
+{
+  // The undo stack holds whole FemmProblem snapshots, so a snapshot from
+  // the previous document restores THAT document's geometry under this
+  // one's path -- and Save would then write it over this file (#95).
+m_undoStack.clear();
+m_isDemoCopy = false;
+m_demoTitle.clear();
 }
 
 void MainWindow::onUndoTriggered()

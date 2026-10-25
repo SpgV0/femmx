@@ -31,6 +31,13 @@ class MainWindow : public QMainWindow {
   // rather than stopping on a dialog nobody can dismiss (#85).
   bool openFile(const QString& path);
 
+  // File > New after the kind has been chosen. Public so the reset it
+  // performs can be tested without driving the modal kind dialog.
+  void newDocument(FemmProblemKind kind);
+
+  // The open document, read-only -- for tests.
+  const FemmProblem& problem() const { return m_problem; }
+
   // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-13
   // (issue #91). Opens a shipped demo as a WORKING COPY -- never the
   // installed original, because three separate code paths write beside
@@ -168,6 +175,10 @@ class MainWindow : public QMainWindow {
   bool hasAppliedPeriodicBoundary() const;
   void markEdited();
   void snapshotForUndo();
+  // Everything that belongs to the document rather than the window --
+  // undo history, the demo-copy identity -- for when the document is
+  // replaced wholesale by New or Open (#95).
+  void resetDocumentState();
   // Shared by onEntityDoubleClicked (a single-item selection) and
   // onOpenSelectedTriggered (whatever's currently selected, possibly
   // more than one item of the same kind) -- constructs the right

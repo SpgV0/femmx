@@ -448,6 +448,11 @@ if(TARGET Qt6::Test)
     # discarded (#57).
     icons.qrc
   )
+  # The editor window as a whole -- what belongs to the document and
+  # must go when it is replaced (#95). Widgets, so it needs a QPA platform.
+  qt_add_executable(femmqt_main_window_tests
+    tests/tst_main_window.cpp
+  )
   # Every test target, named once. These used to be two hand-kept
   # lists and they drifted: the Qt-deployment loop below still named
   # only the original four, so every target added since ran on
@@ -480,6 +485,7 @@ if(TARGET Qt6::Test)
     femmqt_demo_browser_tests
     femmqt_plot_state_tests
     femmqt_icon_tests
+    femmqt_main_window_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
@@ -538,12 +544,13 @@ if(TARGET Qt6::Test)
   # Spawns femmqt.exe, which must exist first.
   set_tests_properties(femmqt_headless_cli PROPERTIES TIMEOUT 600)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
+  add_test(NAME femmqt_main_window COMMAND femmqt_main_window_tests)
   # Offscreen by construction. No test may require a desktop session: the
   # CI runners are headless, and a widget test on a headless box without
   # this either fails obscurely or hangs. tst_femmqt_core.cpp asserts this
   # variable is actually set, so losing it here fails loudly rather than
   # silently reintroducing a display dependency.
-  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap femmqt_icons femmqt_demo_browser femmqt_density_units PROPERTIES
+  set_tests_properties(femmqt_core femmqt_constraints femmqt_geometry femmqt_gui_switch femmqt_create_radius femmqt_arcs femmqt_sketch_ui femmqt_sketch_persistence femmqt_snap femmqt_icons femmqt_demo_browser femmqt_density_units femmqt_main_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 300
   )
