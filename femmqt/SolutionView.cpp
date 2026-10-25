@@ -22,6 +22,7 @@
 #include "FemmProblem.h"
 #include "FemmProblemEdit.h"
 #include "FileRouting.h"
+#include "FileDialogDirs.h"
 #include "GuiSwitch.h"
 #include "HoverTooltip.h"
 #include "IconTheme.h"
@@ -2205,12 +2206,14 @@ void SolutionWindow::onOpenTriggered()
   // The filter listed *.ans and *.ansx only, so the viewer that #83
   // taught to read all four solution formats could not be asked to open
   // three of them -- they were not selectable in its own File > Open.
-  QString path = QFileDialog::getOpenFileName(this, "Open Solved Problem", QString(),
+  QString path = QFileDialog::getOpenFileName(this, "Open Solved Problem",
+      FileDialogDirs::startDir(QStringLiteral("solution"), m_currentPath),
       "FEMM Solution Files (*.ans *.ansx *.res *.anh *.anc);;"
       "Magnetics (*.ans *.ansx);;Electrostatics (*.res);;"
       "Heat Flow (*.anh);;Current Flow (*.anc)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("solution"), path);
   openSolutionFile(path);
 }
 
@@ -3400,17 +3403,21 @@ void SolutionWindow::onPlotXYTriggered()
   QPushButton* exportCsvButton = buttons->addButton("Export CSV...", QDialogButtonBox::ActionRole);
   QPushButton* exportPngButton = buttons->addButton("Export PNG...", QDialogButtonBox::ActionRole);
   connect(exportCsvButton, &QPushButton::clicked, &dlg, [&dlg, csv]() {
-    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as CSV", QString(), "CSV Files (*.csv)");
+    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as CSV",
+        FileDialogDirs::startPath(QStringLiteral("export"), QStringLiteral("plot_xy.csv")), "CSV Files (*.csv)");
     if (path.isEmpty())
       return;
+    FileDialogDirs::remember(QStringLiteral("export"), path);
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text) || file.write(csv.toUtf8()) < 0)
       Notify::warning(&dlg, "Export CSV", "Could not write \"" + path + "\".");
   });
   connect(exportPngButton, &QPushButton::clicked, &dlg, [&dlg, chart]() {
-    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as PNG", QString(), "PNG Files (*.png)");
+    QString path = QFileDialog::getSaveFileName(&dlg, "Export Plot X-Y as PNG",
+        FileDialogDirs::startPath(QStringLiteral("export"), QStringLiteral("plot_xy.png")), "PNG Files (*.png)");
     if (path.isEmpty())
       return;
+    FileDialogDirs::remember(QStringLiteral("export"), path);
     if (!chart->grab().save(path, "PNG"))
       Notify::warning(&dlg, "Export PNG", "Could not write \"" + path + "\".");
   });

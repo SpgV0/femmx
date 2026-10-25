@@ -1,4 +1,5 @@
 #include "LoadMonitorDialog.h"
+#include "FileDialogDirs.h"
 
 #include "AppTheme.h"
 
@@ -376,9 +377,11 @@ void LoadMonitorDialog::onTick()
 
 void LoadMonitorDialog::onSavePng()
 {
-  QString path = QFileDialog::getSaveFileName(this, "Save Chart", "load_monitor.png", "PNG Image (*.png)");
+  QString path = QFileDialog::getSaveFileName(this, "Save Chart",
+      FileDialogDirs::startPath(QStringLiteral("export"), QStringLiteral("load_monitor.png")), "PNG Image (*.png)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("export"), path);
   QPixmap pixmap = m_chart->grab();
   if (pixmap.save(path, "PNG"))
     QMessageBox::information(this, "CPU / GPU / RAM Load", "Chart saved.");

@@ -359,6 +359,12 @@ Section
     ; via femmx.exe's "Switch to Qt GUI") and gets its own secondary
     ; shortcut below rather than none at all, so it's still one click
     ; away for anyone who wants it despite not being the default.
+    ; Modified by Claude (Anthropic), noreply@anthropic.com, 2026-10-25
+    ; (#110): CreateShortcut takes the current SetOutPath as the link's
+    ; "Start in" -- which, just above, is the Start Menu folder, so every
+    ; file dialog in either GUI opened there. Documents is where models
+    ; are.
+    SetOutPath "$DOCUMENTS"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX.lnk" "$INSTDIR\bin\femmx.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\FEMMX (Qt).lnk" "$INSTDIR\bin\femmqt.exe"
     CreateShortcut "$SMPROGRAMS\${PROJECT_NAME}\Uninstall.lnk" "$INSTDIR\${PROJECT_UNINSTALL_EXE}"

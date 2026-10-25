@@ -168,6 +168,8 @@ qt_add_library(femmqt_core STATIC
   SolutionIntegrals.cpp
   MagneticsIntegrals.h
   MagneticsIntegrals.cpp
+  FileDialogDirs.h
+  FileDialogDirs.cpp
   SolutionAdapter.h
   SolutionAdapter.cpp
   ConductorAnalysis.h

@@ -18,6 +18,9 @@
 #include <QCheckBox>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QRegularExpression>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QMessageBox>
 #include <QLabel>
 #include <QGraphicsSceneMouseEvent>
@@ -40,6 +43,7 @@
 #include "BlockLabelPropDialog.h"
 #include "SolutionView.h"
 #include "DemoLibrary.h"
+#include "FileDialogDirs.h"
 #include "ProblemKind.h"
 #include "MainWindow.h"
 #include "Notify.h"
@@ -110,6 +114,10 @@ class TestMainWindow : public QObject
   // #109
   void redoBringsBackWhatUndoTookBack();
   void theUnsavedChangesPromptCanSave();
+  // #110
+  void fileDialogsStartWhereTheWorkIs();
+  void noFileDialogStartsInTheWorkingDirectory();
+  void theInstalledShortcutsStartInDocuments();
 };
 
 void TestMainWindow::initTestCase()
@@ -740,6 +748,76 @@ void TestMainWindow::theUnsavedChangesPromptCanSave()
   QString err;
   QVERIFY2(ProblemFileIO::readAs(path, FemmProblemKind::Magnetics, back, err), qPrintable(err));
   QCOMPARE(back.nodes.last().x, moved);
+}
+
+void TestMainWindow::fileDialogsStartWhereTheWorkIs()
+{
+  // An INI file in the temp dir, not the user's real settings.
+  QSettings settings(m_dir.filePath("dialogs.ini"), QSettings::IniFormat);
+  settings.clear();
+  const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+
+  // Nothing known yet: Documents -- never the Start Menu.
+  QCOMPARE(FileDialogDirs::startDir("model", QString(), &settings), docs);
+
+  // The open document's own folder wins.
+  QDir(m_dir.path()).mkpath("project");
+  const QString model = m_dir.filePath("project/motor.fem");
+  QCOMPARE(QDir::cleanPath(FileDialogDirs::startDir("model", model, &settings)), QDir::cleanPath(m_dir.filePath("project")));
+
+
+  // Remembered per kind.
+  QDir(m_dir.path()).mkpath("drawings");
+  FileDialogDirs::remember("dxf", m_dir.filePath("drawings/part.dxf"), &settings);
+  QCOMPARE(QDir::cleanPath(FileDialogDirs::startDir("dxf", QString(), &settings)), QDir::cleanPath(m_dir.filePath("drawings")));
+  QCOMPARE(FileDialogDirs::startDir("model", QString(), &settings), docs);
+  QCOMPARE(QDir::cleanPath(FileDialogDirs::startPath("dxf", "out.dxf", QString(), &settings)),
+      QDir::cleanPath(m_dir.filePath("drawings/out.dxf")));
+
+  // A remembered folder that has gone is skipped, not offered.
+  QDir(m_dir.filePath("drawings")).removeRecursively();
+  QCOMPARE(FileDialogDirs::startDir("dxf", QString(), &settings), docs);
+  // and a cancelled dialog remembers nothing
+  FileDialogDirs::remember("dxf", QString(), &settings);
+  QCOMPARE(FileDialogDirs::startDir("dxf", QString(), &settings), docs);
+}
+
+void TestMainWindow::noFileDialogStartsInTheWorkingDirectory()
+{
+  // The defect's shape: QFileDialog::get...(parent, title, QString(), ...)
+  // opens in the process's working directory -- the Start Menu folder,
+  // from the shortcut. Any new dialog written that way fails here.
+  QStringList offenders;
+  for (const QFileInfo& fi : QDir(QStringLiteral(FEMMQT_SOURCE_DIR)).entryInfoList({ "*.cpp" }, QDir::Files)) {
+    QFile f(fi.absoluteFilePath());
+    QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString code = QString::fromUtf8(f.readAll());
+    static const QRegularExpression call(QStringLiteral("QFileDialog::get\\w+\\(([^;]*?)\\)\\s*;"),
+        QRegularExpression::DotMatchesEverythingOption);
+    auto it = call.globalMatch(code);
+    while (it.hasNext()) {
+      const QString args = it.next().captured(1);
+      const QStringList parts = args.split(',');
+      if (parts.size() >= 3 && parts[2].trimmed() == QStringLiteral("QString()"))
+        offenders << fi.fileName();
+    }
+  }
+  QVERIFY2(offenders.isEmpty(), qPrintable("file dialogs with no start directory in: " + offenders.join(", ")));
+}
+
+void TestMainWindow::theInstalledShortcutsStartInDocuments()
+{
+  QFile f(QStringLiteral(FEMMQT_SOURCE_DIR "/../script.nsi"));
+  QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString nsi = QString::fromUtf8(f.readAll());
+  const int link = nsi.indexOf(QStringLiteral("FEMMX (Qt).lnk"));
+  QVERIFY(link > 0);
+  // NSIS's CreateShortcut takes the current SetOutPath as "Start in":
+  // the last SetOutPath before the shortcuts decides it.
+  const int lastOut = nsi.lastIndexOf(QStringLiteral("SetOutPath"), link);
+  QVERIFY(lastOut > 0);
+  const QString line = nsi.mid(lastOut, nsi.indexOf(QLatin1Char('\n'), lastOut) - lastOut);
+  QVERIFY2(line.contains(QStringLiteral("$DOCUMENTS")), qPrintable(line));
 }
 
 QTEST_MAIN(TestMainWindow)

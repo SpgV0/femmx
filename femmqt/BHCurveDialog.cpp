@@ -1,4 +1,5 @@
 #include "BHCurveDialog.h"
+#include "FileDialogDirs.h"
 
 #include "FemmProblem.h"
 
@@ -183,9 +184,10 @@ void BHCurveDialog::onRemovePoint()
 void BHCurveDialog::onReadFromFile()
 {
   QString path = QFileDialog::getOpenFileName(this, "Read BH Curve",
-      QString(), "Two column text data file (*.dat);;All Files (*.*)");
+      FileDialogDirs::startDir(QStringLiteral("bhcurve")), "Two column text data file (*.dat);;All Files (*.*)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("bhcurve"), path);
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     QMessageBox::warning(this, "Read BH Curve", "Couldn't open that file.");

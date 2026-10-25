@@ -11,6 +11,7 @@
 #include "CircuitPropDialog.h"
 #include "ConstraintListDialog.h"
 #include "ConstraintSolver.h"
+#include "FileDialogDirs.h"
 #include "DxfIO.h"
 #include "ExteriorRegionDialog.h"
 #include "FemmFileIO.h"
@@ -928,7 +929,9 @@ void MainWindow::onOpenTriggered()
 {
   if (!confirmDiscardUnsavedChanges())
     return;
-  const QString path = QFileDialog::getOpenFileName(this, "Open Problem", QString(),
+  // Starts where models are, not where the shortcut happened to run (#110).
+  const QString path = QFileDialog::getOpenFileName(this, "Open Problem",
+      FileDialogDirs::startDir(QStringLiteral("model"), m_isDemoCopy ? QString() : m_currentPath),
       "FEMM Problems (*.fem *.fee *.feh *.fec *.femx);;"
       "Magnetics (*.fem *.femx);;"
       "Electrostatics (*.fee);;"
@@ -936,6 +939,7 @@ void MainWindow::onOpenTriggered()
       "Current Flow (*.fec)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("model"), path);
   openFile(path);
 }
 
@@ -1117,12 +1121,19 @@ void MainWindow::onSaveAsTriggered()
   // as magnetics with no properties), so offering the others would only
   // produce a refusal the user could have been spared.
   const QString ext = ProblemKind::extension(m_problem.kind);
+  // A demo's working copy sits in a temp folder, and an untitled model
+  // has no folder at all: both start in the last model folder or
+  // Documents, never in %TEMP% or the Start Menu (#110).
+  const QString suggested = m_currentPath.isEmpty()
+      ? QStringLiteral("untitled.%1").arg(ext)
+      : QFileInfo(m_currentPath).fileName();
   const QString path = QFileDialog::getSaveFileName(this,
       QStringLiteral("Save %1 Problem").arg(ProblemKind::displayName(m_problem.kind)),
-      m_currentPath,
+      FileDialogDirs::startPath(QStringLiteral("model"), suggested, m_isDemoCopy ? QString() : m_currentPath),
       QStringLiteral("%1 (*.%2)").arg(ProblemKind::displayName(m_problem.kind), ext));
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("model"), path);
   saveAs(path);
 }
 
@@ -1776,9 +1787,11 @@ void MainWindow::onCreateOpenBoundaryTriggered()
 
 void MainWindow::onImportDxfTriggered()
 {
-  QString path = QFileDialog::getOpenFileName(this, "Import DXF", QString(), "DXF Files (*.dxf)");
+  QString path = QFileDialog::getOpenFileName(this, "Import DXF",
+      FileDialogDirs::startDir(QStringLiteral("dxf")), "DXF Files (*.dxf)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("dxf"), path);
 
   FemmProblem parsed;
   double suggestedTolerance = 0;
@@ -1820,9 +1833,12 @@ void MainWindow::onImportDxfTriggered()
 
 void MainWindow::onExportDxfTriggered()
 {
-  QString path = QFileDialog::getSaveFileName(this, "Export DXF", QString(), "DXF Files (*.dxf)");
+  const QString base = m_currentPath.isEmpty() ? QStringLiteral("model") : QFileInfo(m_currentPath).completeBaseName();
+  QString path = QFileDialog::getSaveFileName(this, "Export DXF",
+      FileDialogDirs::startPath(QStringLiteral("dxf"), base + QStringLiteral(".dxf")), "DXF Files (*.dxf)");
   if (path.isEmpty())
     return;
+  FileDialogDirs::remember(QStringLiteral("dxf"), path);
   QString error;
   if (!DxfIO::exportDxf(path, m_problem, error))
     Notify::warning(this, "Export DXF", error);
