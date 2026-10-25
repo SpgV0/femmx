@@ -1,6 +1,6 @@
 ---
 name: push-branch-policy
-description: "In femmx (SpgV0/femmx), work and push go to main as of 2026-10-25; new_features was merged and deleted (rule has flipped twice)"
+description: "In femmx (SpgV0/femmx), commit to main and never push unless told (2026-10-25); CI manual-only; new_features merged and deleted"
 metadata: 
   node_type: memory
   type: feedback
@@ -8,7 +8,12 @@ metadata:
   modified: 2026-09-12T00:00:00.000Z
 ---
 
-**Current rule (2026-10-25): work on `main` and push there.** The user
+**Current rule (2026-10-25, later the same day): commit to `main`, and
+do NOT push to GitHub unless the user explicitly says so** ("do not push
+to github unless I tell you"). CI is manual-only (workflow_dispatch) as
+of the same request.
+
+Earlier 2026-10-25: work on `main` and push there. The user
 said: "delete new features and rc branch, and start working only in main".
 `new_features` (39 commits ahead of main) was fast-forwarded into `main`
 and pushed, then deleted locally and on origin. `rc` did not exist.

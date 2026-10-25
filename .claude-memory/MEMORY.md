@@ -1,4 +1,4 @@
-- [Push branch policy](push_branch_policy.md) — as of 2026-10-25 work and push go to main only; new_features merged and deleted; the rule has flipped twice, so check the file
+- [Push branch policy](push_branch_policy.md) — as of 2026-10-25 commit to main, never push unless told; CI manual-only; the rule has flipped before, so check the file
 - [GPU speedup investigation](gpu_speedup_investigation.md) — CUDA solve opt-in via mi_setgpuaccel; AC/harmonic reliably faster, but DC/real-valued speedup is unconfirmed/conflicting as of 2026-07-20 — verify before citing either number
 - [Sync memory to git](sync_memory_to_git.md) — also copy memory files into femmx/.claude-memory/ and push, for cross-machine reuse
 - [Close test windows permission](close_test_windows_permission.md) — standing OK to taskkill/WM_CLOSE processes/windows I spawned myself while testing, no need to ask each time
