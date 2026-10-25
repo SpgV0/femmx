@@ -369,10 +369,28 @@ QPainterPath widenedHitShape(const QPainterPath& path, const QGraphicsItem* item
 
 // `r` grown by the hit tolerance on every side, so the item's bounding
 // rect contains its widened hit shape (#97).
-QRectF hitMarginRect(const QRectF& r, const QGraphicsItem* item)
+//
+// `margin` is the item's CACHED hit width in scene units, never one
+// computed from the view on the spot: a bounding rect that changes
+// without prepareGeometryChange() leaves the scene's BSP index holding
+// the old rect, and removing the item later can then miss it and leave a
+// dangling pointer behind -- a crash, intermittently, some time after
+// any zoom. NodeItem caches its size for the same reason.
+QRectF hitMarginRect(const QRectF& r, double margin)
 {
-  const double m = kLineHitPixelTolerance / viewScaleFor(item);
-  return r.adjusted(-m, -m, m, m);
+  return r.adjusted(-margin, -margin, margin, margin);
+}
+
+QPainterPath widenedHitShapeCached(const QPainterPath& path, double margin)
+{
+  QPainterPathStroker stroker;
+  stroker.setWidth(margin);
+  return stroker.createStroke(path);
+}
+
+double hitMarginFor(const QGraphicsItem* item)
+{
+  return kLineHitPixelTolerance / viewScaleFor(item);
 }
 
 // How far `pt` is from segment or arc `index`, in model units -- to pick
@@ -436,7 +454,7 @@ class SegmentItem : public QGraphicsLineItem {
     QPainterPath p;
     p.moveTo(line().p1());
     p.lineTo(line().p2());
-    return widenedHitShape(p, this);
+    return widenedHitShapeCached(p, m_hitMargin);
   }
 
   // The hit shape above is widened, but the scene's index culls by the
@@ -445,11 +463,21 @@ class SegmentItem : public QGraphicsLineItem {
   // height, so a click 2 px above it found nothing (#97).
   QRectF boundingRect() const override
   {
-    return hitMarginRect(QRectF(line().p1(), line().p2()).normalized(), this);
+    return hitMarginRect(QRectF(line().p1(), line().p2()).normalized(), m_hitMargin);
   }
 
-  // The margin is in pixels, so it changes with zoom.
-  void refreshHitMargin() { prepareGeometryChange(); }
+  // The margin is in pixels, so it changes with zoom -- and only here,
+  // announced, see hitMarginRect(). Needs scene(), so call after addItem().
+  void refreshHitMargin()
+  {
+    prepareGeometryChange();
+    m_hitMargin = hitMarginFor(this);
+  }
+
+  private:
+  double m_hitMargin = kLineHitPixelTolerance;
+
+  public:
 
   protected:
   void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override
@@ -473,17 +501,26 @@ class ArcItem : public QGraphicsPathItem {
 
   QPainterPath shape() const override
   {
-    return widenedHitShape(path(), this);
+    return widenedHitShapeCached(path(), m_hitMargin);
   }
 
   // Same as SegmentItem's: a circle's top point sits exactly on its
   // bounding rect's edge, outside the index's view of the item (#97).
   QRectF boundingRect() const override
   {
-    return hitMarginRect(path().boundingRect(), this);
+    return hitMarginRect(path().boundingRect(), m_hitMargin);
   }
 
-  void refreshHitMargin() { prepareGeometryChange(); }
+  void refreshHitMargin()
+  {
+    prepareGeometryChange();
+    m_hitMargin = hitMarginFor(this);
+  }
+
+  private:
+  double m_hitMargin = kLineHitPixelTolerance;
+
+  public:
 
   protected:
   void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override
@@ -1410,6 +1447,7 @@ void GeometryScene::addSegmentItem(int index)
   auto* item = new SegmentItem(QLineF());
   item->setPen(pen);
   addItem(item);
+  item->refreshHitMargin(); // needs scene(), just set by addItem()
   item->setFlag(QGraphicsItem::ItemIsSelectable);
   item->setData(KindKey, static_cast<int>(FemmItemKind::Segment));
   item->setData(IndexKey, index);
@@ -1433,6 +1471,7 @@ void GeometryScene::addArcItem(int index)
   auto* item = new ArcItem(QPainterPath());
   item->setPen(pen);
   addItem(item);
+  item->refreshHitMargin(); // needs scene(), just set by addItem()
   item->setFlag(QGraphicsItem::ItemIsSelectable);
   item->setData(KindKey, static_cast<int>(FemmItemKind::Arc));
   item->setData(IndexKey, index);
