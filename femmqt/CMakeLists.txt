@@ -166,6 +166,8 @@ qt_add_library(femmqt_core STATIC
   SolutionField.cpp
   SolutionIntegrals.h
   SolutionIntegrals.cpp
+  MagneticsIntegrals.h
+  MagneticsIntegrals.cpp
   SolutionAdapter.h
   SolutionAdapter.cpp
   ConductorAnalysis.h
@@ -455,6 +457,11 @@ if(TARGET Qt6::Test)
     # The window builds its toolbars from it; see femmqt_icon_tests.
     icons.qrc
   )
+  # Classic's magnetics block integrals, number for number against
+  # classic's own output on the same .ans files (#108).
+  qt_add_executable(femmqt_magnetics_integral_tests
+    tests/tst_magnetics_integrals.cpp
+  )
   # Every test target, named once. These used to be two hand-kept
   # lists and they drifted: the Qt-deployment loop below still named
   # only the original four, so every target added since ran on
@@ -488,6 +495,7 @@ if(TARGET Qt6::Test)
     femmqt_plot_state_tests
     femmqt_icon_tests
     femmqt_main_window_tests
+    femmqt_magnetics_integral_tests
   )
   foreach(_femmqt_test ${FEMMQT_TEST_TARGETS})
     target_compile_options(${_femmqt_test} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/permissive->)
@@ -547,6 +555,7 @@ if(TARGET Qt6::Test)
   set_tests_properties(femmqt_headless_cli PROPERTIES TIMEOUT 600)
   add_test(NAME femmqt_icons COMMAND femmqt_icon_tests)
   add_test(NAME femmqt_main_window COMMAND femmqt_main_window_tests)
+  add_test(NAME femmqt_magnetics_integrals COMMAND femmqt_magnetics_integral_tests)
   # femm.cfg lives next to the test binaries -- one directory, shared by
   # every target -- and these suites write it (gui_switch, sketch_ui) or
   # read it at startup (main_window, and the two that spawn femmqt.exe

@@ -6,6 +6,7 @@
 #include "SolutionFileIO.h"
 #include "SolutionField.h"
 #include "SolutionIntegrals.h"
+#include "MagneticsIntegrals.h"
 #include "SolutionAdapter.h"
 #include "ProblemKind.h"
 
@@ -29,6 +30,10 @@
 #include "PreferencesDialog.h"
 
 #include <QActionGroup>
+
+#include <functional>
+#include <memory>
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -3013,60 +3018,180 @@ void SolutionWindow::showContourIntegral()
   dlg.exec();
 }
 
+// Added by Claude (Anthropic), noreply@anthropic.com, 2026-10-25 (#108).
+// One Area Properties result, formatted the way femm/FemmviewView.cpp's
+// OnMenuIntegrate formats it for the same combo index -- which classic
+// integral types feed it, and how DC/AC and planar/axisymmetric change
+// the text. `integral` answers one classic inttype or says why not.
+QString SolutionWindow::areaIntegralText(int index,
+    const std::function<bool(int, std::complex<double>&, QString&)>& integral) const
+{
+  const bool ac = m_frequency != 0;
+  const bool axi = m_axisymmetric;
+  std::complex<double> z1, z2, z3, z4;
+  QString why;
+  auto get = [&](int k, std::complex<double>& z) { return integral(k, z, why); };
+  auto g = [](double v) { return QString::number(v, 'g', 6); };
+  auto c = [](std::complex<double> v) { return complexToString(v); };
+  auto refused = [&]() { return QStringLiteral("Not computed: %1").arg(why); };
+
+  switch (index) {
+  case 0: // A . J
+    if (!get(0, z1))
+      return refused();
+    return QStringLiteral("%1 Henry Amp^2").arg(ac ? c(z1) : g(z1.real()));
+  case 1: // A
+    if (!get(1, z1) || !get(5, z2))
+      return refused();
+    if (!ac)
+      return QStringLiteral("Integral of A over selection:\n%1 Henry Amp meter^2\nIntegral of A / selected area:\n%2 Henry Amp")
+          .arg(g(z1.real()), g(z1.real() / z2.real()));
+    return QStringLiteral("Integral of A over selection:\n%1 Henry Amp meter^2\nIntegral of A / selected area:\n%2 Henry Amp")
+        .arg(c(z1), c(z1 / z2.real()));
+  case 2: // energy
+    if (!get(2, z1))
+      return refused();
+    return QStringLiteral("%1 Joules").arg(g(z1.real()));
+  case 3: // hysteresis / laminated eddy / proximity
+  case 4: // resistive
+  case 6: // total
+    if (!get(index, z1))
+      return refused();
+    return QStringLiteral("%1 Watts").arg(g(z1.real()));
+  case 5:
+    if (!get(5, z1))
+      return refused();
+    return QStringLiteral("%1 meter^2").arg(g(z1.real()));
+  case 7:
+    if (!get(7, z1))
+      return refused();
+    return QStringLiteral("%1 Amps").arg(ac ? c(z1) : g(z1.real()));
+  case 8: {
+    if (!get(8, z1) || !get(9, z2))
+      return refused();
+    const QString a1 = axi ? "r" : "x", a2 = axi ? "z" : "y";
+    return QStringLiteral("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
+        .arg(a1, ac ? c(z1) : g(z1.real()), a2, ac ? c(z2) : g(z2.real()));
+  }
+  case 9:
+    if (!get(10, z1))
+      return refused();
+    return QStringLiteral("%1 meter^3").arg(g(z1.real()));
+  case 10:   // Lorentz force
+  case 13: { // Force via the weighted stress tensor
+    const int base = index == 10 ? 11 : 18;
+    if (!get(base, z1) || !get(base + 1, z2))
+      return refused();
+    if (ac && (!get(base + 2, z3) || !get(base + 3, z4)))
+      return refused();
+    if (!ac && !axi)
+      return QStringLiteral("x-component: %1 N\ny-component: %2 N").arg(g(z1.real()), g(z2.real()));
+    if (!ac && axi)
+      return QStringLiteral("r-component: %1 N\nz-component: %2 N").arg(g(0.), g(z2.real()));
+    if (!axi)
+      return QStringLiteral("Steady-state force:\nx-component: %1 N\ny-component: %2 N\n2x Frequency force:\nx-component: %3 N\ny-component: %4 N")
+          .arg(g(z1.real()), g(z2.real()), c(z3), c(z4));
+    return QStringLiteral("Steady-state force:\nr-component: 0. N\nz-component: %1 N\n2x Frequency force:\nr-component: 0. N\nz-component: %2 N")
+        .arg(g(z2.real()), c(z4));
+  }
+  case 11:   // Lorentz torque
+  case 14: { // Torque via the weighted stress tensor
+    if (axi)
+      return index == 11 ? QStringLiteral("No Lorentz torque possible in axisymmetric case")
+                         : QStringLiteral("No torque possible in axisymmetric case");
+    const int base = index == 11 ? 15 : 22;
+    if (!get(base, z1))
+      return refused();
+    if (!ac)
+      return QStringLiteral("Torque about (0,0): %1 N*m").arg(g(z1.real()));
+    if (!get(base + 1, z2))
+      return refused();
+    return QStringLiteral("Torque about (0,0):\nSteady State: %1 N*m\n2x Frequency: %2 N*m").arg(g(z1.real()), c(z2));
+  }
+  case 12:
+    if (!get(17, z1))
+      return refused();
+    return QStringLiteral("%1 Joules").arg(g(z1.real()));
+  case 15:
+    if (!get(24, z1))
+      return refused();
+    return axi ? QStringLiteral("Integral of R^2: %1 m^5").arg(g(z1.real()))
+               : QStringLiteral("Integral of (x^2 + y^2): %1 m^5").arg(g(z1.real()));
+  case 16:
+    if (!get(6, z1) || !get(10, z2))
+      return refused();
+    return QStringLiteral("%1 Watts/meter^3").arg(g((z1 / z2).real()));
+  default:
+    return QString();
+  }
+}
+
 void SolutionWindow::showAreaIntegral()
 {
   // Matches femm/BlockInt.cpp's IDD_BLOCKINT combo exactly (item text and
   // order decoded from femm.rc's DLGINIT), reached via Integrate the same
   // way classic's own OnMenuIntegrate does when EditAction==2 with a
-  // nonempty block selection. Per direct user request ("add a drop down
-  // list for the calculated quantity same as in classical gui").
+  // nonempty block selection.
   //
-  // Only 4 of the 17 are actually computed -- Block cross-section area,
-  // Block volume, Total current, and Integral of B over block -- because
-  // those are the ones femm/FemmviewDoc.cpp's BlockIntegral() computes as
-  // a plain per-element sum of data this app already has (area, depth/
-  // Pappus-theorem revolution volume, jRe/jIm, B1/B2). Verified against
-  // BlockIntegral()'s own source, case by case, rather than guessed:
-  // case 5 (area) is `a`; case 10 (volume) is `a*Depth` or `a*2*pi*R`;
-  // case 7 (total current) is `a*J`; cases 8/9 (integral of B) are
-  // `a*Depth*B1`/`a*Depth*B2` (or the axisymmetric Pappus equivalent) --
-  // none of the four have an extra AC/DC scaling factor the way e.g. case
-  // 4 (Resistive losses) does. The other 13 (A.J, A, energy/coenergy,
-  // hysteresis/eddy/resistive/total losses, Lorentz force/torque, Weighted
-  // Stress Tensor force/torque, R^2) need either a proper per-node
-  // polynomial integral (BlockIntegral's PlnInt/AxiInt, not just area
-  // times an element average -- exact for a single linear field like A
-  // alone, but NOT for a product of two, like A.J), conductivity/
-  // nonlinear-BH-curve/permanent-magnet data, or the Weighted Stress
-  // Tensor mask -- same documented gap as Circuit Props, BH Curves, and
-  // the Line Integral's H.t/Force/Torque types. Rather than risk a
-  // plausible-looking but subtly wrong number, those show a plain
-  // "not available" message instead.
+  // Modified by Claude (Anthropic), noreply@anthropic.com, 2026-10-25
+  // (#108): all 17 are computed now, by MagneticsIntegrals' port of
+  // classic's BlockIntegral -- checked number for number against classic
+  // on the same .ans files. It used to compute four and call the other
+  // thirteen (energy, losses, forces, torques) "not available", although
+  // the demo library advertises exactly those results. Total current was
+  // also off by 1e6 until #94.
   if (!m_item || !m_item->hasBlockLabelSelection()) {
     Notify::information(this, "Area", "No area selected -- click inside one or more regions in Areas mode first.");
     return;
   }
   const QSet<int>& labels = m_item->selectedBlockLabels();
-  double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
-  double depthM = m_problemGeometry.depth * lc;
-
-  const SolutionIntegrals::MagneticsBlockSums sums =
-      SolutionIntegrals::magneticsBlockSums(m_solution, labels, lc, depthM, m_axisymmetric);
-  const double totalAreaM2 = sums.area;
-  const double volumeM3 = sums.volume;
-  const int count = sums.elementCount;
-  const std::complex<double> totalCurrent = sums.totalCurrent;
-  const std::complex<double> intB1 = sums.intB1, intB2 = sums.intB2;
 
   QDialog dlg(this);
   dlg.setWindowTitle("Area Properties");
+  dlg.setMinimumWidth(460); // the multi-line force results were clipped
   auto* layout = new QVBoxLayout(&dlg);
   auto* form = new QFormLayout;
+  // Named, not numbered: "1 (0)" -- a count and then an index list -- read
+  // as nothing in particular.
   QStringList labelList;
-  for (int lbl : labels)
-    labelList << QString::number(lbl);
-  form->addRow("Block labels selected:", new QLabel(QString("%1 (%2)").arg(labels.size()).arg(labelList.join(", "))));
-  form->addRow("Elements:", new QLabel(QString::number(count)));
+  QList<int> sorted = labels.values();
+  std::sort(sorted.begin(), sorted.end());
+  for (int lbl : sorted) {
+    QString name;
+    if (lbl >= 0 && lbl < m_problemGeometry.blockLabels.size()) {
+      const int m = m_problemGeometry.blockLabels[lbl].blockTypeIndex - 1;
+      if (isMagnetics() && m >= 0 && m < m_problemGeometry.materialProps.size())
+        name = m_problemGeometry.materialProps[m].name;
+    }
+    labelList << (name.isEmpty() ? QStringLiteral("#%1").arg(lbl) : QStringLiteral("#%1 %2").arg(lbl).arg(name));
+  }
+  form->addRow(labels.size() == 1 ? "Block selected:" : QStringLiteral("%1 blocks selected:").arg(labels.size()),
+      new QLabel(labelList.join(", ")));
+
+  // The other three physics: their block integrals are not magnetics',
+  // and the list below is. Area and volume are physics-free; the rest is
+  // said plainly rather than offered in tesla over a heat flux.
+  if (!isMagnetics()) {
+    const double lc = lengthConvToMeters(m_problemGeometry.lengthUnits);
+    const SolutionIntegrals::MagneticsBlockSums sums = SolutionIntegrals::magneticsBlockSums(
+        m_solution, labels, lc, m_problemGeometry.depth * lc, m_axisymmetric);
+    auto* result = new QLabel(QStringLiteral("Block cross-section area: %1 meter^2\nBlock volume: %2 meter^3\n\n"
+                                             "This physics' other block integrals are not ported to this "
+                                             "version; the classic GUI computes them.")
+                                  .arg(sums.area, 0, 'g', 6)
+                                  .arg(sums.volume, 0, 'g', 6),
+        &dlg);
+    result->setWordWrap(true);
+    result->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    form->addRow(result);
+    layout->addLayout(form);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    layout->addWidget(buttons);
+    appendOutput(QStringLiteral("Area: %1  %2").arg(labelList.join(", "), result->text().section('\n', 0, 1)));
+    dlg.exec();
+    return;
+  }
 
   const QStringList kQuantities = {
     "A . J", "A", "Magnetic field energy",
@@ -3079,50 +3204,29 @@ void SolutionWindow::showAreaIntegral()
   };
   auto* typeCombo = new QComboBox(&dlg);
   typeCombo->addItems(kQuantities);
-  typeCombo->setCurrentIndex(5); // Block cross-section area -- matches the old default (this was the only quantity before)
+  typeCombo->setCurrentIndex(5); // Block cross-section area -- matches the old default
   form->addRow("Integral:", typeCombo);
 
   auto* resultLabel = new QLabel(&dlg);
+  resultLabel->setObjectName("areaIntegralResult");
   resultLabel->setWordWrap(true);
   resultLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
   form->addRow(resultLabel);
   layout->addLayout(form);
 
-  QString axis1 = m_axisymmetric ? "r" : "x";
-  QString axis2 = m_axisymmetric ? "z" : "y";
-  bool isAc = m_frequency != 0;
-  auto updateResult = [this, totalAreaM2, volumeM3, totalCurrent, intB1, intB2, axis1, axis2, isAc](int index) -> QString {
-    switch (index) {
-    case 5: // Block cross-section area
-      return QString("%1 meter^2").arg(totalAreaM2, 0, 'g', 6);
-    case 7: // Total current
-      return isAc ? QString("%1 Amps").arg(complexToString(totalCurrent))
-                  : QString("%1 Amps").arg(totalCurrent.real(), 0, 'g', 6);
-    case 8: // Integral of B over block
-      if (isAc)
-        return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
-            .arg(axis1, complexToString(intB1), axis2, complexToString(intB2));
-      return QString("%1-component: %2 Tesla meter^3\n%3-component: %4 Tesla meter^3")
-          .arg(axis1).arg(intB1.real(), 0, 'g', 6).arg(axis2).arg(intB2.real(), 0, 'g', 6);
-    case 9: // Block volume
-      return QString("%1 meter^3").arg(volumeM3, 0, 'g', 6);
-    default:
-      return "Not available in this version -- needs per-node potential/current data for a "
-             "proper polynomial integral, material conductivity/nonlinear-BH-curve/permanent-"
-             "magnet data, or the Weighted Stress Tensor mask, none of which this app currently "
-             "extracts from .ans.";
-    }
-  };
+  // One integrator for the dialog's lifetime: the stress-tensor mask is a
+  // linear solve, done once per selection however often the combo moves.
+  auto integrator = std::make_shared<MagneticsIntegrals::BlockIntegrator>(m_solution, m_problemGeometry, labels);
+  auto integral = [integrator](int k, std::complex<double>& z, QString& why) { return integrator->integral(k, z, why); };
+  auto updateResult = [this, integral](int index) { return areaIntegralText(index, integral); };
   connect(typeCombo, &QComboBox::currentIndexChanged, &dlg, [resultLabel, updateResult](int index) { resultLabel->setText(updateResult(index)); });
   resultLabel->setText(updateResult(typeCombo->currentIndex()));
 
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
   connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
   layout->addWidget(buttons);
-  appendOutput(QString("Area: %1 block(s) [%2]  elements=%3  %4: %5")
-                    .arg(labels.size())
+  appendOutput(QString("Area: %1  %2: %3")
                     .arg(labelList.join(", "))
-                    .arg(count)
                     .arg(kQuantities[typeCombo->currentIndex()])
                     .arg(updateResult(typeCombo->currentIndex())));
   dlg.exec();

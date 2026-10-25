@@ -1,5 +1,8 @@
 #pragma once
 
+#include <complex>
+#include <functional>
+
 #include <QImage>
 #include <QElapsedTimer>
 #include <QGraphicsItem>
@@ -724,6 +727,10 @@ class SolutionWindow : public QMainWindow {
   void refreshToolbarIcons();
   void showContourIntegral();
   void showAreaIntegral();
+  // Classic's text for Area Properties entry `index` (#108); public-ish
+  // so a test can check the formatting against known numbers.
+  QString areaIntegralText(int index,
+      const std::function<bool(int, std::complex<double>&, QString&)>& integral) const;
   // Echoes a Point/Contour/Area result into the persistent Output Window
   // dock, mirroring femm/FemmviewView.cpp's OutputWindowText/IDC_OUTBOX --
   // classic FEMM keeps the *last* result visible in a docked bar instead

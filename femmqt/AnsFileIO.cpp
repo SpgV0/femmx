@@ -338,11 +338,8 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
   // reader derives itself: for Case 0 in particular, dVolts depends on the
   // full current distribution and isn't independently recoverable from
   // anything else in the file.
-  struct CircuitLabelInfo {
-    int caseFlag = 1;
-    std::complex<double> dVolts, J;
-  };
-  QVector<CircuitLabelInfo> circInfo;
+  using CircuitLabelInfo = MeshLabelCircuit;
+  QVector<CircuitLabelInfo>& circInfo = solution.labelCircuits;
   line = file.readLine();
   long labelCount = std::strtol(line.constData(), nullptr, 10);
   circInfo.resize((int)labelCount);
@@ -394,6 +391,11 @@ bool AnsFileIO::readAns(const QString& path, FemmProblem& problem, MeshSolution&
       if (mat.dLam != 0 && mat.lamType == 0)
         c = 0;
     }
+    // GetJA's other zeroing rule: a multi-turn coil (|turns| > 1 gives
+    // classic's FillFactor = 1, see GetFillFactor) is a bundle of thin
+    // wires, so it carries no bulk eddy current (#108).
+    if (e.lbl >= 0 && e.lbl < problem.blockLabels.size() && std::abs(problem.blockLabels[e.lbl].turns) > 1)
+      c = 0;
 
     if (problem.frequency != 0) {
       double areAvg = (n0.Are + n1.Are + n2.Are) / 3.0;

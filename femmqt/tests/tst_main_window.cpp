@@ -17,6 +17,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QLabel>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsView>
@@ -102,6 +103,8 @@ class TestMainWindow : public QObject
   void anImpossibleDimensionEditIsRefusedThroughTheWindow();
   // #106
   void fixFromTheMenuHoldsTheSelectedNodesInOneUndoStep();
+  // #108
+  void areaPropertiesShowsTheForceOnAWire();
 };
 
 void TestMainWindow::initTestCase()
@@ -606,6 +609,56 @@ void TestMainWindow::fixFromTheMenuHoldsTheSelectedNodesInOneUndoStep()
   }
   actionNamed(w, QStringLiteral("&Undo"))->trigger();
   QCOMPARE(w.problem().constraints.size(), before);
+}
+
+namespace {
+
+// Opens the next modal Area Properties dialog, reads the result for each
+// combo index in `indices`, and closes it.
+void readAreaDialog(const QList<int>& indices, QStringList& out)
+{
+  QTimer::singleShot(0, [indices, &out]() {
+    QWidget* dlg = QApplication::activeModalWidget();
+    if (!dlg)
+      return;
+    auto* combo = dlg->findChild<QComboBox*>();
+    auto* result = dlg->findChild<QLabel*>("areaIntegralResult");
+    if (combo && result) {
+      for (int i : indices) {
+        combo->setCurrentIndex(i);
+        out << result->text();
+      }
+    }
+    if (auto* d = qobject_cast<QDialog*>(dlg))
+      d->accept();
+  });
+}
+
+} // namespace
+
+void TestMainWindow::areaPropertiesShowsTheForceOnAWire()
+{
+  // The demo the review quoted: "Force between two wires... Lorentz and
+  // weighted stress tensor" -- both said "Not available". On classic's
+  // own solution the left wire feels 0.02467 N (Lorentz) and 0.02466 N
+  // (stress tensor) along x; see test/fixtures/integrals/reference.json.
+  const QString ans = m_dir.filePath("two_wires_force.ans");
+  QFile::remove(ans);
+  QVERIFY(QFile::copy(QStringLiteral(FEMMQT_TEST_FIXTURE_DIR "/integrals/two_wires_force.ans"), ans));
+
+  SolutionWindow window;
+  QVERIFY(window.openSolutionFile(ans));
+  QVERIFY(QMetaObject::invokeMethod(&window, "onAreaToolTriggered"));
+  QVERIFY(QMetaObject::invokeMethod(&window, "onCanvasClicked", Q_ARG(QPointF, QPointF(-10, 0))));
+
+  QStringList texts;
+  readAreaDialog({ 7, 10, 13, 2 }, texts);
+  QVERIFY(QMetaObject::invokeMethod(&window, "onIntegrateTriggered"));
+  QCOMPARE(texts.size(), 4);
+  QVERIFY2(texts[0].startsWith("50 Amps"), qPrintable(texts[0]));
+  QVERIFY2(texts[1].contains("x-component: 0.0246"), qPrintable(texts[1]));
+  QVERIFY2(texts[2].contains("x-component: 0.0246"), qPrintable(texts[2]));
+  QVERIFY2(texts[3].endsWith("Joules") && !texts[3].contains("Not"), qPrintable(texts[3]));
 }
 
 QTEST_MAIN(TestMainWindow)

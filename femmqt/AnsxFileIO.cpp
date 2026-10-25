@@ -45,7 +45,10 @@ namespace {
 // material" -- confirmed as the actual reason a first attempt at this
 // fix appeared not to work at all when tested live (a stale .ansx from
 // before bhMaterialIndex existed, not a logic bug in the fix itself).
-constexpr uint32_t kAnsxVersion = 6;
+// 7 (#108): the per-label circuit section (MeshSolution::labelCircuits)
+// after the BH curves -- without it a cached load would lose every
+// circuit-driven current the block integrals need.
+constexpr uint32_t kAnsxVersion = 7;
 
 #pragma pack(push, 1)
 struct AnsxHeader {
@@ -256,6 +259,24 @@ bool AnsxFileIO::writeAnsx(const QString& ansxPath, const QString& sourceAnsPath
     }
   }
 
+  // Version 7: the per-label circuit rows, count then five doubles each
+  // (case, dVolts re/im, J re/im) -- the case as a double keeps it one
+  // homogeneous block.
+  {
+    const uint64_t n = (uint64_t)solution.labelCircuits.size();
+    if (file.write(reinterpret_cast<const char*>(&n), sizeof(n)) != (qint64)sizeof(n)) {
+      errorMessage = QStringLiteral("Failed writing \"%1\" circuit data.").arg(ansxPath);
+      return false;
+    }
+    for (const MeshLabelCircuit& c : solution.labelCircuits) {
+      const double rec[5] = { (double)c.caseFlag, c.dVolts.real(), c.dVolts.imag(), c.J.real(), c.J.imag() };
+      if (file.write(reinterpret_cast<const char*>(rec), sizeof(rec)) != (qint64)sizeof(rec)) {
+        errorMessage = QStringLiteral("Failed writing \"%1\" circuit data.").arg(ansxPath);
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -343,6 +364,25 @@ bool AnsxFileIO::readAnsx(const QString& ansxPath, MeshSolution& solution, QStri
         errorMessage = QStringLiteral("\"%1\" is truncated (BH curve data).").arg(ansxPath);
         return false;
       }
+    }
+  }
+
+  {
+    uint64_t n = 0;
+    if (file.read(reinterpret_cast<char*>(&n), sizeof(n)) != (qint64)sizeof(n) || n > (1u << 24)) {
+      errorMessage = QStringLiteral("\"%1\" is truncated (circuit data).").arg(ansxPath);
+      return false;
+    }
+    solution.labelCircuits.resize((int)n);
+    for (MeshLabelCircuit& c : solution.labelCircuits) {
+      double rec[5];
+      if (file.read(reinterpret_cast<char*>(rec), sizeof(rec)) != (qint64)sizeof(rec)) {
+        errorMessage = QStringLiteral("\"%1\" is truncated (circuit data).").arg(ansxPath);
+        return false;
+      }
+      c.caseFlag = (int)rec[0];
+      c.dVolts = { rec[1], rec[2] };
+      c.J = { rec[3], rec[4] };
     }
   }
 

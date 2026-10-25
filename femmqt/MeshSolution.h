@@ -4,6 +4,8 @@
 
 #include <QVector>
 
+#include <complex>
+
 // Solved-mesh data read from a .ans file (femm/FemmviewDoc.cpp's
 // [Solution] section) -- kept as flat arrays of plain POD structs, not
 // QGraphicsItems, matching the plan's decision that per-mesh-triangle
@@ -99,9 +101,22 @@ struct MeshSolutionElement {
   double rsqr = 0;
 };
 
+// The solved circuit correction for one block label, from the untagged
+// section after [Elements] -- classic's blocklist[].Case/dVolts/J
+// (femm/FemmviewDoc.cpp ~1077). Kept, rather than folded into jRe and
+// discarded, because the block integrals need it per NODE, not per
+// element (#108).
+struct MeshLabelCircuit {
+  int caseFlag = 1;              // 0: voltage-specified (dVolts), 1: current (J)
+  std::complex<double> dVolts;   // as stored
+  std::complex<double> J;        // MA/m^2, as stored
+};
+
 struct MeshSolution {
   QVector<MeshSolutionNode> nodes;
   QVector<MeshSolutionElement> elements;
+  // One per block label, in FemmProblem::blockLabels order (#108).
+  QVector<MeshLabelCircuit> labelCircuits;
 
   // |B| = sqrt(|B1|^2+|B2|^2) extremes across all elements, precomputed
   // once for the density plot's legend range.
