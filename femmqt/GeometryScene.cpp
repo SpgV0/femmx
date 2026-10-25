@@ -1037,6 +1037,16 @@ GeometryScene::GeometryScene(QObject* parent)
   connect(this, &QGraphicsScene::selectionChanged, this, &GeometryScene::onSelectionChanged);
 }
 
+GeometryScene::~GeometryScene()
+{
+  // Measured: about one run in twenty of tst_sketch_ui segfaulted at
+  // the end of a test that left a node and a label selected. The base
+  // destructor's item teardown reached onSelectionChanged() after
+  // m_shadowedItems had already been destroyed.
+  disconnect(this, &QGraphicsScene::selectionChanged, this, &GeometryScene::onSelectionChanged);
+  m_shadowedItems.clear();
+}
+
 void GeometryScene::onSelectionChanged()
 {
   // Remove the effect from anything that's no longer selected first -- a

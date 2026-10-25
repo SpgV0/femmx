@@ -116,6 +116,10 @@ class GeometryScene : public QGraphicsScene {
 
   public:
   explicit GeometryScene(QObject* parent = nullptr);
+  // ~QGraphicsScene deletes the items, and deselecting them on the way
+  // out emits selectionChanged -- into onSelectionChanged() on an object
+  // whose members are already destroyed. Disconnected here first.
+  ~GeometryScene() override;
 
   void setProblem(FemmProblem* problem);
 
