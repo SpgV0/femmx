@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <complex>
 #include <functional>
 
@@ -366,6 +367,56 @@ QPainterPath widenedHitShape(const QPainterPath& path, const QGraphicsItem* item
   return stroker.createStroke(path);
 }
 
+// `r` grown by the hit tolerance on every side, so the item's bounding
+// rect contains its widened hit shape (#97).
+QRectF hitMarginRect(const QRectF& r, const QGraphicsItem* item)
+{
+  const double m = kLineHitPixelTolerance / viewScaleFor(item);
+  return r.adjusted(-m, -m, m, m);
+}
+
+// How far `pt` is from segment or arc `index`, in model units -- to pick
+// the NEAREST of several lines inside the hit tolerance rather than the
+// one that happens to be on top (#97). Infinity if the entity is gone.
+double distanceToEdge(const FemmProblem& p, FemmItemKind kind, int index, QPointF pt)
+{
+  constexpr double kInf = std::numeric_limits<double>::infinity();
+  auto nodeOk = [&](int n) { return n >= 0 && n < p.nodes.size(); };
+  if (kind == FemmItemKind::Segment) {
+    if (index < 0 || index >= p.segments.size())
+      return kInf;
+    const FemmSegment& sg = p.segments[index];
+    if (!nodeOk(sg.n0) || !nodeOk(sg.n1))
+      return kInf;
+    const QPointF a(p.nodes[sg.n0].x, p.nodes[sg.n0].y), b(p.nodes[sg.n1].x, p.nodes[sg.n1].y);
+    const QPointF ab = b - a;
+    const double len2 = QPointF::dotProduct(ab, ab);
+    const double t = len2 > 0 ? std::clamp(QPointF::dotProduct(pt - a, ab) / len2, 0.0, 1.0) : 0.0;
+    return QLineF(pt, a + t * ab).length();
+  }
+  if (kind == FemmItemKind::Arc) {
+    if (index < 0 || index >= p.arcSegments.size())
+      return kInf;
+    const FemmArcSegment& a = p.arcSegments[index];
+    if (!nodeOk(a.n0) || !nodeOk(a.n1))
+      return kInf;
+    const FemmNode& n0 = p.nodes[a.n0];
+    const FemmNode& n1 = p.nodes[a.n1];
+    const double ends = std::min(std::hypot(pt.x() - n0.x, pt.y() - n0.y), std::hypot(pt.x() - n1.x, pt.y() - n1.y));
+    double cx, cy, R;
+    if (!FemmProblemEdit::circleFromArcPoints(n0.x, n0.y, n1.x, n1.y, a.arcLength, cx, cy, R))
+      return ends;
+    // Counterclockwise from n0 through arcLength degrees.
+    double delta = std::atan2(pt.y() - cy, pt.x() - cx) - std::atan2(n0.y - cy, n0.x - cx);
+    while (delta < 0)
+      delta += 2 * M_PI;
+    if (delta <= a.arcLength * M_PI / 180.0 + 1e-12)
+      return std::abs(std::hypot(pt.x() - cx, pt.y() - cy) - R);
+    return ends;
+  }
+  return kInf;
+}
+
 // QGraphicsLineItem subclass for segments -- see widenedHitShape's
 // comment for the hit-testing half of this class. Also thickens its own
 // paint() while selected: the drop-shadow selection effect
@@ -387,6 +438,18 @@ class SegmentItem : public QGraphicsLineItem {
     p.lineTo(line().p2());
     return widenedHitShape(p, this);
   }
+
+  // The hit shape above is widened, but the scene's index culls by the
+  // BOUNDING RECT before shape() is ever asked -- and a horizontal line
+  // drawn with a 0-width cosmetic pen has a bounding rect of zero
+  // height, so a click 2 px above it found nothing (#97).
+  QRectF boundingRect() const override
+  {
+    return hitMarginRect(QRectF(line().p1(), line().p2()).normalized(), this);
+  }
+
+  // The margin is in pixels, so it changes with zoom.
+  void refreshHitMargin() { prepareGeometryChange(); }
 
   protected:
   void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override
@@ -412,6 +475,15 @@ class ArcItem : public QGraphicsPathItem {
   {
     return widenedHitShape(path(), this);
   }
+
+  // Same as SegmentItem's: a circle's top point sits exactly on its
+  // bounding rect's edge, outside the index's view of the item (#97).
+  QRectF boundingRect() const override
+  {
+    return hitMarginRect(path().boundingRect(), this);
+  }
+
+  void refreshHitMargin() { prepareGeometryChange(); }
 
   protected:
   void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override
@@ -1161,6 +1233,16 @@ void GeometryScene::refreshFixedPixelItemSizes()
     static_cast<ConstraintGlyphItem*>(item)->refreshFixedSize();
   if (m_snapIndicatorItem)
     static_cast<SnapIndicatorItem*>(m_snapIndicatorItem)->refreshFixedSize();
+  // Lines and arcs carry a pixel-sized hit margin in their bounding rect.
+  for (QGraphicsItem* item : items()) {
+    const QVariant k = item->data(KindKey);
+    if (!k.isValid())
+      continue;
+    if (k.toInt() == static_cast<int>(FemmItemKind::Segment))
+      static_cast<SegmentItem*>(item)->refreshHitMargin();
+    else if (k.toInt() == static_cast<int>(FemmItemKind::Arc))
+      static_cast<ArcItem*>(item)->refreshHitMargin();
+  }
 }
 
 // Added by Claude (Anthropic), noreply@anthropic.com, 2026-09-12 (#28).
@@ -2545,20 +2627,48 @@ QGraphicsItem* GeometryScene::entityAt(QPointF pos, std::initializer_list<FemmIt
   // The attached view's real transform, not identity: node and label
   // markers are sized in pixels, so their scene-space shape depends on it.
   const QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
+  auto wanted = [&](int k) {
+    if (kinds.size() == 0)
+      return true;
+    for (FemmItemKind w : kinds) {
+      if (k == static_cast<int>(w))
+        return true;
+    }
+    return false;
+  };
+  auto isEdge = [](int k) {
+    return k == static_cast<int>(FemmItemKind::Segment) || k == static_cast<int>(FemmItemKind::Arc);
+  };
+
+  QGraphicsItem* nearestEdge = nullptr;
+  double nearestDistance = std::numeric_limits<double>::infinity();
   for (QGraphicsItem* candidate : items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform)) {
     if (candidate == m_smartDimPreviewItem || candidate == m_smartDimPreviewText)
       continue;
-    const QVariant k = candidate->data(KindKey);
-    if (!k.isValid())
+    const QVariant kv = candidate->data(KindKey);
+    if (!kv.isValid())
       continue;
-    if (kinds.size() == 0)
-      return candidate;
-    for (FemmItemKind wanted : kinds) {
-      if (k.toInt() == static_cast<int>(wanted))
+    const int k = kv.toInt();
+    if (!wanted(k))
+      continue;
+    // Point markers (nodes, labels) and annotations sit above the lines
+    // and are small, so the topmost one is the one under the cursor.
+    if (!isEdge(k)) {
+      if (!nearestEdge)
         return candidate;
+      continue;
+    }
+    // Lines are hit within a pixel tolerance, so several can qualify
+    // where they meet or run close; the nearest is the one meant (#97).
+    const double d = m_problem
+        ? distanceToEdge(*m_problem, static_cast<FemmItemKind>(k), candidate->data(IndexKey).toInt(), pos)
+        : 0.0;
+    if (!nearestEdge || d < nearestDistance) {
+      nearestEdge = candidate;
+      nearestDistance = d;
     }
   }
-  return nullptr;
+  return nearestEdge;
 }
 
 int GeometryScene::nodeAt(QPointF pos) const
@@ -2582,21 +2692,11 @@ void GeometryScene::handleTrimExtendClick(QPointF pos)
   if (!m_problem)
     return;
 
-  const QTransform deviceTransform = views().isEmpty() ? QTransform() : views().first()->viewportTransform();
-  QGraphicsItem* hit = nullptr;
-  for (QGraphicsItem* candidate : items(pos, Qt::IntersectsItemShape, Qt::DescendingOrder, deviceTransform)) {
-    const FemmItemKind k = static_cast<FemmItemKind>(candidate->data(KindKey).toInt());
-    // Only lines and arcs can be trimmed. Node and block-label markers
-    // sit ABOVE them in z order precisely so they stay clickable, so
-    // taking the topmost hit unfiltered would pick a node every time the
-    // user clicked near one -- and near one is where trimming happens.
-    if (!candidate->data(KindKey).isValid())
-      continue;
-    if (k == FemmItemKind::Segment || k == FemmItemKind::Arc) {
-      hit = candidate;
-      break;
-    }
-  }
+  // Only lines and arcs can be trimmed. Node and block-label markers
+  // sit ABOVE them in z order precisely so they stay clickable, so
+  // taking the topmost hit unfiltered would pick a node every time the
+  // user clicked near one -- and near one is where trimming happens.
+  QGraphicsItem* hit = entityAt(pos, { FemmItemKind::Segment, FemmItemKind::Arc });
   if (!hit) {
     emit toolMessage(tr("Click on a line or an arc."));
     return;

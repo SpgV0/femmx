@@ -165,6 +165,13 @@ private slots:
   void aClickTheEndpointSnapClaimsPicksThatNode();
   void aDoubleClickUnderTheSnapIndicatorOpensTheEntityBeneathIt();
   void hoveringInSelectModeShowsNoSnap();
+
+  // #97: the widened hit shape never got asked, because the bounding
+  // rect of an axis-aligned line is zero-thickness.
+  void aClickJustOffAHorizontalLineHitsIt();
+  void aClickJustOffAnArcsExtremeHitsIt();
+  void theLineHitMarginFollowsTheZoom();
+  void ofTwoLinesInsideTheToleranceTheNearerIsPicked();
 };
 
 // ---------------------------------------------------------------------------
@@ -1180,6 +1187,108 @@ void TestSketchUi::hoveringInSelectModeShowsNoSnap()
   sendMouse(h.scene, QEvent::GraphicsSceneMouseMove, QPointF(0.4, 0.3), Qt::NoButton);
   QVERIFY(snapIndicator(h.scene) && snapIndicator(h.scene)->isVisible());
   QCOMPARE(h.scene.lastSnap().type, SnapEngine::SnapType::Endpoint);
+}
+
+namespace {
+
+// Which entity a Select-mode double-click at `at` opens, as (kind, index),
+// or (-1, -1) for none.
+QPair<int, int> doubleClickTarget(GeometryScene& scene, QPointF at)
+{
+  QSignalSpy spy(&scene, &GeometryScene::entityDoubleClicked);
+  sendMouse(scene, QEvent::GraphicsSceneMouseDoubleClick, at);
+  if (spy.isEmpty())
+    return { -1, -1 };
+  return { static_cast<int>(spy[0][0].value<FemmItemKind>()), spy[0][1].toInt() };
+}
+
+} // namespace
+
+void TestSketchUi::aClickJustOffAHorizontalLineHitsIt()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+
+  // Identity view: 1 unit = 1 pixel. 2 px off the line, inside the
+  // 4 px half-tolerance either side.
+  const auto above = doubleClickTarget(h.scene, QPointF(50, 2));
+  QVERIFY2(above.first == static_cast<int>(FemmItemKind::Segment),
+      "a click 2 px above a horizontal line found nothing");
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(50, -2)).first, static_cast<int>(FemmItemKind::Segment));
+
+  // and the same for a vertical one
+  FemmProblemEdit::addNode(p, 200, 0);
+  FemmProblemEdit::addNode(p, 200, 100);
+  FemmProblemEdit::addSegment(p, 2, 3);
+  h.scene.rebuild();
+  const auto beside = doubleClickTarget(h.scene, QPointF(202, 50));
+  QCOMPARE(beside.first, static_cast<int>(FemmItemKind::Segment));
+  QCOMPARE(beside.second, 1);
+
+  // Well clear of it is still a miss: the margin is a tolerance, not a
+  // land grab.
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(50, 20)).first, -1);
+}
+
+void TestSketchUi::aClickJustOffAnArcsExtremeHitsIt()
+{
+  // A half circle of radius 50 about the origin, counterclockwise from
+  // (50,0) to (-50,0): its top point (0,50) is exactly on the edge of
+  // its path's bounding rect.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 50, 0);
+  FemmProblemEdit::addNode(p, -50, 0);
+  FemmProblemEdit::addArcSegment(p, 0, 1, 180.0, 1.0);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+
+  QVERIFY2(doubleClickTarget(h.scene, QPointF(0, 52)).first == static_cast<int>(FemmItemKind::Arc),
+      "a click 2 px above the top of a circle found nothing");
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(0, 48)).first, static_cast<int>(FemmItemKind::Arc));
+}
+
+void TestSketchUi::theLineHitMarginFollowsTheZoom()
+{
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 10, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+
+  // Zoomed in 10x, 2 px is 0.2 units; at 1x that click would be in the
+  // margin anyway, so test the converse too: 2 units off is 20 px now
+  // and must miss.
+  h.view.scale(10, 10);
+  h.scene.refreshFixedPixelItemSizes(); // what GeometryView does on zoom
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(5, 0.2)).first, static_cast<int>(FemmItemKind::Segment));
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(5, 2.0)).first, -1);
+}
+
+void TestSketchUi::ofTwoLinesInsideTheToleranceTheNearerIsPicked()
+{
+  // Two horizontals 3 px apart. Both contain a click 1 px off the lower
+  // one; the upper is added later, so it is on top. Topmost-wins would
+  // pick the line the user was not pointing at.
+  FemmProblem p;
+  FemmProblemEdit::addNode(p, 0, 0);
+  FemmProblemEdit::addNode(p, 100, 0);
+  FemmProblemEdit::addSegment(p, 0, 1);
+  FemmProblemEdit::addNode(p, 0, 3);
+  FemmProblemEdit::addNode(p, 100, 3);
+  FemmProblemEdit::addSegment(p, 2, 3);
+  SceneWithView h;
+  h.scene.setProblem(&p);
+  h.scene.setToolMode(GeometryToolMode::Select);
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(50, 1)).second, 0);
+  QCOMPARE(doubleClickTarget(h.scene, QPointF(50, 2)).second, 1);
 }
 
 QTEST_MAIN(TestSketchUi)
