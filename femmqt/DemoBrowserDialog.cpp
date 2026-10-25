@@ -9,6 +9,8 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace {
 
 // The manifest's problemType, as a heading. It arrives as
@@ -43,7 +45,10 @@ DemoBrowserDialog::DemoBrowserDialog(const QVector<DemoLibrary::Demo>& demos,
   m_tree->setHeaderLabels({ QStringLiteral("Model"), QStringLiteral("File") });
   m_tree->header()->setStretchLastSection(false);
   m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-  m_tree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  // Sized below with slack rather than ResizeToContents, which left the
+  // longest name 6 px to spare -- clipped under a wider real font (#129).
+  m_tree->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+  m_tree->setTextElideMode(Qt::ElideMiddle); // keep the extension if it ever clips
   layout->addWidget(m_tree, 1);
 
   // One group per problem type, in the order the manifest lists them --
@@ -69,9 +74,14 @@ DemoBrowserDialog::DemoBrowserDialog(const QVector<DemoLibrary::Demo>& demos,
     auto* item = new QTreeWidgetItem(groups.value(heading));
     item->setText(0, d.title);
     item->setText(1, QFileInfo(d.file).fileName());
+    item->setToolTip(1, d.file);
     item->setData(0, kDemoIndexRole, i);
   }
   m_tree->expandAll();
+  int fileWidth = m_tree->fontMetrics().horizontalAdvance(QStringLiteral("File"));
+  for (const DemoLibrary::Demo& d : m_demos)
+    fileWidth = std::max(fileWidth, m_tree->fontMetrics().horizontalAdvance(QFileInfo(d.file).fileName()));
+  m_tree->header()->resizeSection(1, fileWidth + 3 * m_tree->fontMetrics().averageCharWidth() + 16);
 
   // The two things that make a demo worth opening, and that a flat
   // submenu could not show.

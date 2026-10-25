@@ -14,6 +14,12 @@
 // file and the demos directory is committed.
 
 #include <QtTest>
+#include <QGuiApplication>
+#include <QStyleHints>
+#include <QHeaderView>
+#include <QScreen>
+#include <QToolButton>
+#include <QToolBar>
 #include <QStatusBar>
 #include <QVBoxLayout>
 #include <QDoubleSpinBox>
@@ -47,6 +53,7 @@
 #include "AnsxFileIO.h"
 #include "SolutionAdapter.h"
 #include "SolutionFileIO.h"
+#include "AppPreferences.h"
 #include "AppTheme.h"
 #include "ConstraintSolver.h"
 #include "FemmProblemEdit.h"
@@ -54,6 +61,7 @@
 #include "SketchFileIO.h"
 #include "BlockLabelPropDialog.h"
 #include "LoadMonitorDialog.h"
+#include "DemoBrowserDialog.h"
 #include "SpinBoxSelectAll.h"
 #include "BoundaryPropDialog.h"
 #include "MaterialLibraryDialog.h"
@@ -162,12 +170,24 @@ class TestMainWindow : public QObject
   void createMeshLeavesNoFilesBesideTheModel();
   void theExteriorShellsDoNotSetTheRange();
   void theInstallerRunsOneAtATime();
+  // #129
+  void firstStartFollowsWindowsDarkMode();
+  void theToolbarsFitWithoutChevrons();
+  void theEditorReopensWhereItWasLeft();
+  void theDemoListShowsWholeFileNames();
 };
 
 void TestMainWindow::initTestCase()
 {
   Notify::setHeadless(true);
   QVERIFY(m_dir.isValid());
+  // QSettings reads and writes nothing without an organization name.
+  // Given one, keep it in this run's temporary directory, away from the
+  // real femmqt's settings and from the next run.
+  QCoreApplication::setOrganizationName(QStringLiteral("FEMMX-tests"));
+  QCoreApplication::setApplicationName(QStringLiteral("femmqt_main_window_tests"));
+  QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir.filePath(QStringLiteral("settings")));
   QVERIFY2(QFileInfo::exists(demoPath("magnetics/straight_wire.fem")), "demos/ not found");
 }
 
@@ -1437,6 +1457,84 @@ void TestMainWindow::theInstallerRunsOneAtATime()
   const int existing = nsi.indexOf(QStringLiteral("QuietUninstallString"), onInit);
   QVERIFY2(mutex > 0 && mutex < existing, "the installer takes no mutex before checking for an existing install");
   QVERIFY(nsi.indexOf(QStringLiteral("Abort"), mutex) < existing);
+}
+
+void TestMainWindow::firstStartFollowsWindowsDarkMode()
+{
+  // femmqt opened light on a dark Windows desktop: <QtDarkTheme> absent
+  // meant light. An explicit setting still wins either way.
+  QCOMPARE(AppPreferences::fromText(QString()).darkTheme, AppPreferences::systemPrefersDark());
+  QCOMPARE(AppPreferences::fromText(QStringLiteral("<QtDarkTheme> = 1\n")).darkTheme, true);
+  QCOMPARE(AppPreferences::fromText(QStringLiteral("<QtDarkTheme> = 0\n")).darkTheme, false);
+
+  // Where the platform lets the scheme be set, show the default follows it.
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  const bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+  if (dark)
+    QVERIFY(AppPreferences::fromText(QString()).darkTheme);
+  QGuiApplication::styleHints()->unsetColorScheme();
+  if (!dark)
+    qInfo("this platform does not report a requested colour scheme; checked the mapping only");
+}
+
+void TestMainWindow::theToolbarsFitWithoutChevrons()
+{
+  // At the old default width the last toolbars collapsed into ">>".
+  QSettings().remove(QStringLiteral("editorWindow/geometry"));
+  MainWindow w;
+  const QSize first = w.size();
+  w.resize(1024, 768);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+  for (QToolBar* tb : w.findChildren<QToolBar*>()) {
+    auto* ext = tb->findChild<QToolButton*>(QStringLiteral("qt_toolbar_ext_button"));
+    QVERIFY2(!(ext && ext->isVisible()), qPrintable(tb->windowTitle() + " overflows at 1024 px"));
+  }
+  // And the first window, sized from the screen, fits on it.
+  const QRect avail = w.screen()->availableGeometry();
+  QVERIFY2(first.width() <= avail.width() && first.height() <= avail.height(), "the first window is larger than the screen");
+}
+
+void TestMainWindow::theEditorReopensWhereItWasLeft()
+{
+  QSettings().remove(QStringLiteral("editorWindow/geometry"));
+  {
+    MainWindow w;
+    w.newDocument(FemmProblemKind::Magnetics);
+    w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+    w.resize(701, 611); // inside the 800x800 offscreen screen, which Qt clamps to
+    QVERIFY(w.close());
+  }
+  MainWindow again;
+  QCOMPARE(again.size(), QSize(701, 611));
+  QSettings().remove(QStringLiteral("editorWindow/geometry"));
+}
+
+void TestMainWindow::theDemoListShowsWholeFileNames()
+{
+  // cylindrical_shell_axi.feh was clipped: the column was sized to the
+  // text with a few pixels to spare.
+  QString error;
+  DemoBrowserDialog dlg(DemoLibrary::load(error));
+  QVERIFY2(error.isEmpty(), qPrintable(error));
+  auto* tree = dlg.findChild<QTreeWidget*>();
+  QVERIFY(tree);
+  const int column = tree->header()->sectionSize(1);
+  int files = 0;
+  for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+    const QString name = (*it)->text(1);
+    if (name.isEmpty())
+      continue;
+    files++;
+    const int need = tree->fontMetrics().horizontalAdvance(name);
+    QVERIFY2(need + 2 * tree->fontMetrics().averageCharWidth() <= column,
+        qPrintable(QStringLiteral("%1 needs %2 px of a %3 px column").arg(name).arg(need).arg(column)));
+  }
+  QVERIFY(files > 0);
+  // The full path on hover, in case a name ever does clip.
+  for (QTreeWidgetItemIterator it(tree); *it; ++it)
+    QVERIFY((*it)->text(1).isEmpty() || !(*it)->toolTip(1).isEmpty());
 }
 
 QTEST_MAIN(TestMainWindow)

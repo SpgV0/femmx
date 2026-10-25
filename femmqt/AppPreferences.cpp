@@ -1,6 +1,8 @@
 #include "AppPreferences.h"
 
 #include <QCoreApplication>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include <QFile>
 #include <QTextStream>
 
@@ -33,15 +35,32 @@ bool matchesTag(const QString& line, const char* tag, QString* value)
 
 } // namespace
 
+bool AppPreferences::systemPrefersDark()
+{
+  // Only a GUI application has style hints; the command-line paths load
+  // preferences too.
+  if (!qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
+    return false;
+  return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
 AppPreferences AppPreferences::load()
 {
-  AppPreferences prefs;
-
   QFile file(cfgPath());
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    return prefs;
+    return fromText(QString());
+  return fromText(QTextStream(&file).readAll());
+}
 
-  QTextStream in(&file);
+AppPreferences AppPreferences::fromText(const QString& cfgText)
+{
+  AppPreferences prefs;
+  // Until <QtDarkTheme> is written -- the first start, or a femm.cfg the
+  // classic GUI wrote -- follow Windows' own light/dark setting (#129).
+  prefs.darkTheme = systemPrefersDark();
+
+  QString text = cfgText;
+  QTextStream in(&text, QIODevice::ReadOnly);
   while (!in.atEnd()) {
     QString line = in.readLine();
     QString value;

@@ -26,7 +26,8 @@ struct AppPreferences {
   // this has no effect here -- round-tripped unchanged so it isn't lost
   // for the classic GUI.
   int defaultDocType = 0; // <DefaultType>
-  bool darkTheme = false; // <QtDarkTheme>, Qt-only
+  // <QtDarkTheme>, Qt-only. Absent, it follows systemPrefersDark().
+  bool darkTheme = false;
   // Which object-snap types are enabled (issue #28), as a
   // SnapEngine::SnapFlags bitmask. One integer rather than nine tags:
   // femm.cfg is shared with the classic GUI, which has no object
@@ -36,5 +37,10 @@ struct AppPreferences {
   unsigned snapFlags = SnapEngine::SnapDefault; // <QtSnapFlags>
 
   static AppPreferences load();
+  // What load() makes of femm.cfg's text -- separate so it can be tested
+  // without touching the real file.
+  static AppPreferences fromText(const QString& cfgText);
+  // Whether Windows is set to dark mode (false outside a GUI application).
+  static bool systemPrefersDark();
   bool save() const;
 };

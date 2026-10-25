@@ -77,6 +77,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
+#include <QScreen>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStatusBar>
@@ -228,7 +229,12 @@ double niceIntegerGridSize(const QRectF& visibleBounds)
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-  resize(1024, 768);
+  // Where the user last left it; the first time, most of the screen
+  // (#129) -- the old fixed 1024x768 was small on any modern display.
+  if (!restoreGeometry(QSettings().value(QStringLiteral("editorWindow/geometry")).toByteArray())) {
+    const QRect avail = screen() ? screen()->availableGeometry() : QRect(0, 0, 1600, 1000);
+    resize(std::min(1400, avail.width() * 9 / 10), std::min(900, avail.height() * 9 / 10));
+  }
 
   m_scene = new GeometryScene(this);
   m_scene->setProblem(&m_problem);
@@ -727,6 +733,11 @@ MainWindow::MainWindow(QWidget* parent)
   addThemedAction(editToolBar, ":/icons/group.svg", "Select by Group", "Select all entities belonging to a numbered group", &MainWindow::onSelectByGroupTriggered);
   HoverTooltip::installOn(editToolBar);
 
+  // A second row for Constraints and Mesh (#129): all four toolbars on
+  // one row need about 1300 px, so below that -- the old default window,
+  // or a maximised one at 150% scaling -- the last ones collapsed into
+  // ">>" chevrons.
+  addToolBarBreak();
   QToolBar* constraintsToolBar = addToolBar("Constraints");
   constraintsToolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
   constraintsToolBar->setIconSize(QSize(20, 20));
@@ -3278,8 +3289,10 @@ bool MainWindow::saveOrDiscard(const QString& title, const QString& question)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-  if (confirmDiscardUnsavedChanges())
+  if (confirmDiscardUnsavedChanges()) {
+    QSettings().setValue(QStringLiteral("editorWindow/geometry"), saveGeometry()); // #129
     event->accept();
-  else
+  } else {
     event->ignore();
+  }
 }
